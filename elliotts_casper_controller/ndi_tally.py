@@ -17,7 +17,6 @@ Silently no-ops if ndi-python is not installed or the NDI Runtime is missing.
 """
 
 import os
-import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -40,6 +39,7 @@ for _ndi_path in (
 
 try:
     import NDIlib as ndi
+
     _AVAILABLE: bool = ndi.initialize()
 except Exception:
     _AVAILABLE = False
@@ -49,9 +49,9 @@ except Exception:
 # Shared state
 # ---------------------------------------------------------------------------
 
-_tally: Dict[str, dict] = {}   # ndi_name -> {"program": bool, "preview": bool}
+_tally: Dict[str, dict] = {}  # ndi_name -> {"program": bool, "preview": bool}
 _lock = threading.Lock()
-_monitors: dict = {}           # ndi_name -> {"thread": Thread, "stop": Event}
+_monitors: dict = {}  # ndi_name -> {"thread": Thread, "stop": Event}
 
 
 def is_available() -> bool:
@@ -67,6 +67,7 @@ def get_tally() -> dict:
 # ---------------------------------------------------------------------------
 # Per-source monitor thread
 # ---------------------------------------------------------------------------
+
 
 def _find_source(ndi_name: str, stop: threading.Event):
     """Search for an NDI source matching ndi_name. Returns source or None."""
@@ -117,7 +118,6 @@ def _run_session(ndi_name: str, stop: threading.Event):
         try:
             result = ndi.recv_capture_v3(recv, 500)
             # recv_capture_v3 returns (frame_type, video, audio, metadata)
-            frame_type = result[0]
             metadata_frame = result[3] if len(result) > 3 else None
 
             if metadata_frame is not None:
@@ -156,6 +156,7 @@ def _monitor_loop(ndi_name: str, stop: threading.Event):
 # ---------------------------------------------------------------------------
 # Public control API
 # ---------------------------------------------------------------------------
+
 
 def start_monitoring(ndi_names: list):
     """

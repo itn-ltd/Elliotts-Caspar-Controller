@@ -1,4 +1,5 @@
 """Tkinter desktop launcher for Elliott's Caspar Controller."""
+
 import logging
 import math
 import os
@@ -6,8 +7,8 @@ import socket
 import sys
 import threading
 import time
-import webbrowser
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import messagebox, simpledialog
 
@@ -18,17 +19,19 @@ from PIL import Image, ImageDraw, ImageTk
 from elliotts_casper_controller import __version__
 from elliotts_casper_controller.amcp_client import AMCPClient
 from elliotts_casper_controller.config_manager import (
-    load as load_config, save as save_config,
-    instance_amcp_port, regenerate_instance_config, regenerate_all_instance_configs,
+    instance_amcp_port,
+    load as load_config,
+    regenerate_all_instance_configs,
+    regenerate_instance_config,
+    save as save_config,
 )
 from elliotts_casper_controller.process_manager import CasparProcessManager
 
 # Set Windows taskbar app ID
 try:
     import ctypes
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-        "elliott.caspercontroller.ecc.1"
-    )
+
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("elliott.caspercontroller.ecc.1")
 except Exception:
     pass
 
@@ -62,28 +65,29 @@ def _kill_port(port: int) -> None:
 # ---------------------------------------------------------------------------
 # Colour palette
 # ---------------------------------------------------------------------------
-BG_DARK   = "#1a1a1a"
+BG_DARK = "#1a1a1a"
 BG_MEDIUM = "#252525"
-BG_CARD   = "#2d2d2d"
-ACCENT    = "#00bcd4"
+BG_CARD = "#2d2d2d"
+ACCENT = "#00bcd4"
 ACCENT_DK = "#0097a7"
-TEXT      = "#ffffff"
-MUTED     = "#888888"
-BTN_BLUE  = "#2196f3"
-BTN_CASPAR= "#006978"  # dark teal — CasparCG console button
+TEXT = "#ffffff"
+MUTED = "#888888"
+BTN_BLUE = "#2196f3"
+BTN_CASPAR = "#006978"  # dark teal — CasparCG console button
 BTN_GREEN = "#4caf50"
-BTN_RED   = "#ff5252"
-BTN_RED_DK= "#c0392b"
-BTN_GRAY  = "#3d3d3d"
-BTN_ORNG  = "#e67e22"
-SUCCESS   = "#22c55e"
-ERROR     = "#ef4444"
-WARNING   = "#f59e0b"
+BTN_RED = "#ff5252"
+BTN_RED_DK = "#c0392b"
+BTN_GRAY = "#3d3d3d"
+BTN_ORNG = "#e67e22"
+SUCCESS = "#22c55e"
+ERROR = "#ef4444"
+WARNING = "#f59e0b"
 
 
 # ---------------------------------------------------------------------------
 # Main GUI class
 # ---------------------------------------------------------------------------
+
 
 class CasparControllerGUI:
     def __init__(self):
@@ -131,10 +135,10 @@ class CasparControllerGUI:
         static = Path(__file__).parent.parent / "static"
         has_reem = (static / "ITV Reem-Regular.ttf").exists()
         fam = "ITV Reem" if has_reem else "Segoe UI"
-        self.font_reg    = (fam, 10)
-        self.font_reg11  = (fam, 11)
-        self.font_reg24  = (fam, 24)
-        self.font_bold   = (fam, 10, "bold")
+        self.font_reg = (fam, 10)
+        self.font_reg11 = (fam, 11)
+        self.font_reg24 = (fam, 24)
+        self.font_bold = (fam, 10, "bold")
         self.font_bold11 = (fam, 11, "bold")
         self.font_bold24 = (fam, 24, "bold")
         self.font_bold32 = (fam, 32, "bold")
@@ -152,23 +156,22 @@ class CasparControllerGUI:
     # -----------------------------------------------------------------------
 
     def _rounded_rect(self, canvas, x1, y1, x2, y2, r, fill):
-        canvas.create_oval(x1, y1, x1+r*2, y1+r*2, fill=fill, outline=fill)
-        canvas.create_oval(x2-r*2, y1, x2, y1+r*2, fill=fill, outline=fill)
-        canvas.create_oval(x1, y2-r*2, x1+r*2, y2, fill=fill, outline=fill)
-        canvas.create_oval(x2-r*2, y2-r*2, x2, y2, fill=fill, outline=fill)
-        canvas.create_rectangle(x1+r, y1, x2-r, y2, fill=fill, outline=fill)
-        canvas.create_rectangle(x1, y1+r, x2, y2-r, fill=fill, outline=fill)
+        canvas.create_oval(x1, y1, x1 + r * 2, y1 + r * 2, fill=fill, outline=fill)
+        canvas.create_oval(x2 - r * 2, y1, x2, y1 + r * 2, fill=fill, outline=fill)
+        canvas.create_oval(x1, y2 - r * 2, x1 + r * 2, y2, fill=fill, outline=fill)
+        canvas.create_oval(x2 - r * 2, y2 - r * 2, x2, y2, fill=fill, outline=fill)
+        canvas.create_rectangle(x1 + r, y1, x2 - r, y2, fill=fill, outline=fill)
+        canvas.create_rectangle(x1, y1 + r, x2, y2 - r, fill=fill, outline=fill)
 
     def _make_btn(self, parent, text, cmd, color, w=290, h=50, state=tk.NORMAL):
-        cv = tk.Canvas(parent, width=w, height=h, bg=BG_DARK,
-                       highlightthickness=0, bd=0)
+        cv = tk.Canvas(parent, width=w, height=h, bg=BG_DARK, highlightthickness=0, bd=0)
         self._rounded_rect(cv, 0, 0, w, h, 10, color)
         fg = TEXT if state == tk.NORMAL else MUTED
-        cv.create_text(w/2, h/2, text=text, fill=fg, font=self.font_bold11)
+        cv.create_text(w / 2, h / 2, text=text, fill=fg, font=self.font_bold11)
         if state == tk.NORMAL:
             cv.bind("<Button-1>", lambda e: cmd())
-            cv.bind("<Enter>",    lambda e: cv.configure(cursor="hand2"))
-            cv.bind("<Leave>",    lambda e: cv.configure(cursor=""))
+            cv.bind("<Enter>", lambda e: cv.configure(cursor="hand2"))
+            cv.bind("<Leave>", lambda e: cv.configure(cursor=""))
         cv._color = color
         cv._state = state
         return cv
@@ -179,7 +182,7 @@ class CasparControllerGUI:
         w, h = int(cv["width"]), int(cv["height"])
         self._rounded_rect(cv, 0, 0, w, h, 10, color)
         fg = TEXT if state == tk.NORMAL else MUTED
-        cv.create_text(w/2, h/2, text=text, fill=fg, font=self.font_bold11)
+        cv.create_text(w / 2, h / 2, text=text, fill=fg, font=self.font_bold11)
         cv._color = color
         cv._state = state
 
@@ -188,8 +191,8 @@ class CasparControllerGUI:
             self._redraw_btn(cv, text or "", color or cv._color, tk.NORMAL)
         cv._state = tk.NORMAL
         cv.bind("<Button-1>", lambda e: cmd())
-        cv.bind("<Enter>",    lambda e: cv.configure(cursor="hand2"))
-        cv.bind("<Leave>",    lambda e: cv.configure(cursor=""))
+        cv.bind("<Enter>", lambda e: cv.configure(cursor="hand2"))
+        cv.bind("<Leave>", lambda e: cv.configure(cursor=""))
 
     def _disable_btn(self, cv, text=None):
         self._redraw_btn(cv, text or "", state=tk.DISABLED)
@@ -210,13 +213,19 @@ class CasparControllerGUI:
         top.pack_propagate(False)
         title_f = tk.Frame(top, bg=BG_DARK)
         title_f.pack(expand=True)
-        self._title_label = tk.Label(title_f, text="Elliott's Caspar Controller",
-                                      font=self.font_bold24, bg=BG_DARK, fg=TEXT,
-                                      cursor="hand2")
+        self._title_label = tk.Label(
+            title_f,
+            text="Elliott's Caspar Controller",
+            font=self.font_bold24,
+            bg=BG_DARK,
+            fg=TEXT,
+            cursor="hand2",
+        )
         self._title_label.pack()
         self._title_label.bind("<Button-1>", self._on_title_click)
-        self._version_label = tk.Label(title_f, text=f"Version {__version__}",
-                                        font=self.font_reg, bg=BG_DARK, fg=MUTED)
+        self._version_label = tk.Label(
+            title_f, text=f"Version {__version__}", font=self.font_reg, bg=BG_DARK, fg=MUTED
+        )
         self._version_label.pack()
 
         # ---- Content ----
@@ -224,8 +233,7 @@ class CasparControllerGUI:
         content.pack(fill=tk.BOTH, expand=True, padx=40, pady=(18, 20))
 
         # -- Port card (Web UI port only — AMCP ports managed in Settings) --
-        port_cv = tk.Canvas(content, width=670, height=130,
-                             bg=BG_DARK, highlightthickness=0)
+        port_cv = tk.Canvas(content, width=670, height=130, bg=BG_DARK, highlightthickness=0)
         port_cv.pack(pady=(0, 12))
         self._rounded_rect(port_cv, 0, 0, 670, 130, 20, BG_CARD)
 
@@ -241,9 +249,10 @@ class CasparControllerGUI:
         def _port_card_click(e):
             if (cx - 55) <= e.x <= (cx + 55) and 92 <= e.y <= 118:
                 self._change_web_port(port_cv)
+
         port_cv.bind("<Button-1>", _port_card_click)
-        port_cv.bind("<Enter>",    lambda e: port_cv.configure(cursor="hand2"))
-        port_cv.bind("<Leave>",    lambda e: port_cv.configure(cursor=""))
+        port_cv.bind("<Enter>", lambda e: port_cv.configure(cursor="hand2"))
+        port_cv.bind("<Leave>", lambda e: port_cv.configure(cursor=""))
         self._port_cv = port_cv
 
         # -- URL row: Network (left) | Local (right) --
@@ -252,19 +261,32 @@ class CasparControllerGUI:
         url_row = tk.Frame(content, bg=BG_DARK)
         url_row.pack(pady=(0, 8))
 
-        tk.Label(url_row, text="Network:", font=self.font_reg11,
-                 bg=BG_DARK, fg=MUTED).pack(side=tk.LEFT, padx=(0, 4))
-        self._net_label = tk.Label(url_row, text=self._network_url,
-                                   font=self.font_reg11, bg=BG_DARK, fg=ACCENT, cursor="hand2")
+        tk.Label(url_row, text="Network:", font=self.font_reg11, bg=BG_DARK, fg=MUTED).pack(
+            side=tk.LEFT, padx=(0, 4)
+        )
+        self._net_label = tk.Label(
+            url_row,
+            text=self._network_url,
+            font=self.font_reg11,
+            bg=BG_DARK,
+            fg=ACCENT,
+            cursor="hand2",
+        )
         self._net_label.pack(side=tk.LEFT)
         self._net_label.bind("<Button-1>", lambda e: self._copy_url())
-        self._net_label.bind("<Enter>",    lambda e: self._net_label.config(fg=TEXT))
-        self._net_label.bind("<Leave>",    lambda e: self._net_label.config(fg=ACCENT))
+        self._net_label.bind("<Enter>", lambda e: self._net_label.config(fg=TEXT))
+        self._net_label.bind("<Leave>", lambda e: self._net_label.config(fg=ACCENT))
 
-        tk.Label(url_row, text="   |   Local:", font=self.font_reg11,
-                 bg=BG_DARK, fg=MUTED).pack(side=tk.LEFT)
-        self._url_label = tk.Label(url_row, text=f"http://127.0.0.1:{self._web_port}/",
-                                   font=self.font_reg11, bg=BG_DARK, fg=MUTED)
+        tk.Label(url_row, text="   |   Local:", font=self.font_reg11, bg=BG_DARK, fg=MUTED).pack(
+            side=tk.LEFT
+        )
+        self._url_label = tk.Label(
+            url_row,
+            text=f"http://127.0.0.1:{self._web_port}/",
+            font=self.font_reg11,
+            bg=BG_DARK,
+            fg=MUTED,
+        )
         self._url_label.pack(side=tk.LEFT, padx=(4, 0))
 
         # -- Status row (pulse + label) --
@@ -272,17 +294,20 @@ class CasparControllerGUI:
         status_f.pack(pady=(0, 2))
         self._pulse_label = tk.Label(status_f, bg=BG_DARK, bd=0, highlightthickness=0)
         self._pulse_label.pack(side=tk.LEFT, padx=(0, 8))
-        self._status_label = tk.Label(status_f, text="Web server starting...",
-                                       font=self.font_reg11, bg=BG_DARK, fg=MUTED)
+        self._status_label = tk.Label(
+            status_f, text="Web server starting...", font=self.font_reg11, bg=BG_DARK, fg=MUTED
+        )
         self._status_label.pack(side=tk.LEFT)
 
         # -- Controller uptime row --
         runtime_f = tk.Frame(content, bg=BG_DARK)
         runtime_f.pack(pady=(0, 6))
-        tk.Label(runtime_f, text="Controller Uptime:", font=self.font_reg,
-                 bg=BG_DARK, fg=MUTED).pack(side=tk.LEFT)
-        self._runtime_label = tk.Label(runtime_f, text="—", font=self.font_reg,
-                                        bg=BG_DARK, fg=MUTED)
+        tk.Label(
+            runtime_f, text="Controller Uptime:", font=self.font_reg, bg=BG_DARK, fg=MUTED
+        ).pack(side=tk.LEFT)
+        self._runtime_label = tk.Label(
+            runtime_f, text="—", font=self.font_reg, bg=BG_DARK, fg=MUTED
+        )
         self._runtime_label.pack(side=tk.LEFT, padx=(4, 0))
 
         # -- Action buttons --
@@ -291,16 +316,24 @@ class CasparControllerGUI:
 
         row1 = tk.Frame(btn_area, bg=BG_DARK)
         row1.pack(pady=4)
-        self._btn_start = self._make_btn(row1, "Start CasparCG", self._start_caspar, BTN_GREEN, h=46)
+        self._btn_start = self._make_btn(
+            row1, "Start CasparCG", self._start_caspar, BTN_GREEN, h=46
+        )
         self._btn_start.pack(side=tk.LEFT, padx=6)
-        self._btn_stop = self._make_btn(row1, "Stop CasparCG", self._stop_caspar, BTN_RED, h=46, state=tk.DISABLED)
+        self._btn_stop = self._make_btn(
+            row1, "Stop CasparCG", self._stop_caspar, BTN_RED, h=46, state=tk.DISABLED
+        )
         self._btn_stop.pack(side=tk.LEFT, padx=6)
 
         row2 = tk.Frame(btn_area, bg=BG_DARK)
         row2.pack(pady=4)
-        self._btn_web = self._make_btn(row2, "Open Web UI", self._open_browser, BTN_BLUE, h=46, state=tk.DISABLED)
+        self._btn_web = self._make_btn(
+            row2, "Open Web UI", self._open_browser, BTN_BLUE, h=46, state=tk.DISABLED
+        )
         self._btn_web.pack(side=tk.LEFT, padx=6)
-        self._btn_update = self._make_btn(row2, "Check for Updates", self._check_updates, ACCENT, h=46)
+        self._btn_update = self._make_btn(
+            row2, "Check for Updates", self._check_updates, ACCENT, h=46
+        )
         self._btn_update.pack(side=tk.LEFT, padx=6)
 
         row3 = tk.Frame(btn_area, bg=BG_DARK)
@@ -320,8 +353,11 @@ class CasparControllerGUI:
 
     def _change_web_port(self, port_cv):
         new_port = simpledialog.askinteger(
-            "Change Web UI Port", "Enter new port number:",
-            initialvalue=self._web_port, minvalue=1024, maxvalue=65535,
+            "Change Web UI Port",
+            "Enter new port number:",
+            initialvalue=self._web_port,
+            minvalue=1024,
+            maxvalue=65535,
             parent=self.root,
         )
         if new_port and new_port != self._web_port:
@@ -331,10 +367,11 @@ class CasparControllerGUI:
             save_config(cfg)
             port_cv.itemconfig(self._port_text_id, text=str(new_port))
             self._url_label.config(text=f"http://127.0.0.1:{new_port}/")
-            messagebox.showinfo("Port Changed",
-                                f"Web UI port changed to {new_port}.\nRestart the app for the new port to take effect.",
-                                parent=self.root)
-
+            messagebox.showinfo(
+                "Port Changed",
+                f"Web UI port changed to {new_port}.\nRestart the app for the new port to take effect.",
+                parent=self.root,
+            )
 
     def _copy_url(self):
         try:
@@ -360,6 +397,7 @@ class CasparControllerGUI:
 
         if self._web_running:
             self._pulse_angle = (self._pulse_angle + 8) % 360
+
             def _blend(phase):
                 op = (math.sin(math.radians(phase)) + 1) / 2
                 return (
@@ -367,9 +405,10 @@ class CasparControllerGUI:
                     int(bg_rgb[1] + (g_on - bg_rgb[1]) * op),
                     int(bg_rgb[2] + (b_on - bg_rgb[2]) * op),
                 )
+
             c_center = _blend(self._pulse_angle)
-            c_inner  = _blend(self._pulse_angle - 90)
-            c_outer  = _blend(self._pulse_angle - 180)
+            c_inner = _blend(self._pulse_angle - 90)
+            c_outer = _blend(self._pulse_angle - 180)
         else:
             c_center = c_inner = c_outer = (r_off, g_off, b_off)
 
@@ -379,7 +418,7 @@ class CasparControllerGUI:
         for radius, color, filled in [
             (18 * scale, c_outer, False),
             (11 * scale, c_inner, False),
-            (5  * scale, c_center, True),
+            (5 * scale, c_center, True),
         ]:
             box = [cx - radius, cy - radius, cx + radius, cy + radius]
             if filled:
@@ -401,10 +440,10 @@ class CasparControllerGUI:
         d, rem = divmod(seconds, 86400)
         h, rem = divmod(rem, 3600)
         m, s = divmod(rem, 60)
-        if seconds >= 7 * 86400:           # 7+ days → weeks + days
+        if seconds >= 7 * 86400:  # 7+ days → weeks + days
             w, d2 = divmod(d, 7)
             return f"{w}w {d2}d {h}h {m}m"
-        if seconds >= 4 * 3600:            # 4+ hours → days + hours + minutes
+        if seconds >= 4 * 3600:  # 4+ hours → days + hours + minutes
             if d:
                 return f"{d}d {h}h {m}m"
             return f"{h}h {m}m"
@@ -428,6 +467,7 @@ class CasparControllerGUI:
 
     def _start_web_server(self):
         import uvicorn
+
         from elliotts_casper_controller.core import app
 
         if _is_port_in_use(self._web_port):
@@ -435,14 +475,20 @@ class CasparControllerGUI:
             time.sleep(0.4)
 
         import logging
+
         for _log_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
             _lg = logging.getLogger(_log_name)
             _lg.handlers = [logging.NullHandler()]
             _lg.propagate = False
 
-        cfg_obj = uvicorn.Config(app, host="0.0.0.0", port=self._web_port,
-                                  log_level="warning", access_log=False,
-                                  log_config=None)
+        cfg_obj = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=self._web_port,
+            log_level="warning",
+            access_log=False,
+            log_config=None,
+        )
         self._uvicorn_server = uvicorn.Server(cfg_obj)
         self._server_error: str | None = None
 
@@ -452,9 +498,11 @@ class CasparControllerGUI:
             except Exception as exc:
                 self._server_error = str(exc)
                 import traceback
+
                 tb = traceback.format_exc()
                 try:
                     from elliotts_casper_controller.config_manager import _config_dir
+
                     log_path = os.path.join(_config_dir(), "webserver_error.log")
                     with open(log_path, "w") as f:
                         f.write(f"Server error: {exc}\n\n{tb}")
@@ -469,7 +517,9 @@ class CasparControllerGUI:
         if _is_port_in_use(self._web_port):
             self._web_running = True
             self._start_time = time.time()
-            self._status_label.config(text=f"Web server running on port {self._web_port}", fg=ACCENT)
+            self._status_label.config(
+                text=f"Web server running on port {self._web_port}", fg=ACCENT
+            )
             self._enable_btn(self._btn_web, self._open_browser, "Open Web UI", BTN_BLUE)
             cfg = load_config()
             if cfg.get("autostart_caspar"):
@@ -488,7 +538,9 @@ class CasparControllerGUI:
             return
 
         if attempt >= 24:
-            self._status_label.config(text=f"Web server timed out on port {self._web_port}", fg=WARNING)
+            self._status_label.config(
+                text=f"Web server timed out on port {self._web_port}", fg=WARNING
+            )
             messagebox.showwarning(
                 "Web Server Timeout",
                 f"The web server did not start within 12 seconds on port {self._web_port}.\n"
@@ -510,9 +562,11 @@ class CasparControllerGUI:
     def _check_updates(self, silent: bool = False):
         if not silent:
             self._disable_btn(self._btn_update, "Checking...")
+
         def run():
             try:
                 import requests as _req
+
                 url = "https://api.github.com/repos/BlueElliott/Elliotts-Caspar-Controller/releases/latest"
                 r = _req.get(url, headers={"User-Agent": "ElliotsCasparController"}, timeout=8)
                 data = r.json()
@@ -525,14 +579,21 @@ class CasparControllerGUI:
                         if asset.get("name", "").lower().endswith("setup.exe"):
                             installer_url = asset.get("browser_download_url")
                             break
-                    self.root.after(0, lambda: self._update_available(
-                        latest, data.get("html_url", ""), installer_url))
+                    self.root.after(
+                        0,
+                        lambda: self._update_available(
+                            latest, data.get("html_url", ""), installer_url
+                        ),
+                    )
                 else:
                     if not silent:
                         self.root.after(0, self._up_to_date)
-            except Exception as e:
+            # Known bug: `e` is deleted when the except block ends, so the lambda
+            # raises NameError. This updater is removed in #3.
+            except Exception as e:  # noqa: F841
                 if not silent:
-                    self.root.after(0, lambda: self._update_error(str(e)))
+                    self.root.after(0, lambda: self._update_error(str(e)))  # noqa: F821
+
         threading.Thread(target=run, daemon=True).start()
 
     def _update_available(self, latest: str, release_url: str, installer_url: str | None):
@@ -540,17 +601,21 @@ class CasparControllerGUI:
             # Running as installed exe — offer one-click silent update via installer.
             self._pending_installer_url = installer_url
             self._pending_latest = latest
-            self._enable_btn(self._btn_update, self._do_auto_update,
-                             f"Install v{latest}", BTN_ORNG)
+            self._enable_btn(self._btn_update, self._do_auto_update, f"Install v{latest}", BTN_ORNG)
         else:
             # Running from source, or no installer asset found — open release page.
-            self._enable_btn(self._btn_update, lambda: webbrowser.open(release_url),
-                             f"v{latest} Available!", BTN_ORNG)
+            self._enable_btn(
+                self._btn_update,
+                lambda: webbrowser.open(release_url),
+                f"v{latest} Available!",
+                BTN_ORNG,
+            )
         self._status_label.config(text=f"Update available: v{latest}", fg=WARNING)
 
     def _do_auto_update(self):
-        import requests as _req
         import tempfile
+
+        import requests as _req
 
         installer_url = getattr(self, "_pending_installer_url", None)
         latest = getattr(self, "_pending_latest", "?")
@@ -568,14 +633,16 @@ class CasparControllerGUI:
         self._disable_btn(self._btn_update, "Downloading...")
         self._status_label.config(text=f"Downloading v{latest}...", fg=MUTED)
 
-        pending_installer = os.path.join(
-            tempfile.gettempdir(), "ElliottsCasparControllerSetup.exe"
-        )
+        pending_installer = os.path.join(tempfile.gettempdir(), "ElliottsCasparControllerSetup.exe")
 
         def download():
             try:
-                r = _req.get(installer_url, stream=True, timeout=120,
-                             headers={"User-Agent": "ElliotsCasparController"})
+                r = _req.get(
+                    installer_url,
+                    stream=True,
+                    timeout=120,
+                    headers={"User-Agent": "ElliotsCasparController"},
+                )
                 r.raise_for_status()
                 total = int(r.headers.get("content-length", 0))
                 downloaded = 0
@@ -586,15 +653,25 @@ class CasparControllerGUI:
                             downloaded += len(chunk)
                             if total:
                                 pct = int(downloaded * 100 / total)
-                                self.root.after(0, lambda p=pct: self._disable_btn(
-                                    self._btn_update, f"Downloading {p}%..."))
+                                self.root.after(
+                                    0,
+                                    lambda p=pct: self._disable_btn(
+                                        self._btn_update, f"Downloading {p}%..."
+                                    ),
+                                )
 
                 self.root.after(0, lambda: self._apply_update(pending_installer))
 
-            except Exception as e:
-                self.root.after(0, lambda: self._update_error(f"Download failed: {e}"))
-                self.root.after(0, lambda: self._enable_btn(
-                    self._btn_update, self._do_auto_update, f"Install v{latest}", BTN_ORNG))
+            # Known bug: `e` is deleted when the except block ends, so the lambda
+            # raises NameError. This updater is removed in #3.
+            except Exception as e:  # noqa: F841
+                self.root.after(0, lambda: self._update_error(f"Download failed: {e}"))  # noqa: F821
+                self.root.after(
+                    0,
+                    lambda: self._enable_btn(
+                        self._btn_update, self._do_auto_update, f"Install v{latest}", BTN_ORNG
+                    ),
+                )
 
         threading.Thread(target=download, daemon=True).start()
 
@@ -625,13 +702,21 @@ class CasparControllerGUI:
 
     def _up_to_date(self):
         self._redraw_btn(self._btn_update, "Up to Date ✓", SUCCESS, tk.NORMAL)
-        self.root.after(3000, lambda: self._enable_btn(
-            self._btn_update, self._check_updates, "Check for Updates", ACCENT))
+        self.root.after(
+            3000,
+            lambda: self._enable_btn(
+                self._btn_update, self._check_updates, "Check for Updates", ACCENT
+            ),
+        )
 
     def _update_error(self, err: str):
         self._redraw_btn(self._btn_update, "Check Failed", BTN_GRAY, tk.NORMAL)
-        self.root.after(3000, lambda: self._enable_btn(
-            self._btn_update, self._check_updates, "Check for Updates", ACCENT))
+        self.root.after(
+            3000,
+            lambda: self._enable_btn(
+                self._btn_update, self._check_updates, "Check for Updates", ACCENT
+            ),
+        )
 
     def _auto_start_caspar(self):
         self._status_label.config(text="Auto-starting CasparCG...", fg=MUTED)
@@ -649,7 +734,9 @@ class CasparControllerGUI:
                     parent=self.root,
                 )
             else:
-                self._status_label.config(text="Auto-start: CasparCG exe not found — set path in Settings", fg=ERROR)
+                self._status_label.config(
+                    text="Auto-start: CasparCG exe not found — set path in Settings", fg=ERROR
+                )
                 self._enable_btn(self._btn_start, self._start_caspar, "Start CasparCG", BTN_GREEN)
             return
         if not _auto:
@@ -696,19 +783,29 @@ class CasparControllerGUI:
 
                 self._sync_api_managers()
                 if started:
-                    self.root.after(0, lambda s=len(started), total=len(instances):
-                                    self._on_caspar_started(s, total))
+                    self.root.after(
+                        0,
+                        # Defaults bind the values now for the Tk callback (deliberate).
+                        lambda s=len(started), total=len(instances): self._on_caspar_started(  # noqa: B008
+                            s, total
+                        ),
+                    )
                 else:
                     self._managers = {}
                     self._sync_api_managers()
-                    self.root.after(0, lambda: self._on_caspar_failed(
-                        "No CasparCG instances started successfully.\n"
-                        "Check the exe path and that AMCP ports are free."
-                    ))
-            except Exception as exc:
+                    self.root.after(
+                        0,
+                        lambda: self._on_caspar_failed(
+                            "No CasparCG instances started successfully.\n"
+                            "Check the exe path and that AMCP ports are free."
+                        ),
+                    )
+            # Known bug: `exc` is deleted when the except block ends, so the lambda
+            # raises NameError and the failure dialog never appears. Fixed in #5.
+            except Exception as exc:  # noqa: F841
                 self._managers = {}
                 self._sync_api_managers()
-                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))
+                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))  # noqa: F821
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -720,10 +817,12 @@ class CasparControllerGUI:
         """
         exe = load_config().get("caspar_exe_path", "").strip()
         if not os.path.isfile(exe):
-            messagebox.showerror("CasparCG Not Found",
-                                 f"Cannot find:\n{exe or '(no path set)'}\n\n"
-                                 "Go to Web UI → Settings to set the CasparCG executable path.",
-                                 parent=self.root)
+            messagebox.showerror(
+                "CasparCG Not Found",
+                f"Cannot find:\n{exe or '(no path set)'}\n\n"
+                "Go to Web UI → Settings to set the CasparCG executable path.",
+                parent=self.root,
+            )
             return
         self._disable_btn(self._btn_start, "Starting...")
         self._status_label.config(text="Starting remaining instances...", fg=MUTED)
@@ -735,7 +834,7 @@ class CasparControllerGUI:
                 started = []
                 errors = []
                 first = True
-                for i, inst in enumerate(instances):
+                for inst in instances:
                     port = instance_amcp_port(cfg, inst)
                     if AMCPClient(port=port).ping():
                         continue  # already live — leave it alone
@@ -743,6 +842,7 @@ class CasparControllerGUI:
                         time.sleep(5)
                     first = False
                     from elliotts_casper_controller.config_manager import regenerate_instance_config
+
                     regenerate_instance_config(cfg, inst)
                     m = CasparProcessManager(
                         exe_path=exe,
@@ -762,11 +862,14 @@ class CasparControllerGUI:
                         errors.append(inst["id"])
                 self._sync_api_managers()
                 total = len(instances)
-                live = sum(1 for inst in instances
-                           if AMCPClient(port=instance_amcp_port(cfg, inst)).ping())
+                live = sum(
+                    1 for inst in instances if AMCPClient(port=instance_amcp_port(cfg, inst)).ping()
+                )
                 self.root.after(0, lambda s=live, t=total: self._on_caspar_started(s, t))
-            except Exception as exc:
-                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))
+            # Known bug: `exc` is deleted when the except block ends, so the lambda
+            # raises NameError and the failure dialog never appears. Fixed in #5.
+            except Exception as exc:  # noqa: F841
+                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))  # noqa: F821
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -782,13 +885,16 @@ class CasparControllerGUI:
         self._status_label.config(text="CasparCG failed to start", fg=ERROR)
         self._enable_btn(self._btn_start, self._start_caspar, "Start CasparCG", BTN_GREEN)
         logger.error(f"CasparCG failed: {reason}")
-        messagebox.showerror("CasparCG Failed", f"Could not start CasparCG:\n\n{reason}", parent=self.root)
+        messagebox.showerror(
+            "CasparCG Failed", f"Could not start CasparCG:\n\n{reason}", parent=self.root
+        )
 
     def _stop_caspar(self):
         def run():
             # Stop all managers in parallel for instant response
-            threads = [threading.Thread(target=m.stop, daemon=True)
-                       for m in list(self._managers.values())]
+            threads = [
+                threading.Thread(target=m.stop, daemon=True) for m in list(self._managers.values())
+            ]
             for t in threads:
                 t.start()
             for t in threads:
@@ -811,6 +917,7 @@ class CasparControllerGUI:
     def _sync_api_managers(self) -> None:
         """Mirror self._managers into core._managers so dashboard controls work."""
         import sys
+
         core = sys.modules.get("elliotts_casper_controller.core")
         if core is None:
             return
@@ -848,7 +955,8 @@ class CasparControllerGUI:
             if adopted > 0:
                 self._caspar_running = True
                 self._status_label.config(
-                    text=f"CasparCG running (reconnected {adopted} instance(s))", fg=SUCCESS)
+                    text=f"CasparCG running (reconnected {adopted} instance(s))", fg=SUCCESS
+                )
                 self._enable_btn(self._btn_stop, self._stop_caspar, "Stop CasparCG", BTN_RED)
                 logger.info(f"Reconnected to {adopted} CasparCG instance(s).")
         except Exception:
@@ -876,15 +984,27 @@ class CasparControllerGUI:
                     # Always update count so it reflects instances coming up/down during restarts
                     tot = len(instances)
                     all_up = running_count == tot
-                    self.root.after(0, lambda rc=running_count, t=tot:
-                                    self._status_label.config(
-                                        text=f"CasparCG running — {rc}/{t} instances", fg=SUCCESS))
+                    self.root.after(
+                        0,
+                        lambda rc=running_count, t=tot: self._status_label.config(
+                            text=f"CasparCG running — {rc}/{t} instances", fg=SUCCESS
+                        ),
+                    )
                     if all_up:
-                        self.root.after(0, lambda: self._disable_btn(self._btn_start, "All Running"))
+                        self.root.after(
+                            0, lambda: self._disable_btn(self._btn_start, "All Running")
+                        )
                     else:
                         remaining = tot - running_count
-                        self.root.after(0, lambda r=remaining: self._enable_btn(
-                            self._btn_start, self._start_remaining, f"Start Remaining ({r})", BTN_GREEN))
+                        self.root.after(
+                            0,
+                            lambda r=remaining: self._enable_btn(
+                                self._btn_start,
+                                self._start_remaining,
+                                f"Start Remaining ({r})",
+                                BTN_GREEN,
+                            ),
+                        )
                     if not self._caspar_running:
                         self._caspar_running = True
                 elif self._caspar_running:
@@ -892,8 +1012,12 @@ class CasparControllerGUI:
                     self.root.after(0, self._on_caspar_stopped)
                 else:
                     # Nothing running — ensure Start button is active
-                    self.root.after(0, lambda: self._enable_btn(
-                        self._btn_start, self._start_caspar, "Start CasparCG", BTN_GREEN))
+                    self.root.after(
+                        0,
+                        lambda: self._enable_btn(
+                            self._btn_start, self._start_caspar, "Start CasparCG", BTN_GREEN
+                        ),
+                    )
             except Exception:
                 pass
             self.root.after(4000, self._poll_caspar_status)
@@ -914,6 +1038,7 @@ class CasparControllerGUI:
 
     def _restart_inst(self, inst_id: int, name: str):
         """Stop the CasparCG process for one instance and relaunch it."""
+
         def run():
             cfg = load_config()
             inst_map = {i["id"]: i for i in cfg.get("instances", [])}
@@ -940,10 +1065,12 @@ class CasparControllerGUI:
                 logger.warning(f"Inst {inst_id} ({name}) failed to restart")
                 self._managers.pop(inst_id, None)
             self._sync_api_managers()
+
         threading.Thread(target=run, daemon=True).start()
 
     def _restart_all(self):
         """Stop all CasparCG processes and relaunch them sequentially."""
+
         def run():
             cfg = load_config()
             instances = cfg.get("instances", [])
@@ -969,6 +1096,7 @@ class CasparControllerGUI:
                     logger.warning(f"Inst {inst['id']} failed to restart")
                     self._managers.pop(inst["id"], None)
             self._sync_api_managers()
+
         threading.Thread(target=run, daemon=True).start()
 
     # -----------------------------------------------------------------------
@@ -982,21 +1110,21 @@ class CasparControllerGUI:
         color = (0, 188, 212, 255)
         lw = 2
         for r in [22, 15, 8]:
-            d.ellipse([cx-r, cy-r, cx+r, cy+r], outline=color, width=lw)
-        d.line([(cx, cy-22), (cx, 2)], fill=color, width=lw)
-        d.line([(cx+22, cy), (62, cy)], fill=color, width=lw)
-        d.line([(cx-4, cy+20), (8, 60)], fill=color, width=lw)
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=lw)
+        d.line([(cx, cy - 22), (cx, 2)], fill=color, width=lw)
+        d.line([(cx + 22, cy), (62, cy)], fill=color, width=lw)
+        d.line([(cx - 4, cy + 20), (8, 60)], fill=color, width=lw)
         return img
 
     def _hide_to_tray(self):
         self.root.withdraw()
         if not self._tray_icon:
             menu = pystray.Menu(
-                pystray.MenuItem("Show Window",          lambda: self._show_from_tray()),
-                pystray.MenuItem("Open Web UI",          lambda: self._open_browser()),
+                pystray.MenuItem("Show Window", lambda: self._show_from_tray()),
+                pystray.MenuItem("Open Web UI", lambda: self._open_browser()),
                 pystray.MenuItem("Restart All Instances", lambda: self._restart_all()),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Quit",                 lambda: self._quit()),
+                pystray.MenuItem("Quit", lambda: self._quit()),
             )
             self._tray_icon = pystray.Icon(
                 "ElliotsCasparController",
@@ -1013,8 +1141,11 @@ class CasparControllerGUI:
             self._tray_icon = None
 
     def _on_close(self):
-        if messagebox.askokcancel("Quit", "Quit Elliott's Caspar Controller?\n\nThe web server will stop.",
-                                   parent=self.root):
+        if messagebox.askokcancel(
+            "Quit",
+            "Quit Elliott's Caspar Controller?\n\nThe web server will stop.",
+            parent=self.root,
+        ):
             self._quit()
 
     def _quit(self):
@@ -1033,9 +1164,16 @@ class CasparControllerGUI:
     # -----------------------------------------------------------------------
 
     _DISCO_COLORS = [
-        "#ff2020", "#ff6600", "#ffdd00", "#44ff00",
-        "#00ffaa", "#00eeff", "#0088ff", "#8800ff",
-        "#ff00ff", "#ff0077",
+        "#ff2020",
+        "#ff6600",
+        "#ffdd00",
+        "#44ff00",
+        "#00ffaa",
+        "#00eeff",
+        "#0088ff",
+        "#8800ff",
+        "#ff00ff",
+        "#ff0077",
     ]
 
     _DISCO_SUBTITLES = [
@@ -1067,6 +1205,7 @@ class CasparControllerGUI:
 
     def _start_disco(self):
         import random
+
         self._disco_mode = True
         self._title_label.config(text="Elliott's Caspar Controller")
         self._version_label.config(text=random.choice(self._DISCO_SUBTITLES), fg=TEXT)
@@ -1081,23 +1220,29 @@ class CasparControllerGUI:
         self._disco_mode = False
         self._title_label.config(text="Elliott's Caspar Controller", fg=TEXT)
         self._version_label.config(text=f"Version {__version__}", fg=MUTED)
-        self._set_btn_color(self._btn_start,  BTN_GREEN)
-        self._set_btn_color(self._btn_stop,   BTN_RED)
-        self._set_btn_color(self._btn_web,    BTN_BLUE)
+        self._set_btn_color(self._btn_start, BTN_GREEN)
+        self._set_btn_color(self._btn_stop, BTN_RED)
+        self._set_btn_color(self._btn_web, BTN_BLUE)
         self._set_btn_color(self._btn_update, ACCENT)
-        self._set_btn_color(self._btn_hide,   BTN_GRAY)
-        self._set_btn_color(self._btn_quit,   BTN_RED_DK)
+        self._set_btn_color(self._btn_hide, BTN_GRAY)
+        self._set_btn_color(self._btn_quit, BTN_RED_DK)
 
     def _disco_tick(self):
         if not self._disco_mode:
             return
         import random
+
         c = self._DISCO_COLORS
         self._title_label.config(fg=random.choice(c))
-        self._version_label.config(fg=random.choice(c),
-                                    text=random.choice(self._DISCO_SUBTITLES))
-        for btn in (self._btn_start, self._btn_stop, self._btn_web,
-                    self._btn_update, self._btn_hide, self._btn_quit):
+        self._version_label.config(fg=random.choice(c), text=random.choice(self._DISCO_SUBTITLES))
+        for btn in (
+            self._btn_start,
+            self._btn_stop,
+            self._btn_web,
+            self._btn_update,
+            self._btn_hide,
+            self._btn_quit,
+        ):
             self._set_btn_color(btn, random.choice(c))
         self.root.after(120, self._disco_tick)
 
@@ -1112,6 +1257,7 @@ class CasparControllerGUI:
 # ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
+
 
 def launch():
     app = CasparControllerGUI()

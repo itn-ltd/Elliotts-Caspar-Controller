@@ -1,0 +1,10 @@
+# Optional local hook: `pip install -e ".[dev]"` then `pre-commit install`.
+# Runs the same checks as CI on every commit. Keep `rev` in step with the
+# ruff version pinned in pyproject.toml.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
