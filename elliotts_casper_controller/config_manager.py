@@ -4,6 +4,12 @@ import json
 import os
 import sys
 
+from elliotts_casper_controller.auth import hash_password, new_api_key, verify_password
+
+SECRET_KEYS = ("api_key", "web_password_hash")
+# Seeds the first web UI password (e.g. set by Intune); users must change it on first sign-in.
+INITIAL_PASSWORD_ENV = "CASPAR_CONTROLLER_INITIAL_PASSWORD"
+
 
 def _config_dir() -> str:
     if getattr(sys, "frozen", False):
@@ -20,8 +26,9 @@ DEFAULT_CONFIG = {
     "autostart_caspar": False,
     "media_path": "",
     "server_name": "",
-    "web_password": "",
-    "web_password_enabled": False,
+    "web_password_hash": "",
+    "password_change_required": False,
+    "api_key": "",
     "instances": [],
     "remote_controllers": [],
 }
@@ -97,7 +104,48 @@ def load() -> dict:
         inst.setdefault("startup_command", "")
         inst.setdefault("url", "")
 
+    if _secure_secrets(config):
+        save(config)
     return config
+
+
+def set_password(config: dict, password: str, must_change: bool = False) -> None:
+    """Store a new web UI password hash. Raises ValueError if it's blank or unchanged."""
+    if not password.strip():
+        raise ValueError("Password can't be empty")
+    current = config["web_password_hash"]
+    if current and verify_password(password, current):
+        raise ValueError("Choose a different password")
+    config["web_password_hash"] = hash_password(password)
+    config["password_change_required"] = must_change
+
+
+def _secure_secrets(config: dict) -> bool:
+    """Hash v1 passwords, apply the initial password and create the API key. True if changed."""
+    changed = False
+    plaintext = config.pop("web_password", None)
+    enabled = config.pop("web_password_enabled", None)
+    if plaintext is not None or enabled is not None:
+        changed = True
+        if enabled and plaintext and plaintext.strip() and not config["web_password_hash"]:
+            config["web_password_hash"] = hash_password(plaintext)
+    initial = os.environ.get(INITIAL_PASSWORD_ENV, "")
+    if initial.strip() and not config["web_password_hash"]:
+        set_password(config, initial, must_change=True)
+        changed = True
+    if not config["api_key"]:
+        config["api_key"] = new_api_key()
+        changed = True
+    return changed
+
+
+def without_secrets(config: dict) -> dict:
+    return {k: v for k, v in config.items() if k not in SECRET_KEYS}
+
+
+def public_view(config: dict) -> dict:
+    """Config without secrets, plus whether a password is set."""
+    return {**without_secrets(config), "password_set": bool(config.get("web_password_hash"))}
 
 
 def save(config: dict) -> None:

@@ -17,27 +17,40 @@ REMOTE_STATUS = {
 }
 
 
+REMOTE_KEY = "remote-key"
+
+
 class FakeRemote:
-    """Answers like another controller's API and records POSTs."""
+    """Answers like another controller's API, checks its key and records POSTs."""
 
     def __init__(self):
         self.status = REMOTE_STATUS
         self.posts = []
+        self.keys_seen = []
         remote = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
 
-            def _json(self, body):
+            def _json(self, body, status=200):
                 data = json.dumps(body).encode()
-                self.send_response(200)
+                self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
 
+            def _authorised(self):
+                remote.keys_seen.append(self.headers.get("X-API-Key"))
+                if remote.keys_seen[-1] == REMOTE_KEY:
+                    return True
+                self._json({"detail": "Invalid or missing API key"}, status=401)
+                return False
+
             def do_GET(self):
+                if not self._authorised():
+                    return
                 if self.path == "/api/status":
                     self._json(remote.status)
                 elif self.path == "/api/config":
@@ -48,6 +61,8 @@ class FakeRemote:
                     self.send_error(404)
 
             def do_POST(self):
+                if not self._authorised():
+                    return
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length)) if length else None
                 remote.posts.append((self.path, body))
@@ -74,9 +89,20 @@ def offline_url():
     return f"http://127.0.0.1:{free_port()}"
 
 
-def test_remotes_online_and_offline(client, write_config, remote, offline_url):
-    write_config({"remote_controllers": [{"url": remote.url + "/"}, {"url": offline_url}]})
+@pytest.fixture
+def remotes_config(write_config, remote, offline_url):
+    """Remote 0 is the fake (right key), remote 1 is unreachable."""
+    return write_config(
+        {
+            "remote_controllers": [
+                {"url": remote.url + "/", "api_key": REMOTE_KEY},
+                {"url": offline_url, "api_key": REMOTE_KEY},
+            ]
+        }
+    )
 
+
+def test_remotes_online_and_offline(client, remotes_config, remote, offline_url):
     online, offline = client.get("/api/remotes").json()["remotes"]
 
     assert online == {
@@ -93,11 +119,24 @@ def test_remotes_online_and_offline(client, write_config, remote, offline_url):
         "online": False,
         "status": None,
     }
+    assert set(remote.keys_seen) == {REMOTE_KEY}
+
+
+def test_remote_with_wrong_key(client, write_config, remote):
+    write_config({"remote_controllers": [{"url": remote.url, "api_key": "wrong"}]})
+    assert client.get("/api/remotes").json()["remotes"][0] == {
+        "idx": 0,
+        "url": remote.url,
+        "display_name": remote.url,
+        "online": True,
+        "status": None,
+        "auth_error": True,
+    }
 
 
 def test_remote_name_falls_back_to_config_then_cache(client, write_config, remote):
     remote.status = {**REMOTE_STATUS, "server_name": ""}
-    write_config({"remote_controllers": [{"url": remote.url}]})
+    write_config({"remote_controllers": [{"url": remote.url, "api_key": REMOTE_KEY}]})
     assert client.get("/api/remotes").json()["remotes"][0]["display_name"] == "From Config"
 
     remote.close()  # now offline: the cached name is still shown
@@ -115,8 +154,7 @@ def test_no_remotes(client, write_config):
     assert client.get("/api/remotes").json() == {"remotes": []}
 
 
-def test_remote_media_proxy(client, write_config, remote, offline_url):
-    write_config({"remote_controllers": [{"url": remote.url}, {"url": offline_url}]})
+def test_remote_media_proxy(client, remotes_config):
     assert client.get("/api/remote/0/media").json() == {"clips": ["AMB", "TEST_RED"]}
     assert client.get("/api/remote/1/media").json() == {
         "clips": [],
@@ -125,9 +163,7 @@ def test_remote_media_proxy(client, write_config, remote, offline_url):
     assert client.get("/api/remote/5/media").status_code == 404
 
 
-def test_remote_action_proxy(client, write_config, remote, offline_url):
-    write_config({"remote_controllers": [{"url": remote.url}, {"url": offline_url}]})
-
+def test_remote_action_proxy(client, remotes_config, remote):
     r = client.post("/api/remote/0/proxy", json={"path": "/api/server/start"})
     assert r.json() == {"ok": True, "message": "done"}
     client.post(
@@ -143,9 +179,14 @@ def test_remote_action_proxy(client, write_config, remote, offline_url):
 
 
 def test_remote_connection_test(client, remote, offline_url):
-    assert client.post("/api/remote/test", json={"url": remote.url}).json() == {
+    def test(url, key=REMOTE_KEY):
+        return client.post("/api/remote/test", json={"url": url, "api_key": key}).json()
+
+    assert test(remote.url) == {
         "online": True,
+        "authorised": True,
         "server_name": "Studio B",
         "version": "1.1.1",
     }
-    assert client.post("/api/remote/test", json={"url": offline_url}).json() == {"online": False}
+    assert test(remote.url, "wrong") == {"online": True, "authorised": False}
+    assert test(offline_url) == {"online": False}

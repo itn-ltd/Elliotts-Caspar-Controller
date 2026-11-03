@@ -144,6 +144,12 @@ Settings are saved to `elliotts_casper_config.json` next to the exe (or project 
 
 Per-instance CasparCG configs (`casparcg_inst_N.config`) are auto-generated next to `casparcg.exe` each time CasparCG is started. Do not edit these manually — they will be overwritten.
 
+### Web UI password and API key
+
+- A web UI password is required. Until one is set, the UI only works from a browser on the machine running the controller.
+- To set the first password automatically (e.g. from Intune), set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` before the app starts. It only applies when no password is set, and the first person to sign in with it must choose a new one.
+- Companion, panels and other controllers need the API key from **Settings → API Key**, sent as an `X-API-Key` header or `?api_key=` in the URL.
+
 ---
 
 ## Building the executable

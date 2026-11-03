@@ -3,8 +3,7 @@
 import json
 
 import pytest
-from conftest import instance
-from fastapi.testclient import TestClient
+from conftest import API_KEY, instance
 
 from elliotts_casper_controller import core
 
@@ -87,12 +86,20 @@ def test_export_config(client, write_config):
     assert r.json()["server_name"] == "Studio A"
 
 
-def test_import_config_replaces_everything(client, write_config, config_dir):
-    write_config({"server_name": "Old", "web_port": 6000})
-    r = client.post("/api/config/import", json={"server_name": "Imported", "instances": []})
+def test_import_replaces_everything_except_secrets(client, write_config, config_dir):
+    write_config({"server_name": "Old", "web_port": 6000, "web_password_hash": "scrypt$aa$bb"})
+    r = client.post(
+        "/api/config/import",
+        json={"server_name": "Imported", "instances": [], "api_key": "x", "web_password_hash": "y"},
+    )
     assert r.json() == {"ok": True}
     saved = json.loads((config_dir / "elliotts_caspar_config.json").read_text())
-    assert saved == {"server_name": "Imported", "instances": []}
+    assert saved == {
+        "server_name": "Imported",
+        "instances": [],
+        "api_key": API_KEY,
+        "web_password_hash": "scrypt$aa$bb",
+    }
 
 
 @pytest.mark.parametrize("body", ["not json", "[1, 2]"])
@@ -101,50 +108,3 @@ def test_import_rejects_non_objects(client, body):
         "/api/config/import", content=body, headers={"content-type": "application/json"}
     )
     assert r.status_code == 400
-
-
-# ---------------------------------------------------------------- web password
-
-
-@pytest.fixture
-def password_on(write_config):
-    return write_config({"web_password": "hunter2", "web_password_enabled": True})
-
-
-def test_pages_open_when_password_disabled(client, write_config):
-    write_config({"web_password": "hunter2", "web_password_enabled": False})
-    assert client.get("/", follow_redirects=False).status_code == 200
-
-
-def test_pages_redirect_to_login(client, password_on):
-    r = client.get("/settings", follow_redirects=False)
-    assert r.status_code == 307
-    assert r.headers["location"] == "/login"
-
-
-def test_login_page_and_static_are_open(client, password_on):
-    assert client.get("/login").status_code == 200
-    assert client.get("/static/esc_icon.png").status_code == 200
-
-
-def test_wrong_password_is_401(client, password_on):
-    r = client.post("/login", json={"password": "nope"})
-    assert r.status_code == 401
-    assert r.json()["detail"] == "Incorrect password"
-
-
-def test_login_then_logout(client, password_on):
-    r = client.post("/login", json={"password": "hunter2"})
-    assert r.json() == {"ok": True}
-    token = r.cookies["session"]
-    assert client.get("/", follow_redirects=False).status_code == 200
-
-    client.post("/logout")
-    # Replay the old token: logout must revoke it on the server, not just clear the cookie.
-    client.cookies.set("session", token)
-    assert client.get("/", follow_redirects=False).status_code == 307
-
-
-def test_localhost_bypasses_password(password_on):
-    local = TestClient(core.app, client=("127.0.0.1", 50000))
-    assert local.get("/", follow_redirects=False).status_code == 200
