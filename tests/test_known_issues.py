@@ -9,27 +9,20 @@ import itertools
 import shutil
 import types
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 import pytest
-from conftest import free_port, instance
+from conftest import FIXTURES, TESTS_DIR, free_port, instance, run_status_worker_once
 from fake_amcp import FakeAMCPServer
-from test_status import run_status_worker_once
 
 from elliotts_casper_controller import config_manager as cm, core, ndi_tally, process_manager
 from elliotts_casper_controller.process_manager import CasparProcessManager
 
-FIXTURES = Path(__file__).parent / "fixtures"
-PACKAGE = Path(__file__).parent.parent / "elliotts_casper_controller"
+PACKAGE = TESTS_DIR.parent / "elliotts_casper_controller"
 
 
-def issue(number, why):
-    return pytest.mark.xfail(reason=f"#{number}: {why}")
-
-
-@pytest.fixture(autouse=True)
-def no_tally(monkeypatch):
-    monkeypatch.setattr(core, "_refresh_tally_monitors", lambda: None)
+def issue(number: int, why: str, raises: type | tuple = AssertionError) -> pytest.MarkDecorator:
+    # `raises` stops an unrelated error (e.g. from a partial fix) passing as "still broken".
+    return pytest.mark.xfail(reason=f"#{number}: {why}", raises=raises)
 
 
 # ---------------------------------------------------------------- #2 access control
@@ -80,7 +73,11 @@ def test_caspar_launched_directly_without_a_shell(monkeypatch, tmp_path):
     assert captured["args"] == [exe, "casparcg_inst_1.config"]
 
 
-@issue(3, "names are written into casparcg.config without XML escaping")
+@issue(
+    3,
+    "names are written into casparcg.config without XML escaping",
+    (ET.ParseError, AssertionError),
+)
 def test_generated_config_escapes_names(tmp_path):
     cfg = {
         "caspar_exe_path": str(tmp_path / "casparcg.exe"),

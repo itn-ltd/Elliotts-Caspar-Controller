@@ -5,12 +5,11 @@ import shutil
 from pathlib import Path
 
 import pytest
-from conftest import instance
+from conftest import FIXTURES, TESTS_DIR, instance
 
 from elliotts_casper_controller import config_manager as cm
 
-FIXTURES = Path(__file__).parent / "fixtures"
-GOLDEN = Path(__file__).parent / "golden"
+GOLDEN = TESTS_DIR / "golden"
 
 
 # ---------------------------------------------------------------- loading

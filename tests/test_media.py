@@ -1,7 +1,9 @@
 """/api/media clip listing."""
 
+from pathlib import Path
 
-def make_media(root, names):
+
+def make_media(root: Path, names: list[str]) -> None:
     for name in names:
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)

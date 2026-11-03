@@ -2,7 +2,7 @@
 
 import psutil
 import pytest
-from conftest import free_port, windows_only
+from conftest import free_port, instance, windows_only
 from fake_amcp import FakeAMCPServer
 
 from elliotts_casper_controller import config_manager as cm
@@ -18,7 +18,7 @@ def manager(caspar_dir):
     cfg = {
         "caspar_exe_path": str(caspar_dir / "casparcg.cmd"),
         "video_mode": "1080p2500",
-        "instances": [{"id": 1, "name": "GFX1", "ndi_name": "PCR3 GFX1", "amcp_port": port}],
+        "instances": [instance(1, "GFX1", amcp_port=port)],
     }
     cm.regenerate_instance_config(cfg, cfg["instances"][0])
     m = CasparProcessManager(
@@ -38,11 +38,11 @@ def test_start_waits_for_amcp_and_stop_kills_tree(manager):
     assert manager.start() is True
     assert manager.is_running() is True
     root = psutil.Process(manager.pid)
-    names = {p.name().lower() for p in [root, *root.children(recursive=True)]}
+    tree = [root, *root.children(recursive=True)]
+    names = {p.name().lower() for p in tree}
     assert "cmd.exe" in names
     assert "python.exe" in names
 
-    tree = [root, *root.children(recursive=True)]
     manager.stop()
     gone, alive = psutil.wait_procs(tree, timeout=5)
     assert alive == []

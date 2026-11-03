@@ -9,7 +9,6 @@ CasparCG-like log lines, logs received commands to amcp_<port>.log, and exits on
 
 import os
 import sys
-import time
 import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,9 +22,7 @@ def main():
     print(f"[fake casparcg] config={config_path} port={port}", flush=True)
     server = FakeAMCPServer(port=port, log_path=os.path.abspath(f"amcp_{port}.log"))
     print("[fake casparcg] AMCP listening", flush=True)
-    while not server.bye.wait(0.2):
-        pass
-    time.sleep(0.1)
+    server.bye.wait()
     server.close()
 
 

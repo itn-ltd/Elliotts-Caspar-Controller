@@ -8,12 +8,6 @@ from fastapi.testclient import TestClient
 
 from elliotts_casper_controller import core
 
-
-@pytest.fixture(autouse=True)
-def no_tally(monkeypatch):
-    monkeypatch.setattr(core, "_refresh_tally_monitors", lambda: None)
-
-
 # ---------------------------------------------------------------- pages
 
 
@@ -142,11 +136,12 @@ def test_wrong_password_is_401(client, password_on):
 def test_login_then_logout(client, password_on):
     r = client.post("/login", json={"password": "hunter2"})
     assert r.json() == {"ok": True}
-    assert "session" in r.cookies
+    token = r.cookies["session"]
     assert client.get("/", follow_redirects=False).status_code == 200
 
     client.post("/logout")
-    client.cookies.clear()
+    # Replay the old token: logout must revoke it on the server, not just clear the cookie.
+    client.cookies.set("session", token)
     assert client.get("/", follow_redirects=False).status_code == 307
 
 

@@ -9,6 +9,7 @@ import json
 import os
 import socket
 import sys
+import threading
 import time
 import types
 from pathlib import Path
@@ -17,11 +18,12 @@ import psutil
 import pytest
 from fastapi.testclient import TestClient
 
-from elliotts_casper_controller import config_manager, core
+from elliotts_casper_controller import config_manager, core, ndi_tally
 from elliotts_casper_controller.process_manager import CasparProcessManager
 
 TESTS_DIR = Path(__file__).parent
 FAKE_CASPAR = TESTS_DIR / "fake_caspar.py"
+FIXTURES = TESTS_DIR / "fixtures"
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="launches Windows processes")
 
@@ -47,6 +49,13 @@ def no_global_kills(monkeypatch):
         staticmethod(lambda port: calls.append(("kill_port", port))),
     )
     return calls
+
+
+@pytest.fixture(autouse=True)
+def no_ndi(monkeypatch):
+    """Behave as if ndi-python isn't installed, whatever the environment."""
+    monkeypatch.setattr(ndi_tally, "is_available", lambda: False)
+    monkeypatch.setattr(core, "_refresh_tally_monitors", lambda: None)
 
 
 @pytest.fixture(autouse=True)
@@ -125,7 +134,27 @@ def amcp_log(caspar_dir: Path, port: int) -> list:
     return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
 
-def instance(id_, name, type_="html", url="", startup_command="", amcp_port=0, ndi_name=None):
+def run_status_worker_once() -> None:
+    """Run core's background status worker until it has published one snapshot."""
+    core._status_refresh_stop.clear()
+    t = threading.Thread(target=core._background_status_worker, daemon=True)
+    t.start()
+    deadline = time.time() + 10
+    while core._status_cache["ts"] == 0.0 and time.time() < deadline:
+        time.sleep(0.05)
+    core._status_refresh_stop.set()
+    t.join(timeout=5)
+
+
+def instance(
+    id_: int,
+    name: str,
+    type_: str = "html",
+    url: str = "",
+    startup_command: str = "",
+    amcp_port: int = 0,
+    ndi_name: str | None = None,
+) -> dict:
     return {
         "id": id_,
         "name": name,

@@ -5,12 +5,9 @@ been captured from a real CasparCG yet: replace it with captures from the
 galleries' build when they are available (see #7).
 """
 
-import threading
-import time
-
 import pytest
-from conftest import free_port, instance
-from fake_amcp import FakeAMCPServer
+from conftest import free_port, instance, run_status_worker_once
+from fake_amcp import EMPTY_LAYER_XML, FakeAMCPServer
 
 from elliotts_casper_controller import core
 
@@ -50,7 +47,7 @@ def test_parse_strips_numeric_suffix():
         "201 INFO OK\r\n",
         "201 INFO OK\r\n<not xml",
         "201 INFO OK\r\n<layer/>",
-        '201 INFO OK\r\n<layer><foreground><producer type="empty-producer"/></foreground></layer>',
+        "201 INFO OK\r\n" + EMPTY_LAYER_XML,
     ],
 )
 def test_parse_non_playing_replies_are_empty(raw):
@@ -67,31 +64,6 @@ def test_parse_loop_false_values():
 
 
 STATUS_KEYS = {"running", "version", "instances", "needs_setup", "server_name", "tally_available"}
-INSTANCE_KEYS = {
-    "id",
-    "name",
-    "ndi_name",
-    "type",
-    "url",
-    "startup_command",
-    "amcp_port",
-    "status",
-    "layer",
-    "on_program",
-    "on_preview",
-}
-
-
-def run_status_worker_once():
-    """Run the background worker until it has published one snapshot."""
-    core._status_refresh_stop.clear()
-    t = threading.Thread(target=core._background_status_worker, daemon=True)
-    t.start()
-    deadline = time.time() + 10
-    while core._status_cache["ts"] == 0.0 and time.time() < deadline:
-        time.sleep(0.05)
-    core._status_refresh_stop.set()
-    t.join(timeout=5)
 
 
 def test_status_shape_before_first_poll(client, write_config):
@@ -108,10 +80,8 @@ def test_status_shape_before_first_poll(client, write_config):
     assert data["running"] is False
     assert data["needs_setup"] is False
     assert data["server_name"] == "Studio A"
-    assert data["tally_available"] is False  # ndi-python not installed in tests
-    inst = data["instances"][0]
-    assert set(inst) == INSTANCE_KEYS
-    assert inst == {
+    assert data["tally_available"] is False  # NDI is stubbed out in conftest
+    assert data["instances"][0] == {
         "id": 1,
         "name": "GFX1",
         "ndi_name": "PCR3 GFX1",

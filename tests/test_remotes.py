@@ -20,8 +20,8 @@ REMOTE_STATUS = {
 class FakeRemote:
     """Answers like another controller's API and records POSTs."""
 
-    def __init__(self, status=None):
-        self.status = status or REMOTE_STATUS
+    def __init__(self):
+        self.status = REMOTE_STATUS
         self.posts = []
         remote = self
 

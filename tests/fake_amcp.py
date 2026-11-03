@@ -6,14 +6,26 @@ Replies can be overridden per verb with ``replies={"INFO": "404 INFO FAILED"}``.
 """
 
 import socketserver
+import sys
 import threading
 
 EMPTY_LAYER_XML = '<layer><foreground><producer type="empty-producer"/></foreground></layer>'
 
 
+class _TCPServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    # On Windows SO_REUSEADDR lets two servers bind the same port, so stopped-server checks lie.
+    allow_reuse_address = sys.platform != "win32"
+
+
 class FakeAMCPServer:
     def __init__(
-        self, port=0, version="2.3.3 Stable", info_xml=EMPTY_LAYER_XML, replies=None, log_path=None
+        self,
+        port: int = 0,
+        version: str = "2.3.3 Stable",
+        info_xml: str = EMPTY_LAYER_XML,
+        replies: dict | None = None,
+        log_path: str | None = None,
     ):
         self.version = version
         self.info_xml = info_xml
@@ -36,21 +48,19 @@ class FakeAMCPServer:
                 if reply:
                     self.wfile.write(reply.encode())
 
-        socketserver.ThreadingTCPServer.allow_reuse_address = True
-        self._server = socketserver.ThreadingTCPServer(("127.0.0.1", port), Handler)
-        self._server.daemon_threads = True
+        self._server = _TCPServer(("127.0.0.1", port), Handler)
         self.port = self._server.server_address[1]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
 
-    def _record(self, line):
+    def _record(self, line: str) -> None:
         with self._lock:
             self.commands.append(line)
             if self.log_path:
                 with open(self.log_path, "a", encoding="utf-8") as f:
                     f.write(line + "\n")
 
-    def reply_for(self, command):
+    def reply_for(self, command: str) -> str:
         verb = command.split(" ", 1)[0].upper()
         if verb in self.replies:
             return self.replies[verb] + "\r\n"

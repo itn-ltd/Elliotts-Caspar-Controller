@@ -1,7 +1,6 @@
 """FastAPI application — web UI and REST API for Elliott's Caspar Controller."""
 
 import os
-import os as _os
 import secrets
 import sys
 import threading
@@ -111,7 +110,7 @@ def _parse_layer_info(raw: str) -> dict:
         fn_el = fg.find("filename")
         clip = None
         if fn_el is not None and fn_el.text:
-            clip = _os.path.basename(fn_el.text.replace("\\", "/"))
+            clip = os.path.basename(fn_el.text.replace("\\", "/"))
             # Strip numeric suffix CasparCG sometimes appends (e.g. "clip.mp4_0")
             if clip and "_" in clip:
                 stem, _, tail = clip.rpartition("_")
