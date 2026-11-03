@@ -1,12 +1,13 @@
-name: Tests
+name: CI
 
+# Lint, format check and tests on every pull request, whatever its target branch
+# (phase branches into feature/v2-refactor, and that branch into master).
+# Builds and releases live in build.yml and only run on master.
 on:
   pull_request:
-  push:
-    branches: [master]
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
