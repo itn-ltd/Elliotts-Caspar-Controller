@@ -1,11 +1,10 @@
 name: CI
 
-# Every PR, plus pushes to the integration and main branches so merges are tested too.
-# Tests only: builds and releases are in build.yml (version tags).
+# Every PR, plus merges to master. Tests only: builds and releases are in build.yml (version tags).
 on:
   pull_request:
   push:
-    branches: [master, feature/v2-refactor]
+    branches: [master]
 
 concurrency:
   group: ci-${{ github.ref }}
