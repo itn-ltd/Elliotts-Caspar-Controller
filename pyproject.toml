@@ -50,8 +50,8 @@ dev = [
     "httpx>=0.24.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
+    "ruff==0.17.3",  # pinned so CI, pre-commit and local formatting agree
+    "pre-commit>=3.5.0",
     "bandit>=1.7.0",
 ]
 
@@ -77,16 +77,17 @@ packages = ["elliotts_casper_controller"]
 elliotts_casper_controller = ["*.json"]
 "*" = ["static/*"]
 
-# ==================== BLACK ====================
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-include = '\.pyi?$'
-
 # ==================== RUFF ====================
+# Ruff is both the linter and the formatter (`ruff check .`, `ruff format .`).
 [tool.ruff]
 line-length = 100
 target-version = "py38"
+# Superseded by the app; deleted in #4.
+extend-exclude = ["update_test"]
+
+[tool.ruff.format]
+# Keep each file's existing line endings (Windows checkouts use CRLF).
+line-ending = "auto"
 
 [tool.ruff.lint]
 select = [
@@ -100,6 +101,12 @@ select = [
 ignore = [
     "E501",
 ]
+# Never auto-delete "unused" variables: some are referenced by broken lambdas
+# (see #5) and need fixing by hand, not removing.
+unfixable = ["F841"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
 
 # ==================== PYTEST ====================
 [tool.pytest.ini_options]

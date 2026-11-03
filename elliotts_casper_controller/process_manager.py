@@ -231,7 +231,6 @@ class CasparProcessManager:
         import ctypes.wintypes
 
         user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
 
         # --- Find child PIDs (conhost + casparcg) ---
         conhost_pid = None

@@ -1,7 +1,9 @@
 """FastAPI application — web UI and REST API for Elliott's Caspar Controller."""
 
+import os
 import os as _os
 import secrets
+import sys
 import threading
 import time
 import webbrowser
@@ -11,25 +13,23 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import requests as _requests
-
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from elliotts_casper_controller import __version__
+from elliotts_casper_controller import __version__, ndi_tally
 from elliotts_casper_controller.amcp_client import AMCPClient
 from elliotts_casper_controller.config_manager import (
-    load as load_config,
-    save as save_config,
-    instance_amcp_port,
-    regenerate_instance_config,
-    regenerate_all_instance_configs,
     ensure_test_pattern_images,
+    instance_amcp_port,
+    load as load_config,
+    regenerate_all_instance_configs,
+    regenerate_instance_config,
+    save as save_config,
 )
 from elliotts_casper_controller.process_manager import CasparProcessManager
-from elliotts_casper_controller import ndi_tally
 
 # ---------------------------------------------------------------------------
 # State
@@ -152,12 +152,14 @@ def _background_status_worker():
             live: dict = {}
             layer_info: dict = {}
 
+            # Known race (#5): threads still running after join() write into the
+            # *next* poll's dicts, because these names are rebound each loop.
             def _fetch(inst):
-                client = AMCPClient(port=instance_amcp_port(cfg, inst), timeout=1.0)
+                client = AMCPClient(port=instance_amcp_port(cfg, inst), timeout=1.0)  # noqa: B023
                 raw = client.info_layer()
                 is_live = raw.startswith("201")
-                live[inst["id"]] = is_live
-                layer_info[inst["id"]] = (
+                live[inst["id"]] = is_live  # noqa: B023
+                layer_info[inst["id"]] = (  # noqa: B023
                     _parse_layer_info(raw)
                     if is_live
                     else {
@@ -547,10 +549,6 @@ def page(title: str, active: str, body: str, extra_js: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Static font serving
 # ---------------------------------------------------------------------------
-
-import os
-import sys
-from fastapi.responses import FileResponse
 
 
 def _app_root() -> str:
@@ -944,12 +942,11 @@ def api_config_export():
 
 @app.post("/api/config/import")
 async def api_config_import(request: Request):
-    import json as _json
 
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail="Invalid JSON") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Config must be a JSON object")
     save_config(body)
@@ -1060,7 +1057,7 @@ def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
             r = _requests.post(f"{url}{req.path}", timeout=5)
         return r.json()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Remote unreachable: {e}")
+        raise HTTPException(status_code=502, detail=f"Remote unreachable: {e}") from e
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1850,7 +1847,7 @@ def page_settings():
       </label>
     </div>
     <div class="form-group" style="grid-column:1/-1">
-      <label>Media Folder Path <span style="color:var(--muted);font-size:11px">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
+      <label>Media Folder Path <span style="color:var(--muted);font-size:11px">(leave blank to use <code>media\\</code> next to casparcg.exe)</span></label>
       <input type="text" id="media_path" placeholder="e.g. D:\\Media or leave blank for default">
     </div>
   </div>
@@ -1989,7 +1986,6 @@ function loadSettings() {
       amcp_port: inst.amcp_port || 0,
     }));
     renderInstanceTable(currentInstances);
-  
   });
 }
 

@@ -1,6 +1,6 @@
-import sys
-import os
 import multiprocessing
+import os
+import sys
 
 # In a windowed frozen exe (console=False) stdout/stderr are None.
 # Python's logging module (and uvicorn) attach StreamHandlers to sys.stderr

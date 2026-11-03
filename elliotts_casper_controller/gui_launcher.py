@@ -7,8 +7,8 @@ import socket
 import sys
 import threading
 import time
-import webbrowser
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import messagebox, simpledialog
 
@@ -19,11 +19,11 @@ from PIL import Image, ImageDraw, ImageTk
 from elliotts_casper_controller import __version__
 from elliotts_casper_controller.amcp_client import AMCPClient
 from elliotts_casper_controller.config_manager import (
-    load as load_config,
-    save as save_config,
     instance_amcp_port,
-    regenerate_instance_config,
+    load as load_config,
     regenerate_all_instance_configs,
+    regenerate_instance_config,
+    save as save_config,
 )
 from elliotts_casper_controller.process_manager import CasparProcessManager
 
@@ -467,6 +467,7 @@ class CasparControllerGUI:
 
     def _start_web_server(self):
         import uvicorn
+
         from elliotts_casper_controller.core import app
 
         if _is_port_in_use(self._web_port):
@@ -587,9 +588,11 @@ class CasparControllerGUI:
                 else:
                     if not silent:
                         self.root.after(0, self._up_to_date)
-            except Exception as e:
+            # Known bug: `e` is deleted when the except block ends, so the lambda
+            # raises NameError. This updater is removed in #3.
+            except Exception as e:  # noqa: F841
                 if not silent:
-                    self.root.after(0, lambda: self._update_error(str(e)))
+                    self.root.after(0, lambda: self._update_error(str(e)))  # noqa: F821
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -610,8 +613,9 @@ class CasparControllerGUI:
         self._status_label.config(text=f"Update available: v{latest}", fg=WARNING)
 
     def _do_auto_update(self):
-        import requests as _req
         import tempfile
+
+        import requests as _req
 
         installer_url = getattr(self, "_pending_installer_url", None)
         latest = getattr(self, "_pending_latest", "?")
@@ -658,8 +662,10 @@ class CasparControllerGUI:
 
                 self.root.after(0, lambda: self._apply_update(pending_installer))
 
-            except Exception as e:
-                self.root.after(0, lambda: self._update_error(f"Download failed: {e}"))
+            # Known bug: `e` is deleted when the except block ends, so the lambda
+            # raises NameError. This updater is removed in #3.
+            except Exception as e:  # noqa: F841
+                self.root.after(0, lambda: self._update_error(f"Download failed: {e}"))  # noqa: F821
                 self.root.after(
                     0,
                     lambda: self._enable_btn(
@@ -779,7 +785,8 @@ class CasparControllerGUI:
                 if started:
                     self.root.after(
                         0,
-                        lambda s=len(started), total=len(instances): self._on_caspar_started(
+                        # Defaults bind the values now for the Tk callback (deliberate).
+                        lambda s=len(started), total=len(instances): self._on_caspar_started(  # noqa: B008
                             s, total
                         ),
                     )
@@ -793,10 +800,12 @@ class CasparControllerGUI:
                             "Check the exe path and that AMCP ports are free."
                         ),
                     )
-            except Exception as exc:
+            # Known bug: `exc` is deleted when the except block ends, so the lambda
+            # raises NameError and the failure dialog never appears. Fixed in #5.
+            except Exception as exc:  # noqa: F841
                 self._managers = {}
                 self._sync_api_managers()
-                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))
+                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))  # noqa: F821
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -825,7 +834,7 @@ class CasparControllerGUI:
                 started = []
                 errors = []
                 first = True
-                for i, inst in enumerate(instances):
+                for inst in instances:
                     port = instance_amcp_port(cfg, inst)
                     if AMCPClient(port=port).ping():
                         continue  # already live — leave it alone
@@ -857,8 +866,10 @@ class CasparControllerGUI:
                     1 for inst in instances if AMCPClient(port=instance_amcp_port(cfg, inst)).ping()
                 )
                 self.root.after(0, lambda s=live, t=total: self._on_caspar_started(s, t))
-            except Exception as exc:
-                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))
+            # Known bug: `exc` is deleted when the except block ends, so the lambda
+            # raises NameError and the failure dialog never appears. Fixed in #5.
+            except Exception as exc:  # noqa: F841
+                self.root.after(0, lambda: self._on_caspar_failed(str(exc)))  # noqa: F821
 
         threading.Thread(target=run, daemon=True).start()
 

@@ -17,7 +17,6 @@ Silently no-ops if ndi-python is not installed or the NDI Runtime is missing.
 """
 
 import os
-import sys
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -119,7 +118,7 @@ def _run_session(ndi_name: str, stop: threading.Event):
         try:
             result = ndi.recv_capture_v3(recv, 500)
             # recv_capture_v3 returns (frame_type, video, audio, metadata)
-            frame_type = result[0]
+            _frame_type = result[0]
             metadata_frame = result[3] if len(result) > 3 else None
 
             if metadata_frame is not None:

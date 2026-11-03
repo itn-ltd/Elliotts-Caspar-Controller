@@ -34,10 +34,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      # Only tests/ for now: the app code has existing findings that the
-      # Phase 1 restructure (#4) cleans up, after which this covers everything.
-      - name: Lint tests
-        run: ruff check tests
+      - name: Lint
+        run: ruff check . --output-format github
+
+      - name: Check formatting
+        run: ruff format --check .
 
       - name: Test
         run: pytest -ra

@@ -16,8 +16,7 @@ from conftest import free_port, instance
 from fake_amcp import FakeAMCPServer
 from test_status import run_status_worker_once
 
-from elliotts_casper_controller import config_manager as cm
-from elliotts_casper_controller import core, ndi_tally, process_manager
+from elliotts_casper_controller import config_manager as cm, core, ndi_tally, process_manager
 from elliotts_casper_controller.process_manager import CasparProcessManager
 
 FIXTURES = Path(__file__).parent / "fixtures"
