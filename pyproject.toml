@@ -47,6 +47,7 @@ ndi = [
 ]
 dev = [
     "pytest>=7.4.0",
+    "httpx>=0.24.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
@@ -99,6 +100,13 @@ select = [
 ignore = [
     "E501",
 ]
+
+# ==================== PYTEST ====================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Known-bad behaviour is pinned with xfail (tests/test_known_issues.py); strict
+# means a fix makes the run fail until its xfail marker is removed.
+xfail_strict = true
 
 # ==================== BANDIT ====================
 [tool.bandit]
