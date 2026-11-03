@@ -4,6 +4,7 @@ Records every command it receives and answers with CasparCG-style replies:
 ``201`` + data for VERSION/INFO, ``202 <VERB> OK`` for everything else.
 Replies can be overridden per verb with ``replies={"INFO": "404 INFO FAILED"}``.
 """
+
 import socketserver
 import threading
 
@@ -11,8 +12,9 @@ EMPTY_LAYER_XML = '<layer><foreground><producer type="empty-producer"/></foregro
 
 
 class FakeAMCPServer:
-    def __init__(self, port=0, version="2.3.3 Stable", info_xml=EMPTY_LAYER_XML,
-                 replies=None, log_path=None):
+    def __init__(
+        self, port=0, version="2.3.3 Stable", info_xml=EMPTY_LAYER_XML, replies=None, log_path=None
+    ):
         self.version = version
         self.info_xml = info_xml
         self.replies = dict(replies or {})

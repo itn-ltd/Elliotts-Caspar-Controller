@@ -4,6 +4,7 @@ Each test asserts the *correct* behaviour and is marked ``xfail`` with the issue
 that fixes it. xfail is strict (pyproject.toml), so when a fix lands the test
 "unexpectedly passes" and fails the run: remove the marker in that PR.
 """
+
 import itertools
 import shutil
 import types
@@ -68,8 +69,12 @@ def test_caspar_launched_directly_without_a_shell(monkeypatch, tmp_path):
 
     monkeypatch.setattr(process_manager.subprocess, "Popen", fake_popen)
     exe = str(tmp_path / "casparcg.exe")
-    m = CasparProcessManager(exe_path=exe, amcp_port=free_port(),
-                             window_title="A | B & C <D>", config_filename="casparcg_inst_1.config")
+    m = CasparProcessManager(
+        exe_path=exe,
+        amcp_port=free_port(),
+        window_title="A | B & C <D>",
+        config_filename="casparcg_inst_1.config",
+    )
     m.start()
     # A list (no shell parsing of the name) whose first item is the full exe path, so
     # launching also works where NoDefaultCurrentDirectoryInExePath is set.
@@ -78,8 +83,11 @@ def test_caspar_launched_directly_without_a_shell(monkeypatch, tmp_path):
 
 @issue(3, "names are written into casparcg.config without XML escaping")
 def test_generated_config_escapes_names(tmp_path):
-    cfg = {"caspar_exe_path": str(tmp_path / "casparcg.exe"), "video_mode": "1080p2500",
-           "instances": [instance(1, 'A&B <x> -- "y"', ndi_name='N&D <I>')]}
+    cfg = {
+        "caspar_exe_path": str(tmp_path / "casparcg.exe"),
+        "video_mode": "1080p2500",
+        "instances": [instance(1, 'A&B <x> -- "y"', ndi_name="N&D <I>")],
+    }
     path = cm.regenerate_instance_config(cfg, cfg["instances"][0])
     root = ET.parse(path).getroot()
     assert root.find("./channels/channel/consumers/ndi/name").text == "N&D <I>"
@@ -97,8 +105,10 @@ def test_clip_trigger_rejects_injection(client, write_config, clip):
 
 @issue(3, "config import saves any JSON, including an arbitrary exe path that Start then runs")
 def test_config_import_is_validated(client):
-    r = client.post("/api/config/import",
-                    json={"caspar_exe_path": "C:\\Windows\\System32\\calc.exe", "instances": []})
+    r = client.post(
+        "/api/config/import",
+        json={"caspar_exe_path": "C:\\Windows\\System32\\calc.exe", "instances": []},
+    )
     assert r.status_code in (400, 422)
 
 
@@ -118,11 +128,16 @@ def test_no_self_updater():
 
 
 @issue(5, "Start All kills every casparcg.exe on the machine, managed or not")
-def test_start_all_kills_only_owned_processes(client, write_config, recorded_sleeps,
-                                              no_global_kills, monkeypatch):
+def test_start_all_kills_only_owned_processes(
+    client, write_config, recorded_sleeps, no_global_kills, monkeypatch
+):
     monkeypatch.setattr(CasparProcessManager, "start", lambda self: True)
-    write_config({"caspar_exe_path": "casparcg.exe",
-                  "instances": [instance(1, "GFX1", amcp_port=free_port())]})
+    write_config(
+        {
+            "caspar_exe_path": "casparcg.exe",
+            "instances": [instance(1, "GFX1", amcp_port=free_port())],
+        }
+    )
     client.post("/api/server/start")
     assert no_global_kills == []
 
@@ -135,7 +150,10 @@ def test_liveness_uses_version(client, write_config):
         assert client.get("/api/status").json()["instances"][0]["status"] == "live"
 
 
-@issue(5, "saving re-numbers instance IDs by list order, so running managers point at the wrong instance")
+@issue(
+    5,
+    "saving re-numbers instance IDs by list order, so running managers point at the wrong instance",
+)
 def test_instance_ids_survive_reorder(client, write_config):
     write_config({"instances": [instance(1, "A"), instance(2, "B")]})
     client.post("/api/config", json={"instances": [instance(2, "B"), instance(1, "A")]})
@@ -147,8 +165,10 @@ def test_instance_ids_survive_reorder(client, write_config):
 
 @issue(6, "duplicate AMCP ports are accepted")
 def test_duplicate_ports_rejected(client):
-    r = client.post("/api/config", json={"instances": [
-        instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]})
+    r = client.post(
+        "/api/config",
+        json={"instances": [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]},
+    )
     assert r.status_code in (400, 422)
 
 
@@ -157,16 +177,23 @@ def test_duplicate_ports_rejected(client):
 
 @issue(7, "the _<digits> suffix strip truncates real clip names")
 def test_clip_names_with_numeric_suffix_kept():
-    xml = ('<layer><foreground><producer type="ffmpeg-producer">'
-           "<filename>PROMO_2024</filename></producer></foreground></layer>")
+    xml = (
+        '<layer><foreground><producer type="ffmpeg-producer">'
+        "<filename>PROMO_2024</filename></producer></foreground></layer>"
+    )
     assert core._parse_layer_info("201 INFO OK\n" + xml)["clip"] == "PROMO_2024"
 
 
-@issue(7, "INFO parsing expects a layout CasparCG 2.3 doesn't send (synthetic 2.3-style XML; replace with a capture)")
+@issue(
+    7,
+    "INFO parsing expects a layout CasparCG 2.3 doesn't send (synthetic 2.3-style XML; replace with a capture)",
+)
 def test_caspar_23_info_layout_parsed():
-    xml = ("<layer><background><producer>empty</producer></background><foreground>"
-           "<file><clip>0 60</clip><name>AMB</name><path>media/AMB.mp4</path><time>12.5 60</time></file>"
-           "<loop>false</loop><paused>false</paused><producer>ffmpeg</producer></foreground></layer>")
+    xml = (
+        "<layer><background><producer>empty</producer></background><foreground>"
+        "<file><clip>0 60</clip><name>AMB</name><path>media/AMB.mp4</path><time>12.5 60</time></file>"
+        "<loop>false</loop><paused>false</paused><producer>ffmpeg</producer></foreground></layer>"
+    )
     info = core._parse_layer_info("201 INFO OK\n" + xml)
     assert info["clip"] == "AMB"
     assert info["time"] == 12.5
@@ -176,9 +203,11 @@ def test_caspar_23_info_layout_parsed():
 def test_tally_matches_exact_ndi_name(monkeypatch):
     other = types.SimpleNamespace(ndi_name="PLAYOUT-PC (PCR3 GFX10)")
     fake_ndi = types.SimpleNamespace(
-        FindCreate=types.SimpleNamespace, find_create_v2=lambda opts: object(),
+        FindCreate=types.SimpleNamespace,
+        find_create_v2=lambda opts: object(),
         find_wait_for_sources=lambda finder, ms: None,
-        find_get_current_sources=lambda finder: [other], find_destroy=lambda finder: None,
+        find_get_current_sources=lambda finder: [other],
+        find_destroy=lambda finder: None,
     )
     monkeypatch.setattr(ndi_tally, "ndi", fake_ndi)
     stop = types.SimpleNamespace(is_set=lambda: False)
@@ -197,10 +226,21 @@ def test_v1_channels_format_is_migrated(config_dir):
     cfg = cm.load()
     assert "channels" not in cfg
     assert [i["name"] for i in cfg["instances"]] == [
-        "GFX1", "GFX2", "GFX3", "GFX4", "GFXPVW", "MEDIA1", "CH7"]
+        "GFX1",
+        "GFX2",
+        "GFX3",
+        "GFX4",
+        "GFXPVW",
+        "MEDIA1",
+        "CH7",
+    ]
     assert cfg["instances"][5] == {
-        "id": 6, "name": "MEDIA1", "ndi_name": "PCR3 MEDIA1", "type": "media",
-        "url": "", "startup_command": "PLAY 6-1 LOOP",
+        "id": 6,
+        "name": "MEDIA1",
+        "ndi_name": "PCR3 MEDIA1",
+        "type": "media",
+        "url": "",
+        "startup_command": "PLAY 6-1 LOOP",
     }
 
 

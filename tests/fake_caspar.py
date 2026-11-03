@@ -6,6 +6,7 @@ Usage (from the instance's working directory, as the app launches it):
 Reads the AMCP port from the generated config, serves fake AMCP on it, prints
 CasparCG-like log lines, logs received commands to amcp_<port>.log, and exits on BYE.
 """
+
 import os
 import sys
 import time

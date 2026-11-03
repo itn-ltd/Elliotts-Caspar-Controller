@@ -4,6 +4,7 @@ The INFO XML below is written in the shape today's parser expects. It has not
 been captured from a real CasparCG yet: replace it with captures from the
 galleries' build when they are available (see #7).
 """
+
 import threading
 import time
 
@@ -26,7 +27,10 @@ EMPTY = {"clip": None, "time": 0.0, "duration": 0.0, "loop": False, "producer": 
 
 def test_parse_playing_clip():
     assert core._parse_layer_info("201 INFO OK\r\n" + PLAYING_XML) == {
-        "clip": "AMB.mp4", "time": 12.5, "duration": 60.0, "loop": True,
+        "clip": "AMB.mp4",
+        "time": 12.5,
+        "duration": 60.0,
+        "loop": True,
         "producer": "ffmpeg-producer",
     }
 
@@ -36,11 +40,19 @@ def test_parse_strips_numeric_suffix():
     assert core._parse_layer_info("201 INFO OK\n" + xml)["clip"] == "AMB.mp4"
 
 
-@pytest.mark.parametrize("raw", [
-    "", "ERROR: refused", "404 INFO FAILED\r\n", "201 INFO OK", "201 INFO OK\r\n",
-    "201 INFO OK\r\n<not xml", "201 INFO OK\r\n<layer/>",
-    '201 INFO OK\r\n<layer><foreground><producer type="empty-producer"/></foreground></layer>',
-])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "ERROR: refused",
+        "404 INFO FAILED\r\n",
+        "201 INFO OK",
+        "201 INFO OK\r\n",
+        "201 INFO OK\r\n<not xml",
+        "201 INFO OK\r\n<layer/>",
+        '201 INFO OK\r\n<layer><foreground><producer type="empty-producer"/></foreground></layer>',
+    ],
+)
 def test_parse_non_playing_replies_are_empty(raw):
     assert core._parse_layer_info(raw) == EMPTY
 
@@ -55,8 +67,19 @@ def test_parse_loop_false_values():
 
 
 STATUS_KEYS = {"running", "version", "instances", "needs_setup", "server_name", "tally_available"}
-INSTANCE_KEYS = {"id", "name", "ndi_name", "type", "url", "startup_command", "amcp_port",
-                 "status", "layer", "on_program", "on_preview"}
+INSTANCE_KEYS = {
+    "id",
+    "name",
+    "ndi_name",
+    "type",
+    "url",
+    "startup_command",
+    "amcp_port",
+    "status",
+    "layer",
+    "on_program",
+    "on_preview",
+}
 
 
 def run_status_worker_once():
@@ -72,8 +95,13 @@ def run_status_worker_once():
 
 
 def test_status_shape_before_first_poll(client, write_config):
-    write_config({"caspar_exe_path": "C:\\CasparCG\\casparcg.exe", "server_name": "Studio A",
-                  "instances": [instance(1, "GFX1", url="https://x", amcp_port=6100)]})
+    write_config(
+        {
+            "caspar_exe_path": "C:\\CasparCG\\casparcg.exe",
+            "server_name": "Studio A",
+            "instances": [instance(1, "GFX1", url="https://x", amcp_port=6100)],
+        }
+    )
     data = client.get("/api/status").json()
 
     assert set(data) == STATUS_KEYS
@@ -84,17 +112,28 @@ def test_status_shape_before_first_poll(client, write_config):
     inst = data["instances"][0]
     assert set(inst) == INSTANCE_KEYS
     assert inst == {
-        "id": 1, "name": "GFX1", "ndi_name": "PCR3 GFX1", "type": "html", "url": "https://x",
-        "startup_command": "", "amcp_port": 6100, "status": "stopped", "layer": {},
-        "on_program": False, "on_preview": False,
+        "id": 1,
+        "name": "GFX1",
+        "ndi_name": "PCR3 GFX1",
+        "type": "html",
+        "url": "https://x",
+        "startup_command": "",
+        "amcp_port": 6100,
+        "status": "stopped",
+        "layer": {},
+        "on_program": False,
+        "on_preview": False,
     }
 
 
-@pytest.mark.parametrize(("cfg", "expected"), [
-    ({"caspar_exe_path": "", "instances": [instance(1, "A")]}, True),
-    ({"caspar_exe_path": "casparcg.exe", "instances": []}, True),
-    ({"caspar_exe_path": "casparcg.exe", "instances": [instance(1, "A")]}, False),
-])
+@pytest.mark.parametrize(
+    ("cfg", "expected"),
+    [
+        ({"caspar_exe_path": "", "instances": [instance(1, "A")]}, True),
+        ({"caspar_exe_path": "casparcg.exe", "instances": []}, True),
+        ({"caspar_exe_path": "casparcg.exe", "instances": [instance(1, "A")]}, False),
+    ],
+)
 def test_needs_setup(client, write_config, cfg, expected):
     write_config(cfg)
     assert client.get("/api/status").json()["needs_setup"] is expected
@@ -102,10 +141,15 @@ def test_needs_setup(client, write_config, cfg, expected):
 
 def test_worker_marks_live_instances_and_clip_info(client, write_config):
     with FakeAMCPServer(info_xml=PLAYING_XML) as live:
-        write_config({"caspar_exe_path": "casparcg.exe", "instances": [
-            instance(1, "MEDIA1", "media", amcp_port=live.port),
-            instance(2, "GFX2", amcp_port=free_port()),
-        ]})
+        write_config(
+            {
+                "caspar_exe_path": "casparcg.exe",
+                "instances": [
+                    instance(1, "MEDIA1", "media", amcp_port=live.port),
+                    instance(2, "GFX2", amcp_port=free_port()),
+                ],
+            }
+        )
         run_status_worker_once()
 
         assert live.commands[0] == "INFO 1-1"  # liveness comes from INFO, not VERSION
@@ -121,8 +165,9 @@ def test_worker_marks_live_instances_and_clip_info(client, write_config):
 
 def test_tally_is_merged_by_ndi_name(client, write_config, monkeypatch):
     write_config({"instances": [instance(1, "GFX1"), instance(2, "GFX2")]})
-    monkeypatch.setattr(core.ndi_tally, "get_tally",
-                        lambda: {"PCR3 GFX2": {"program": True, "preview": False}})
+    monkeypatch.setattr(
+        core.ndi_tally, "get_tally", lambda: {"PCR3 GFX2": {"program": True, "preview": False}}
+    )
     a, b = client.get("/api/status").json()["instances"]
     assert (a["on_program"], b["on_program"], b["on_preview"]) == (False, True, False)
 

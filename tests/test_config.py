@@ -1,4 +1,5 @@
 """Config loading, migration, port assignment and casparcg.config generation."""
+
 import json
 import shutil
 from pathlib import Path
@@ -70,12 +71,15 @@ def test_save_then_load_round_trips():
 # ---------------------------------------------------------------- ports
 
 
-@pytest.mark.parametrize(("override", "position", "expected"), [
-    (0, 0, 5250),       # base + position
-    (0, 2, 5252),
-    (None, 1, 5251),    # missing key behaves like 0
-    (6000, 1, 6000),    # explicit override wins
-])
+@pytest.mark.parametrize(
+    ("override", "position", "expected"),
+    [
+        (0, 0, 5250),  # base + position
+        (0, 2, 5252),
+        (None, 1, 5251),  # missing key behaves like 0
+        (6000, 1, 6000),  # explicit override wins
+    ],
+)
 def test_instance_amcp_port(override, position, expected):
     insts = [instance(i + 1, f"I{i}") for i in range(3)]
     if override is None:
@@ -145,8 +149,11 @@ def test_regenerate_creates_dirs_and_wipes_html_cache(tmp_path):
 
 def test_relative_exe_path_writes_config_to_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    cfg = {"caspar_exe_path": "casparcg.exe", "video_mode": "1080p2500",
-           "instances": [instance(4, "X")]}
+    cfg = {
+        "caspar_exe_path": "casparcg.exe",
+        "video_mode": "1080p2500",
+        "instances": [instance(4, "X")],
+    }
     path = cm.regenerate_instance_config(cfg, cfg["instances"][0])
     assert path == "casparcg_inst_4.config"
     assert (tmp_path / "casparcg_inst_4.config").exists()
@@ -163,8 +170,15 @@ def test_regenerate_all_returns_one_path_per_instance(tmp_path):
 # ---------------------------------------------------------------- test patterns
 
 
-EXPECTED_PATTERNS = {"TEST_BARS", "TEST_BLACK", "TEST_BLUE", "TEST_GREEN",
-                     "TEST_GREY", "TEST_RED", "TEST_WHITE"}
+EXPECTED_PATTERNS = {
+    "TEST_BARS",
+    "TEST_BLACK",
+    "TEST_BLUE",
+    "TEST_GREEN",
+    "TEST_GREY",
+    "TEST_RED",
+    "TEST_WHITE",
+}
 
 
 def test_test_patterns_written_next_to_exe(tmp_path):

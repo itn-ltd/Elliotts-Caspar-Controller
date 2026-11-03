@@ -1,4 +1,5 @@
 """CasparCG AMCP TCP client."""
+
 import socket
 import time
 

@@ -1,4 +1,5 @@
 """Launch, monitor, and stop the CasparCG server process."""
+
 import os
 import subprocess
 import threading
@@ -15,6 +16,7 @@ _CONSOLE_COLOR = "0B"
 
 class _AdoptedProcess:
     """Minimal Popen-compatible wrapper around an existing process found via psutil."""
+
     def __init__(self, pid: int):
         self._pid = pid
         try:
@@ -36,9 +38,14 @@ class _AdoptedProcess:
 
 
 class CasparProcessManager:
-    def __init__(self, exe_path: str, amcp_port: int = 5250, startup_delay: int = 8,
-                 window_title: str = "PCR3 CasparCG - NDI Server",
-                 config_filename: str = "casparcg.config"):
+    def __init__(
+        self,
+        exe_path: str,
+        amcp_port: int = 5250,
+        startup_delay: int = 8,
+        window_title: str = "PCR3 CasparCG - NDI Server",
+        config_filename: str = "casparcg.config",
+    ):
         self.exe_path = exe_path
         self.amcp_port = amcp_port
         self.startup_delay = startup_delay
@@ -54,7 +61,7 @@ class CasparProcessManager:
             return True
         try:
             exe_name = os.path.basename(self.exe_path)
-            safe_title = self.window_title.replace('"', "'").replace('&', 'and')
+            safe_title = self.window_title.replace('"', "'").replace("&", "and")
             cmd = f'cmd /k "color {_CONSOLE_COLOR} && title {safe_title} && {exe_name} {self.config_filename}"'
 
             # Launch hidden — the console window is shown only on demand via show_console().
@@ -90,6 +97,7 @@ class CasparProcessManager:
     def show_console(self) -> bool:
         """Make the CasparCG console window visible. Returns True if the HWND was found."""
         import ctypes
+
         # Primary: find by window title — most reliable since we set it via SetConsoleTitleW
         if not self._console_hwnd:
             hwnd = ctypes.windll.user32.FindWindowW(None, self.window_title)
@@ -99,7 +107,7 @@ class CasparProcessManager:
         if not self._console_hwnd and self._process:
             self._console_hwnd = self._find_conhost_hwnd(self._process.pid)
         if self._console_hwnd:
-            ctypes.windll.user32.ShowWindow(self._console_hwnd, 5)   # SW_SHOW
+            ctypes.windll.user32.ShowWindow(self._console_hwnd, 5)  # SW_SHOW
             ctypes.windll.user32.SetForegroundWindow(self._console_hwnd)
             return True
         return False
@@ -108,7 +116,8 @@ class CasparProcessManager:
         """Hide the CasparCG console window. Returns True if the HWND was found."""
         if self._console_hwnd:
             import ctypes
-            ctypes.windll.user32.ShowWindow(self._console_hwnd, 0)   # SW_HIDE
+
+            ctypes.windll.user32.ShowWindow(self._console_hwnd, 0)  # SW_HIDE
             return True
         return False
 
@@ -132,9 +141,7 @@ class CasparProcessManager:
                     root = proc
                 self._process = _AdoptedProcess(root.pid)
                 self._console_hwnd = None
-                threading.Thread(
-                    target=self._rename_console_after_delay, daemon=True
-                ).start()
+                threading.Thread(target=self._rename_console_after_delay, daemon=True).start()
                 return True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
@@ -223,20 +230,20 @@ class CasparProcessManager:
         import ctypes
         import ctypes.wintypes
 
-        user32   = ctypes.windll.user32
+        user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
 
         # --- Find child PIDs (conhost + casparcg) ---
-        conhost_pid  = None
-        caspar_pid   = root_pid
+        conhost_pid = None
+        caspar_pid = root_pid
         for _ in range(10):
             try:
                 for child in psutil.Process(root_pid).children(recursive=True):
                     name = child.name().lower()
-                    if 'conhost' in name:
+                    if "conhost" in name:
                         conhost_pid = child.pid
-                    if 'caspar' in name:
-                        caspar_pid  = child.pid
+                    if "caspar" in name:
+                        caspar_pid = child.pid
                 if conhost_pid and caspar_pid != root_pid:
                     break
             except psutil.NoSuchProcess:
@@ -254,15 +261,19 @@ class CasparProcessManager:
             if icon_path:
                 try:
                     LR_LOADFROMFILE = 0x10
-                    IMAGE_ICON      = 1
-                    WM_SETICON      = 0x0080
+                    IMAGE_ICON = 1
+                    WM_SETICON = 0x0080
                     ICON_SMALL, ICON_BIG = 0, 1
 
                     if hwnd:
                         for icon_size, icon_type in [(16, ICON_SMALL), (32, ICON_BIG)]:
                             hIcon = user32.LoadImageW(
-                                None, icon_path, IMAGE_ICON,
-                                icon_size, icon_size, LR_LOADFROMFILE,
+                                None,
+                                icon_path,
+                                IMAGE_ICON,
+                                icon_size,
+                                icon_size,
+                                LR_LOADFROMFILE,
                             )
                             if hIcon:
                                 user32.SendMessageW(hwnd, WM_SETICON, icon_type, hIcon)
@@ -280,6 +291,7 @@ class CasparProcessManager:
         """Return the first HWND whose owning process is `pid`."""
         import ctypes
         import ctypes.wintypes
+
         user32 = ctypes.windll.user32
         found = []
 
@@ -298,7 +310,7 @@ class CasparProcessManager:
         """Walk the process tree to find conhost's HWND (visible or hidden)."""
         try:
             for child in psutil.Process(root_pid).children(recursive=True):
-                if 'conhost' in child.name().lower():
+                if "conhost" in child.name().lower():
                     hwnd = self._find_hwnd_for_pid(child.pid, visible_only=False)
                     if hwnd:
                         return hwnd
@@ -310,12 +322,16 @@ class CasparProcessManager:
     def _find_icon() -> str | None:
         """Locate esc_icon.ico bundled with the app."""
         import sys
+
         candidates = []
-        if getattr(sys, 'frozen', False):
-            candidates.append(os.path.join(sys._MEIPASS, 'static', 'esc_icon.ico'))
+        if getattr(sys, "frozen", False):
+            candidates.append(os.path.join(sys._MEIPASS, "static", "esc_icon.ico"))
         candidates.append(
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                         'static', 'esc_icon.ico')
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "static",
+                "esc_icon.ico",
+            )
         )
         for p in candidates:
             if os.path.isfile(p):

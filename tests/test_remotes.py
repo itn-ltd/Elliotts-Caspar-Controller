@@ -1,4 +1,5 @@
 """Remote Controllers, against a fake remote controller HTTP server."""
+
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -7,7 +8,10 @@ import pytest
 from conftest import free_port
 
 REMOTE_STATUS = {
-    "running": True, "version": "1.1.1", "server_name": "Studio B", "needs_setup": False,
+    "running": True,
+    "version": "1.1.1",
+    "server_name": "Studio B",
+    "needs_setup": False,
     "tally_available": False,
     "instances": [{"id": 1, "name": "GFX1", "type": "html", "status": "live"}],
 }
@@ -75,10 +79,20 @@ def test_remotes_online_and_offline(client, write_config, remote, offline_url):
 
     online, offline = client.get("/api/remotes").json()["remotes"]
 
-    assert online == {"idx": 0, "url": remote.url, "display_name": "Studio B",
-                      "online": True, "status": REMOTE_STATUS}
-    assert offline == {"idx": 1, "url": offline_url, "display_name": offline_url,
-                       "online": False, "status": None}
+    assert online == {
+        "idx": 0,
+        "url": remote.url,
+        "display_name": "Studio B",
+        "online": True,
+        "status": REMOTE_STATUS,
+    }
+    assert offline == {
+        "idx": 1,
+        "url": offline_url,
+        "display_name": offline_url,
+        "online": False,
+        "status": None,
+    }
 
 
 def test_remote_name_falls_back_to_config_then_cache(client, write_config, remote):
@@ -88,7 +102,11 @@ def test_remote_name_falls_back_to_config_then_cache(client, write_config, remot
 
     remote.close()  # now offline: the cached name is still shown
     assert client.get("/api/remotes").json()["remotes"][0] == {
-        "idx": 0, "url": remote.url, "display_name": "From Config", "online": False, "status": None,
+        "idx": 0,
+        "url": remote.url,
+        "display_name": "From Config",
+        "online": False,
+        "status": None,
     }
 
 
@@ -100,7 +118,10 @@ def test_no_remotes(client, write_config):
 def test_remote_media_proxy(client, write_config, remote, offline_url):
     write_config({"remote_controllers": [{"url": remote.url}, {"url": offline_url}]})
     assert client.get("/api/remote/0/media").json() == {"clips": ["AMB", "TEST_RED"]}
-    assert client.get("/api/remote/1/media").json() == {"clips": [], "error": "Could not reach remote"}
+    assert client.get("/api/remote/1/media").json() == {
+        "clips": [],
+        "error": "Could not reach remote",
+    }
     assert client.get("/api/remote/5/media").status_code == 404
 
 
@@ -109,10 +130,13 @@ def test_remote_action_proxy(client, write_config, remote, offline_url):
 
     r = client.post("/api/remote/0/proxy", json={"path": "/api/server/start"})
     assert r.json() == {"ok": True, "message": "done"}
-    client.post("/api/remote/0/proxy",
-                json={"path": "/api/instance/1/amcp", "body": {"command": "CLEAR 1"}})
-    assert remote.posts == [("/api/server/start", None),
-                            ("/api/instance/1/amcp", {"command": "CLEAR 1"})]
+    client.post(
+        "/api/remote/0/proxy", json={"path": "/api/instance/1/amcp", "body": {"command": "CLEAR 1"}}
+    )
+    assert remote.posts == [
+        ("/api/server/start", None),
+        ("/api/instance/1/amcp", {"command": "CLEAR 1"}),
+    ]
 
     assert client.post("/api/remote/1/proxy", json={"path": "/api/server/stop"}).status_code == 502
     assert client.post("/api/remote/9/proxy", json={"path": "/x"}).status_code == 404
@@ -120,6 +144,8 @@ def test_remote_action_proxy(client, write_config, remote, offline_url):
 
 def test_remote_connection_test(client, remote, offline_url):
     assert client.post("/api/remote/test", json={"url": remote.url}).json() == {
-        "online": True, "server_name": "Studio B", "version": "1.1.1",
+        "online": True,
+        "server_name": "Studio B",
+        "version": "1.1.1",
     }
     assert client.post("/api/remote/test", json={"url": offline_url}).json() == {"online": False}

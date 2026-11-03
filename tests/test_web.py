@@ -1,4 +1,5 @@
 """Pages, the config API and the web-UI password, as they behave today."""
+
 import json
 
 import pytest
@@ -16,10 +17,15 @@ def no_tally(monkeypatch):
 # ---------------------------------------------------------------- pages
 
 
-@pytest.mark.parametrize(("path", "heading"), [
-    ("/", "Dashboard"), ("/settings", "Settings"), ("/http-generator", "HTTP Generator"),
-    ("/login", "Password"),
-])
+@pytest.mark.parametrize(
+    ("path", "heading"),
+    [
+        ("/", "Dashboard"),
+        ("/settings", "Settings"),
+        ("/http-generator", "HTTP Generator"),
+        ("/login", "Password"),
+    ],
+)
 def test_pages_render(client, path, heading):
     r = client.get(path)
     assert r.status_code == 200
@@ -57,8 +63,14 @@ def test_get_config(client, write_config):
 def test_post_config_merges_saves_and_regenerates(client, write_config, config_dir, tmp_path):
     exe = tmp_path / "caspar" / "casparcg.exe"
     exe.parent.mkdir()
-    write_config({"caspar_exe_path": str(exe), "server_name": "Old", "web_port": 6000,
-                  "instances": [instance(1, "GFX1")]})
+    write_config(
+        {
+            "caspar_exe_path": str(exe),
+            "server_name": "Old",
+            "web_port": 6000,
+            "instances": [instance(1, "GFX1")],
+        }
+    )
 
     r = client.post("/api/config", json={"server_name": "New"})
 
@@ -91,7 +103,9 @@ def test_import_config_replaces_everything(client, write_config, config_dir):
 
 @pytest.mark.parametrize("body", ["not json", "[1, 2]"])
 def test_import_rejects_non_objects(client, body):
-    r = client.post("/api/config/import", content=body, headers={"content-type": "application/json"})
+    r = client.post(
+        "/api/config/import", content=body, headers={"content-type": "application/json"}
+    )
     assert r.status_code == 400
 
 

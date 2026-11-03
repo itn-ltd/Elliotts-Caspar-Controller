@@ -1,4 +1,5 @@
 """Start All / Stop All / restart through the web API, with fake CasparCG processes."""
+
 import time
 
 import pytest
@@ -16,10 +17,17 @@ def three_instances(caspar_dir, write_config):
     insts = [
         instance(1, "GFX1", url="https://example.com/gfx1", amcp_port=free_port()),
         instance(2, "GFX2", amcp_port=free_port()),  # HTML with no URL
-        instance(3, "MEDIA1", "media", startup_command='PLAY 1-1 "AMB" LOOP', amcp_port=free_port()),
+        instance(
+            3, "MEDIA1", "media", startup_command='PLAY 1-1 "AMB" LOOP', amcp_port=free_port()
+        ),
     ]
-    return write_config({"caspar_exe_path": str(caspar_dir / "casparcg.cmd"),
-                         "video_mode": "1080p2500", "instances": insts})
+    return write_config(
+        {
+            "caspar_exe_path": str(caspar_dir / "casparcg.cmd"),
+            "video_mode": "1080p2500",
+            "instances": insts,
+        }
+    )
 
 
 @pytest.fixture
@@ -42,7 +50,9 @@ def stop_everything():
         m.stop()
 
 
-def test_start_all(client, three_instances, caspar_dir, recorded_sleeps, start_order, no_global_kills):
+def test_start_all(
+    client, three_instances, caspar_dir, recorded_sleeps, start_order, no_global_kills
+):
     ports = [i["amcp_port"] for i in three_instances["instances"]]
 
     r = client.post("/api/server/start")
@@ -90,8 +100,11 @@ def test_start_with_no_instances_is_400(client, write_config):
 def test_partial_failure_still_returns_200(client, three_instances, recorded_sleeps, monkeypatch):
     failing = three_instances["instances"][1]["amcp_port"]
     original = CasparProcessManager.start
-    monkeypatch.setattr(CasparProcessManager, "start",
-                        lambda self: False if self.amcp_port == failing else original(self))
+    monkeypatch.setattr(
+        CasparProcessManager,
+        "start",
+        lambda self: False if self.amcp_port == failing else original(self),
+    )
 
     r = client.post("/api/server/start")
 

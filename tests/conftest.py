@@ -4,6 +4,7 @@ Every test runs against an isolated config directory, and the "kill every
 CasparCG on this machine" helpers are replaced with recorders so the suite can
 never take down a real CasparCG running on a developer or gallery machine.
 """
+
 import json
 import os
 import socket
@@ -35,10 +36,16 @@ def free_port() -> int:
 def no_global_kills(monkeypatch):
     """Record calls to the machine-wide kill helpers instead of running them."""
     calls = []
-    monkeypatch.setattr(CasparProcessManager, "_kill_all_caspar_instances",
-                        staticmethod(lambda: calls.append("kill_all")))
-    monkeypatch.setattr(CasparProcessManager, "_kill_caspar_on_port",
-                        staticmethod(lambda port: calls.append(("kill_port", port))))
+    monkeypatch.setattr(
+        CasparProcessManager,
+        "_kill_all_caspar_instances",
+        staticmethod(lambda: calls.append("kill_all")),
+    )
+    monkeypatch.setattr(
+        CasparProcessManager,
+        "_kill_caspar_on_port",
+        staticmethod(lambda port: calls.append(("kill_port", port))),
+    )
     return calls
 
 
@@ -71,6 +78,7 @@ def write_config(config_dir):
     def _write(cfg: dict) -> dict:
         (config_dir / "elliotts_caspar_config.json").write_text(json.dumps(cfg), encoding="utf-8")
         return cfg
+
     return _write
 
 
@@ -119,6 +127,11 @@ def amcp_log(caspar_dir: Path, port: int) -> list:
 
 def instance(id_, name, type_="html", url="", startup_command="", amcp_port=0, ndi_name=None):
     return {
-        "id": id_, "name": name, "ndi_name": ndi_name or f"PCR3 {name}", "type": type_,
-        "url": url, "startup_command": startup_command, "amcp_port": amcp_port,
+        "id": id_,
+        "name": name,
+        "ndi_name": ndi_name or f"PCR3 {name}",
+        "type": type_,
+        "url": url,
+        "startup_command": startup_command,
+        "amcp_port": amcp_port,
     }

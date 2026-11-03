@@ -1,4 +1,5 @@
 """AMCP client against the fake server."""
+
 import pytest
 from conftest import free_port
 from fake_amcp import FakeAMCPServer

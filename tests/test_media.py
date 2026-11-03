@@ -12,9 +12,17 @@ def test_lists_media_next_to_exe(client, write_config, tmp_path):
     exe = tmp_path / "caspar" / "casparcg.exe"
     exe.parent.mkdir()
     exe.write_bytes(b"")
-    make_media(tmp_path / "caspar" / "media", [
-        "amb.mp4", "Logo.PNG", "notes.txt", "sub/Intro Clip.mov", "TEST_RED.png", "z.mxf",
-    ])
+    make_media(
+        tmp_path / "caspar" / "media",
+        [
+            "amb.mp4",
+            "Logo.PNG",
+            "notes.txt",
+            "sub/Intro Clip.mov",
+            "TEST_RED.png",
+            "z.mxf",
+        ],
+    )
     write_config({"caspar_exe_path": str(exe), "media_path": ""})
 
     data = client.get("/api/media").json()

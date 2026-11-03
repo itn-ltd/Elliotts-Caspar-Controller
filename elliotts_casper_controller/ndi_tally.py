@@ -40,6 +40,7 @@ for _ndi_path in (
 
 try:
     import NDIlib as ndi
+
     _AVAILABLE: bool = ndi.initialize()
 except Exception:
     _AVAILABLE = False
@@ -49,9 +50,9 @@ except Exception:
 # Shared state
 # ---------------------------------------------------------------------------
 
-_tally: Dict[str, dict] = {}   # ndi_name -> {"program": bool, "preview": bool}
+_tally: Dict[str, dict] = {}  # ndi_name -> {"program": bool, "preview": bool}
 _lock = threading.Lock()
-_monitors: dict = {}           # ndi_name -> {"thread": Thread, "stop": Event}
+_monitors: dict = {}  # ndi_name -> {"thread": Thread, "stop": Event}
 
 
 def is_available() -> bool:
@@ -67,6 +68,7 @@ def get_tally() -> dict:
 # ---------------------------------------------------------------------------
 # Per-source monitor thread
 # ---------------------------------------------------------------------------
+
 
 def _find_source(ndi_name: str, stop: threading.Event):
     """Search for an NDI source matching ndi_name. Returns source or None."""
@@ -156,6 +158,7 @@ def _monitor_loop(ndi_name: str, stop: threading.Event):
 # ---------------------------------------------------------------------------
 # Public control API
 # ---------------------------------------------------------------------------
+
 
 def start_monitoring(ndi_names: list):
     """

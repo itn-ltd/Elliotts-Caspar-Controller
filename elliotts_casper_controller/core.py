@@ -1,4 +1,5 @@
 """FastAPI application — web UI and REST API for Elliott's Caspar Controller."""
+
 import os as _os
 import secrets
 import threading
@@ -20,8 +21,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from elliotts_casper_controller import __version__
 from elliotts_casper_controller.amcp_client import AMCPClient
 from elliotts_casper_controller.config_manager import (
-    load as load_config, save as save_config,
-    instance_amcp_port, regenerate_instance_config, regenerate_all_instance_configs,
+    load as load_config,
+    save as save_config,
+    instance_amcp_port,
+    regenerate_instance_config,
+    regenerate_all_instance_configs,
     ensure_test_pattern_images,
 )
 from elliotts_casper_controller.process_manager import CasparProcessManager
@@ -32,7 +36,7 @@ from elliotts_casper_controller import ndi_tally
 # ---------------------------------------------------------------------------
 
 _config = load_config()
-_managers: dict = {}   # inst_id -> CasparProcessManager
+_managers: dict = {}  # inst_id -> CasparProcessManager
 _log: list = []
 _log_lock = threading.Lock()
 _sessions: set = set()  # active session tokens for web UI auth
@@ -78,6 +82,7 @@ def _load_instance(inst: dict, client: AMCPClient) -> str:
 # App
 # ---------------------------------------------------------------------------
 
+
 def _refresh_tally_monitors():
     """Start/stop tally monitors to match current instance config."""
     cfg = load_config()
@@ -92,7 +97,7 @@ def _parse_layer_info(raw: str) -> dict:
         nl = raw.find("\n")
         if nl < 0 or not raw.startswith("201"):
             return empty
-        xml_str = raw[nl + 1:].strip()
+        xml_str = raw[nl + 1 :].strip()
         if not xml_str:
             return empty
         root = _ET.fromstring(xml_str)
@@ -121,7 +126,11 @@ def _parse_layer_info(raw: str) -> dict:
                 return 0.0
 
         loop_el = fg.find("loop")
-        loop = (loop_el.text or "0").strip() not in ("0", "false", "False") if loop_el is not None else False
+        loop = (
+            (loop_el.text or "0").strip() not in ("0", "false", "False")
+            if loop_el is not None
+            else False
+        )
 
         return {
             "clip": clip,
@@ -148,10 +157,21 @@ def _background_status_worker():
                 raw = client.info_layer()
                 is_live = raw.startswith("201")
                 live[inst["id"]] = is_live
-                layer_info[inst["id"]] = _parse_layer_info(raw) if is_live else \
-                    {"clip": None, "time": 0.0, "duration": 0.0, "loop": False, "producer": "empty"}
+                layer_info[inst["id"]] = (
+                    _parse_layer_info(raw)
+                    if is_live
+                    else {
+                        "clip": None,
+                        "time": 0.0,
+                        "duration": 0.0,
+                        "loop": False,
+                        "producer": "empty",
+                    }
+                )
 
-            threads = [threading.Thread(target=_fetch, args=(inst,), daemon=True) for inst in instances]
+            threads = [
+                threading.Thread(target=_fetch, args=(inst,), daemon=True) for inst in instances
+            ]
             for t in threads:
                 t.start()
             for t in threads:
@@ -212,7 +232,9 @@ FONTS = """
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Bold.ttf');    font-weight: 700; }
 """
 
-BASE_CSS = FONTS + """
+BASE_CSS = (
+    FONTS
+    + """
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg:       #1a1a1a;
@@ -448,6 +470,7 @@ tbody tr { border-bottom: 1px solid var(--border); }
 tbody tr:hover { background: rgba(255,255,255,0.03); }
 tbody td { padding: 10px 14px; }
 """
+)
 
 JS_SHARED = """
 function toast(msg, type='info') {
@@ -469,19 +492,38 @@ function api(url, method='GET', body=null) {
 
 
 def nav(active: str, server_name: str = "") -> str:
-    links = [("Dashboard", "/", "dashboard"), ("HTTP Generator", "/http-generator", "http-generator"), ("Settings", "/settings", "settings")]
-    items = "".join(f'<a href="{href}" class="{"active" if key == active else ""}">{label}</a>' for label, href, key in links)
-    name_chip = (f'<span style="font-weight:700;color:var(--accent);padding:4px 10px;'
-                 f'border-right:1px solid var(--border);margin-right:4px;font-size:13px">'
-                 f'{server_name}</span>') if server_name else ""
+    links = [
+        ("Dashboard", "/", "dashboard"),
+        ("HTTP Generator", "/http-generator", "http-generator"),
+        ("Settings", "/settings", "settings"),
+    ]
+    items = "".join(
+        f'<a href="{href}" class="{"active" if key == active else ""}">{label}</a>'
+        for label, href, key in links
+    )
+    name_chip = (
+        (
+            f'<span style="font-weight:700;color:var(--accent);padding:4px 10px;'
+            f'border-right:1px solid var(--border);margin-right:4px;font-size:13px">'
+            f"{server_name}</span>"
+        )
+        if server_name
+        else ""
+    )
     return f'<nav class="nav">{name_chip}{items}</nav>'
 
 
 def page(title: str, active: str, body: str, extra_js: str = "") -> str:
     cfg = load_config()
     server_name = cfg.get("server_name", "").strip()
-    tab_title = f"{title} — {server_name}" if server_name else f"{title} — Elliott's Caspar Controller"
-    name_inline = (f' — <span style="color:var(--accent);font-weight:600">{server_name}</span>') if server_name else ""
+    tab_title = (
+        f"{title} — {server_name}" if server_name else f"{title} — Elliott's Caspar Controller"
+    )
+    name_inline = (
+        (f' — <span style="color:var(--accent);font-weight:600">{server_name}</span>')
+        if server_name
+        else ""
+    )
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -528,11 +570,10 @@ def static_file(filename: str):
     raise HTTPException(status_code=404)
 
 
-
-
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
+
 
 class ConfigUpdate(BaseModel):
     caspar_exe_path: Optional[str] = None
@@ -568,17 +609,19 @@ def api_status():
         port = instance_amcp_port(cfg, inst)
         running = live.get(inst["id"], False)
         li = layer_info.get(inst["id"], {})
-        instances_out.append({
-            "id": inst["id"],
-            "name": inst["name"],
-            "ndi_name": inst["ndi_name"],
-            "type": inst.get("type", "html"),
-            "url": inst.get("url", ""),
-            "startup_command": inst.get("startup_command", ""),
-            "amcp_port": port,
-            "status": "live" if running else "stopped",
-            "layer": li,
-        })
+        instances_out.append(
+            {
+                "id": inst["id"],
+                "name": inst["name"],
+                "ndi_name": inst["ndi_name"],
+                "type": inst.get("type", "html"),
+                "url": inst.get("url", ""),
+                "startup_command": inst.get("startup_command", ""),
+                "amcp_port": port,
+                "status": "live" if running else "stopped",
+                "layer": li,
+            }
+        )
     # Merge tally state into each instance
     tally = ndi_tally.get_tally()
     for inst in instances_out:
@@ -839,8 +882,21 @@ def api_media():
         media_dir = os.path.join(os.path.dirname(exe), "media")
     if not os.path.isdir(media_dir):
         return {"clips": [], "error": f"Media folder not found: {media_dir}"}
-    MEDIA_EXTS = {".mp4", ".mov", ".avi", ".mxf", ".mkv", ".wmv", ".flv",
-                  ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".gif"}
+    MEDIA_EXTS = {
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mxf",
+        ".mkv",
+        ".wmv",
+        ".flv",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".tga",
+        ".bmp",
+        ".gif",
+    }
     clips = []
     for root, _, files in os.walk(media_dir):
         for fname in sorted(files):
@@ -876,6 +932,7 @@ def api_config_post(update: ConfigUpdate):
 @app.get("/api/config/export")
 def api_config_export():
     import json as _json
+
     cfg = load_config()
     content = _json.dumps(cfg, indent=2).encode("utf-8")
     return Response(
@@ -888,6 +945,7 @@ def api_config_export():
 @app.post("/api/config/import")
 async def api_config_import(request: Request):
     import json as _json
+
     try:
         body = await request.json()
     except Exception:
@@ -927,15 +985,19 @@ def api_remotes():
                 _remote_name_cache[url] = server_name
             display_name = server_name or _remote_name_cache.get(url) or url
             return {
-                "idx": idx, "url": url,
+                "idx": idx,
+                "url": url,
                 "display_name": display_name,
-                "online": True, "status": data,
+                "online": True,
+                "status": data,
             }
         except Exception:
             return {
-                "idx": idx, "url": url,
+                "idx": idx,
+                "url": url,
                 "display_name": _remote_name_cache.get(url) or url,
-                "online": False, "status": None,
+                "online": False,
+                "status": None,
             }
 
     results: list = [None] * len(remotes)
@@ -970,7 +1032,11 @@ def api_remote_test(req: _RemoteTestRequest):
     try:
         r = _requests.get(f"{url}/api/status", timeout=3)
         data = r.json()
-        return {"online": True, "server_name": data.get("server_name", ""), "version": data.get("version", "")}
+        return {
+            "online": True,
+            "server_name": data.get("server_name", ""),
+            "version": data.get("version", ""),
+        }
     except Exception:
         return {"online": False}
 
@@ -1001,10 +1067,16 @@ def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
 def page_login(error: str = ""):
     cfg = load_config()
     server_name = cfg.get("server_name", "").strip()
-    name_html = (f'<p style="color:var(--muted);font-size:14px;margin-bottom:24px">{server_name}</p>'
-                 if server_name else '<div style="margin-bottom:24px"></div>')
-    error_html = (f'<p style="color:var(--error);font-size:13px;margin-bottom:12px">{error}</p>'
-                  if error else "")
+    name_html = (
+        f'<p style="color:var(--muted);font-size:14px;margin-bottom:24px">{server_name}</p>'
+        if server_name
+        else '<div style="margin-bottom:24px"></div>'
+    )
+    error_html = (
+        f'<p style="color:var(--error);font-size:13px;margin-bottom:12px">{error}</p>'
+        if error
+        else ""
+    )
     return HTMLResponse(f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1021,7 +1093,7 @@ def page_login(error: str = ""):
   </div>
   <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
   <p style="color:var(--muted);font-size:12px;margin-top:16px;text-align:center">
-    Connecting from this machine? Use <a href="http://127.0.0.1:{cfg.get('web_port', 5280)}">localhost</a> to bypass.
+    Connecting from this machine? Use <a href="http://127.0.0.1:{cfg.get("web_port", 5280)}">localhost</a> to bypass.
   </p>
 </div>
 <script>
@@ -1071,6 +1143,7 @@ def api_tally():
 # ---------------------------------------------------------------------------
 # Pages
 # ---------------------------------------------------------------------------
+
 
 @app.get("/", response_class=HTMLResponse)
 def page_dashboard():
@@ -1531,10 +1604,9 @@ setInterval(updateRemotes, 3000);
     return HTMLResponse(page("Dashboard", "dashboard", body, js))
 
 
-
-
 def _get_network_ip() -> str:
     import socket as _socket
+
     try:
         with _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
@@ -1690,7 +1762,7 @@ function fallbackCopy(text, cb) {
 loadData();
 """
     body = body.replace("NETWORK_BASE", network_base)
-    js   = js.replace("NETWORK_BASE", network_base)
+    js = js.replace("NETWORK_BASE", network_base)
     return HTMLResponse(page("HTTP Generator", "http-generator", body, js))
 
 
@@ -2149,4 +2221,5 @@ def stop_server() -> None:
 
 def main() -> None:
     from elliotts_casper_controller.gui_launcher import launch
+
     launch()

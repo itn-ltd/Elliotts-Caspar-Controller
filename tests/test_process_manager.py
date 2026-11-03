@@ -1,4 +1,5 @@
 """Process manager launching a real (fake) CasparCG process."""
+
 import psutil
 import pytest
 from conftest import free_port, windows_only
@@ -14,12 +15,18 @@ pytestmark = windows_only
 @pytest.fixture
 def manager(caspar_dir):
     port = free_port()
-    cfg = {"caspar_exe_path": str(caspar_dir / "casparcg.cmd"), "video_mode": "1080p2500",
-           "instances": [{"id": 1, "name": "GFX1", "ndi_name": "PCR3 GFX1", "amcp_port": port}]}
+    cfg = {
+        "caspar_exe_path": str(caspar_dir / "casparcg.cmd"),
+        "video_mode": "1080p2500",
+        "instances": [{"id": 1, "name": "GFX1", "ndi_name": "PCR3 GFX1", "amcp_port": port}],
+    }
     cm.regenerate_instance_config(cfg, cfg["instances"][0])
-    m = CasparProcessManager(exe_path=cfg["caspar_exe_path"], amcp_port=port,
-                             window_title="PCR3 CasparCG - GFX1",
-                             config_filename="casparcg_inst_1.config")
+    m = CasparProcessManager(
+        exe_path=cfg["caspar_exe_path"],
+        amcp_port=port,
+        window_title="PCR3 CasparCG - GFX1",
+        config_filename="casparcg_inst_1.config",
+    )
     yield m
     m.stop()
 
