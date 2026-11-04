@@ -128,11 +128,7 @@ def test_config_import_keeps_this_pcs_exe_when_path_missing_here(client, write_c
     exe = tmp_path / "casparcg.exe"
     exe.write_bytes(b"")
     write_config({"caspar_exe_path": str(exe)})
-    other_pc = {
-        "caspar_exe_path": "Z:\\Nowhere\\casparcg.exe",
-        "video_mode": "1080p2500",
-        "instances": [instance(1, "GFX1")],
-    }
+    other_pc = {"caspar_exe_path": "Z:\\Nowhere\\casparcg.exe", "instances": [instance(1, "GFX1")]}
     assert client.post("/api/config/import", json=other_pc).status_code == 200
     assert client.get("/api/config").json()["caspar_exe_path"] == str(exe)
 

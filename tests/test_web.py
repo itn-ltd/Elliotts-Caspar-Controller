@@ -104,6 +104,12 @@ def test_import_replaces_everything_except_secrets(client, write_config, config_
     }
 
 
+def test_partial_import_uses_defaults_for_missing_fields(client, tmp_path):
+    r = client.post("/api/config/import", json={"instances": [instance(1, "GFX1")]})
+    assert r.status_code == 200
+    assert "<video-mode>1080p2500</video-mode>" in (tmp_path / "casparcg_inst_1.config").read_text()
+
+
 @pytest.mark.parametrize("body", ["not json", "[1, 2]"])
 def test_import_rejects_non_objects(client, body):
     r = client.post(

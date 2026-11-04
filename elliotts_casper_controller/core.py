@@ -1060,7 +1060,7 @@ async def api_config_import(request: Request):
     )
     body.update({k: current[k] for k in MACHINE_KEYS})
     save_config(body)
-    regenerate_all_instance_configs(body)
+    regenerate_all_instance_configs(load_config())  # fills defaults the import left out
     _log_event("Config imported via web UI.")
     return {"ok": True}
 
