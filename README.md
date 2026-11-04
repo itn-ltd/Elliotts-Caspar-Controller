@@ -92,15 +92,18 @@ The controls are protected in two ways:
 | People using the web UI | Sign in with the **web UI password** |
 | Companion, panels, scripts and other controllers | Send the **API key** with each request |
 
-Only `/login`, `/static/…` and `/api/health` work without either.
+Only `/login`, `/static/…` and `/api/health` work without either, apart from first-run setup (below).
+
+The API key can't change the password or the key itself: that needs a signed-in browser.
 
 ### Web UI password
 
-- **A password is required.** On a new install with no password, the UI only works from a browser **on the controller PC itself**, so someone can set one. Other devices see a "set a password first" page.
-- **Set or change it** in **Settings → Web UI Password**. You're then asked to sign in, and everyone signs in from then on, including on the controller PC.
-- **Rules:** it can't be blank, and a new password must differ from the current one. Once set, it can be changed but not removed.
-- **It's never shown.** It's stored as a salted scrypt hash, so the Settings field is always empty.
-- **Sessions last 30 days,** but restarting the app signs everyone out.
+- **A password is required.** On a new install with no password, the UI and API are open only to a browser **on the controller PC itself**, opened at `http://127.0.0.1:5280` or `http://localhost:5280`, so someone can set one. Other devices, and other websites' pages, get a "set a password first" page or a `401`.
+- **Set it** in **Settings → Web UI Password**. You're then asked to sign in, and everyone signs in from then on, including on the controller PC.
+- **Change it** in the same place. You need the current password, the new one must differ, and changing it signs out every other browser.
+- **Rules:** it can't be blank. Once set, it can be changed but not removed.
+- **It's never shown.** It's stored as a salted scrypt hash, so the Settings fields are always empty.
+- **Sessions:** signing in lasts until the app restarts, and the browser drops its cookie after 30 days.
 
 ### Default password for new installs
 
@@ -113,7 +116,7 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
 
 - **Only used when no password is set.** It never replaces a password someone has chosen, so it's safe to leave in place.
 - **Picked up when the app starts.** Restart the app after setting it, or sign out and back in if it still isn't seen.
-- **Must change on first sign-in.** The first person to sign in with it goes straight to **Choose a new password**. Until they pick a new one (which must differ), everything else in the UI is blocked. Devices using the API key aren't affected.
+- **Must change on first sign-in.** The first person to sign in with it goes straight to **Choose a new password**. Until they pick a new one (which must differ), everything else in the UI is blocked. Devices using the API key aren't affected, and a config import can't clear the requirement.
 - **Treat it as a temporary secret.** Anyone who can read the PC's environment, or the Intune script, can see it. Use a different value per site or group where you can.
 
 ### Forgotten password
@@ -129,7 +132,7 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
   - Header (preferred, keeps the key out of URLs and logs): `X-API-Key: <key>`
   - Query string, for devices that can only send a plain URL: `?api_key=<key>`
 - **Rotating** creates a new key straight away. Every device using the old one stops working until it's updated.
-- **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**.
+- **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**. Saved remote keys are never shown again; leave the field blank to keep the saved one.
 
 ### Upgrading from an older version
 
@@ -203,11 +206,11 @@ All need the key or a signed-in session, except `/api/health`.
 |---|---|
 | **File** | `elliotts_caspar_config.json` (an old `elliotts_casper_config.json` is renamed automatically) |
 | **Installed app** | Next to the exe in the install folder |
-| **From source** | Project root |
+| **From source** | Project root (ignored by git, as it holds secrets) |
 
 - **Editing:** you can edit it directly while the app isn't running, but Settings is easier.
-- **Secrets:** `api_key` and `web_password_hash` live here. Treat the file as sensitive.
-- **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password or API key, and importing keeps this machine's own.
+- **Secrets:** `api_key`, `web_password_hash` and the remote controllers' keys live here. Treat the file as sensitive.
+- **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys.
 
 **Per-output files next to `casparcg.exe`:**
 - `casparcg_inst_N.config`, regenerated on every start, so don't edit them

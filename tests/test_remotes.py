@@ -27,6 +27,7 @@ class FakeRemote:
         self.status = REMOTE_STATUS
         self.posts = []
         self.keys_seen = []
+        self.redirect_to = None  # set to a URL to answer every GET with a redirect there
         remote = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -51,7 +52,11 @@ class FakeRemote:
             def do_GET(self):
                 if not self._authorised():
                     return
-                if self.path == "/api/status":
+                if remote.redirect_to:
+                    self.send_response(302)
+                    self.send_header("Location", remote.redirect_to + self.path)
+                    self.end_headers()
+                elif self.path == "/api/status":
                     self._json(remote.status)
                 elif self.path == "/api/config":
                     self._json({"server_name": "From Config"})
@@ -178,6 +183,30 @@ def test_remote_action_proxy(client, remotes_config, remote):
     assert client.post("/api/remote/9/proxy", json={"path": "/x"}).status_code == 404
 
 
+@pytest.mark.parametrize("path", ["@evil.example/x", "//evil.example/x", "\\\\evil/x", "api/x"])
+def test_remote_proxy_rejects_paths_that_change_host(client, remotes_config, remote, path):
+    r = client.post("/api/remote/0/proxy", json={"path": path})
+    assert (r.status_code, r.json()["detail"]) == (400, "Invalid remote path")
+    assert remote.posts == []
+
+
+def test_remote_proxy_reports_rejected_key_as_502(client, write_config, remote):
+    write_config({"remote_controllers": [{"url": remote.url, "api_key": "wrong"}]})
+    r = client.post("/api/remote/0/proxy", json={"path": "/api/server/start"})
+    assert (r.status_code, r.json()["detail"]) == (502, "Remote rejected its API key")
+
+
+def test_remote_key_not_forwarded_on_redirect(client, write_config, remote):
+    elsewhere = FakeRemote()
+    remote.redirect_to = elsewhere.url
+    write_config({"remote_controllers": [{"url": remote.url, "api_key": REMOTE_KEY}]})
+    try:
+        assert client.get("/api/remotes").json()["remotes"][0]["online"] is False
+        assert elsewhere.keys_seen == []
+    finally:
+        elsewhere.close()
+
+
 def test_remote_connection_test(client, remote, offline_url):
     def test(url, key=REMOTE_KEY):
         return client.post("/api/remote/test", json={"url": url, "api_key": key}).json()
@@ -190,3 +219,9 @@ def test_remote_connection_test(client, remote, offline_url):
     }
     assert test(remote.url, "wrong") == {"online": True, "authorised": False}
     assert test(offline_url) == {"online": False}
+
+
+def test_remote_connection_test_uses_saved_key_when_blank(client, write_config, remote):
+    write_config({"remote_controllers": [{"url": remote.url + "/", "api_key": REMOTE_KEY}]})
+    r = client.post("/api/remote/test", json={"url": remote.url, "api_key": ""})
+    assert r.json()["authorised"] is True

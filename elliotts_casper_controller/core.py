@@ -23,11 +23,11 @@ from elliotts_casper_controller import __version__, ndi_tally
 from elliotts_casper_controller.amcp_client import AMCPClient
 from elliotts_casper_controller.auth import key_matches, new_api_key, verify_password
 from elliotts_casper_controller.config_manager import (
-    SECRET_KEYS,
+    MACHINE_KEYS,
     ensure_test_pattern_images,
     instance_amcp_port,
+    keep_remote_keys,
     load as load_config,
-    public_view,
     regenerate_all_instance_configs,
     regenerate_instance_config,
     save as save_config,
@@ -209,11 +209,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Elliott's Caspar Controller", version=__version__, lifespan=lifespan)
 
 
-def _is_local(request: Request) -> bool:
-    return bool(request.client) and request.client.host in ("127.0.0.1", "::1")
+def _host_name(request: Request) -> str:
+    host = request.headers.get("host", "")
+    return host.split("]")[0] + "]" if host.startswith("[") else host.split(":")[0]
+
+
+def _trusted_local(request: Request) -> bool:
+    """First-run trust: a browser on this PC, addressing it as localhost, on this site."""
+    return (
+        bool(request.client)
+        and request.client.host in ("127.0.0.1", "::1")
+        # Host stops DNS rebinding; Sec-Fetch-Site stops other sites' pages (CSRF).
+        and _host_name(request) in ("127.0.0.1", "localhost", "[::1]")
+        and request.headers.get("sec-fetch-site", "none") in ("none", "same-origin")
+    )
 
 
 _CHANGE_PASSWORD_PATHS = ("/change-password", "/api/password", "/logout")
+# Account control: never with the API key, which lives in panel configs and URLs.
+_SESSION_ONLY_PATHS = ("/api/password", "/api/key", "/api/key/rotate")
 
 
 class _AuthMiddleware(BaseHTTPMiddleware):
@@ -231,15 +245,15 @@ class _AuthMiddleware(BaseHTTPMiddleware):
                     return JSONResponse({"detail": "Password change required"}, status_code=403)
                 return RedirectResponse(url="/change-password")
             return await call_next(request)
-        if first_run and _is_local(request):
+        if first_run and _trusted_local(request):
             return await call_next(request)
         if path.startswith("/api/"):
             supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
-            if key_matches(supplied, cfg["api_key"]):
+            if path not in _SESSION_ONLY_PATHS and key_matches(supplied, cfg["api_key"]):
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
         if first_run:
-            return HTMLResponse(_setup_required_html(), status_code=403)
+            return HTMLResponse(_card_page("Setup required", _SETUP_REQUIRED), status_code=403)
         return RedirectResponse(url="/login")
 
 
@@ -610,6 +624,11 @@ class _PasswordRequest(BaseModel):
     password: str
 
 
+class _PasswordChange(BaseModel):
+    password: str
+    current_password: str = ""
+
+
 @app.get("/api/status")
 def api_status():
     cfg = load_config()
@@ -931,7 +950,8 @@ def api_health():
 
 @app.get("/api/config")
 def api_config_get():
-    return public_view(load_config())
+    cfg = load_config()
+    return {**without_secrets(cfg), "password_set": bool(cfg["web_password_hash"])}
 
 
 @app.get("/api/key")
@@ -949,13 +969,20 @@ def api_key_rotate():
 
 
 @app.post("/api/password")
-def api_password(req: _PasswordRequest):
+def api_password(req: _PasswordChange, request: Request):
     cfg = load_config()
+    # The current password is skipped only on first run and the forced first change.
+    stored = cfg["web_password_hash"]
+    if stored and not cfg["password_change_required"]:
+        if not verify_password(req.current_password, stored):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
     try:
         set_password(cfg, req.password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     save_config(cfg)
+    # Sign out every other session: the old password may have leaked.
+    _sessions.intersection_update({request.cookies.get("session", "")})
     _log_event("Web UI password changed.")
     return {"ok": True}
 
@@ -964,6 +991,10 @@ def api_password(req: _PasswordRequest):
 def api_config_post(update: ConfigUpdate):
     cfg = load_config()
     data = update.model_dump(exclude_none=True)
+    if "remote_controllers" in data:
+        data["remote_controllers"] = keep_remote_keys(
+            data["remote_controllers"], cfg["remote_controllers"]
+        )
     # Renumber instances by array order so the web UI can reorder freely
     if "instances" in data:
         for i, inst in enumerate(data["instances"], start=1):
@@ -998,19 +1029,31 @@ async def api_config_import(request: Request):
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Config must be a JSON object")
     current = load_config()
-    # Imports never carry or replace this machine's password and API key.
-    body = {**without_secrets(body), **{k: current[k] for k in SECRET_KEYS}}
+    # Imports never change this machine's password, API key or forced-change flag.
+    body = {k: v for k, v in body.items() if k not in MACHINE_KEYS}
+    body["remote_controllers"] = keep_remote_keys(
+        body.get("remote_controllers", []), current["remote_controllers"]
+    )
+    body.update({k: current[k] for k in MACHINE_KEYS})
     save_config(body)
     regenerate_all_instance_configs(body)
     _log_event("Config imported via web UI.")
     return {"ok": True}
 
 
-def _call_remote(remote: dict, method: str, path: str, timeout: float, **kwargs):
+def _call_remote(
+    remote: dict, method: str, path: str, timeout: float, **kwargs
+) -> _requests.Response:
     """Request another controller's API with that controller's API key."""
+    # Only "/..." paths: "@host" or "//host" would send the key to a different host.
+    if not path.startswith("/") or path.startswith("//") or any(c in path for c in "@\\"):
+        raise HTTPException(status_code=400, detail="Invalid remote path")
     url = remote.get("url", "").rstrip("/")
     headers = {"X-API-Key": remote.get("api_key", "")}
-    return _requests.request(method, f"{url}{path}", headers=headers, timeout=timeout, **kwargs)
+    # No redirects: requests would forward the key header to wherever it's sent.
+    return _requests.request(
+        method, f"{url}{path}", headers=headers, timeout=timeout, allow_redirects=False, **kwargs
+    )
 
 
 def _get_remote(idx: int) -> dict:
@@ -1030,19 +1073,19 @@ def api_remotes():
     def _fetch(idx: int, remote: dict) -> dict:
         global _remote_name_cache
         url = remote.get("url", "").rstrip("/")
+        offline = {
+            "idx": idx,
+            "url": url,
+            "display_name": _remote_name_cache.get(url) or url,
+            "online": False,
+            "status": None,
+        }
         try:
             # 6s timeout: remote /api/status pings up to 6 AMCP ports in parallel
             # (each join has a 3s timeout) so 5s gives a comfortable margin
             r = _call_remote(remote, "GET", "/api/status", timeout=6)
             if r.status_code == 401:
-                return {
-                    "idx": idx,
-                    "url": url,
-                    "display_name": _remote_name_cache.get(url) or url,
-                    "online": True,
-                    "status": None,
-                    "auth_error": True,
-                }
+                return {**offline, "online": True, "auth_error": True}
             data = r.json()
             server_name = data.get("server_name", "").strip()
             if not server_name and url not in _remote_name_cache:
@@ -1055,21 +1098,9 @@ def api_remotes():
             if server_name:
                 _remote_name_cache[url] = server_name
             display_name = server_name or _remote_name_cache.get(url) or url
-            return {
-                "idx": idx,
-                "url": url,
-                "display_name": display_name,
-                "online": True,
-                "status": data,
-            }
+            return {**offline, "display_name": display_name, "online": True, "status": data}
         except Exception:
-            return {
-                "idx": idx,
-                "url": url,
-                "display_name": _remote_name_cache.get(url) or url,
-                "online": False,
-                "status": None,
-            }
+            return offline
 
     results: list = [None] * len(remotes)
     with ThreadPoolExecutor(max_workers=max(len(remotes), 1)) as ex:
@@ -1095,8 +1126,10 @@ class _RemoteTestRequest(BaseModel):
 
 @app.post("/api/remote/test")
 def api_remote_test(req: _RemoteTestRequest):
+    # A blank key means "use the saved one" (Settings never shows saved remote keys).
+    remote = keep_remote_keys([req.model_dump()], load_config()["remote_controllers"])[0]
     try:
-        r = _call_remote(req.model_dump(), "GET", "/api/status", timeout=3)
+        r = _call_remote(remote, "GET", "/api/status", timeout=3)
         if r.status_code == 401:
             return {"online": True, "authorised": False}
         data = r.json()
@@ -1119,8 +1152,12 @@ class _RemoteProxyRequest(BaseModel):
 def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
     remote = _get_remote(idx)
     try:
-        return _call_remote(remote, "POST", req.path, timeout=5, json=req.body).json()
-    except Exception as e:
+        r = _call_remote(remote, "POST", req.path, timeout=5, json=req.body)
+        if r.status_code == 401:
+            # 502, not 401: a 401 here would sign this browser out.
+            raise HTTPException(status_code=502, detail="Remote rejected its API key")
+        return r.json()
+    except (_requests.RequestException, ValueError) as e:
         raise HTTPException(status_code=502, detail=f"Remote unreachable: {e}") from e
 
 
@@ -1145,13 +1182,11 @@ def _card_page(title: str, inner: str, script: str = "") -> str:
 </body></html>"""
 
 
-def _setup_required_html() -> str:
-    return _card_page(
-        "Setup required",
-        '<p style="color:var(--warning)">No web UI password is set yet.</p>'
-        '<p style="color:var(--muted);margin-top:8px">Open Caspar Controller on the playout PC '
-        "and set one in Settings, then reload this page.</p>",
-    )
+_SETUP_REQUIRED = (
+    '<p style="color:var(--warning)">No web UI password is set yet.</p>'
+    '<p style="color:var(--muted);margin-top:8px">Open Caspar Controller on the machine it runs on '
+    "(at http://127.0.0.1:5280) and set one in Settings, then reload this page.</p>"
+)
 
 
 _PASSWORD_FORM_JS = """
@@ -1899,12 +1934,17 @@ def page_settings():
     ⚠ No password set. Other devices can't use the web UI until you set one.
   </div>
   <div style="display:flex;gap:10px;align-items:flex-end">
+    <div class="form-group" id="current-password-group" style="flex:1;margin:0">
+      <label>Current password</label>
+      <input type="password" id="current_password">
+    </div>
     <div class="form-group" style="flex:1;margin:0">
-      <label id="password-label">Password <span style="color:var(--muted);font-size:11px">(required, everyone signs in with it)</span></label>
-      <input type="password" id="web_password" placeholder="New password">
+      <label>New password <span style="color:var(--muted);font-size:11px">(required, everyone signs in with it)</span></label>
+      <input type="password" id="web_password">
     </div>
     <button class="btn btn-primary" onclick="savePassword()" style="flex-shrink:0">Save</button>
   </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
 </div>
 
 <!-- API Key -->
@@ -2036,6 +2076,7 @@ def page_settings():
 """
     js = """
 let currentInstances = [];
+let _passwordSet = false;
 
 let _remotes = [];
 
@@ -2051,7 +2092,8 @@ function renderRemoteList() {
              placeholder="http://192.168.1.101:5280"
              style="flex:1;min-width:0">
       <input type="password" id="remote_key_${i}" value="${(r.api_key||'').replace(/"/g,'&quot;')}"
-             placeholder="Remote's API key" style="flex:1;min-width:0">
+             placeholder="${r.api_key_set ? 'Key saved (blank keeps it)' : "Remote's API key"}"
+             style="flex:1;min-width:0">
       <button class="btn btn-secondary btn-sm" onclick="testRemote(${i})" title="Test connection">Test</button>
       <button class="btn btn-danger btn-sm" style="flex-shrink:0"
               onclick="removeRemote(${i})">×</button>
@@ -2074,6 +2116,7 @@ function formRemote(i) {
   return {
     url: (document.getElementById('remote_url_' + i)?.value || '').trim(),
     api_key: (document.getElementById('remote_key_' + i)?.value || '').trim(),
+    api_key_set: !!_remotes[i]?.api_key_set,
   };
 }
 
@@ -2117,6 +2160,8 @@ function loadSettings() {
     document.getElementById('media_path').value = cfg.media_path || '';
     document.getElementById('server_name').value = cfg.server_name || '';
     document.getElementById('password-warning').style.display = cfg.password_set ? 'none' : 'block';
+    document.getElementById('current-password-group').style.display = cfg.password_set ? '' : 'none';
+    _passwordSet = cfg.password_set;
     _remotes = (cfg.remote_controllers || []);
     renderRemoteList();
     currentInstances = (cfg.instances || []).map(inst => ({
@@ -2278,10 +2323,14 @@ function saveServerName() {
 
 function savePassword() {
   const pw = document.getElementById('web_password').value;
+  const current = document.getElementById('current_password').value;
   if (!pw.trim()) { toast('Enter a password', 'warning'); return; }
-  api('/api/password', 'POST', { password: pw })
+  api('/api/password', 'POST', { password: pw, current_password: current })
     .then(d => {
       if (!d.ok) { toast(d.detail || 'Failed to save', 'error'); return; }
+      ['web_password', 'current_password'].forEach(id => document.getElementById(id).value = '');
+      if (_passwordSet) { toast('Password changed', 'success'); return; }
+      // First password: this browser was trusted as local, now it needs to sign in.
       toast('Password saved, please sign in', 'success');
       setTimeout(() => location.href = '/login', 1200);
     })
@@ -2361,7 +2410,7 @@ _uvicorn_server: Optional[uvicorn.Server] = None
 
 def start_server(port: int = 5280, open_browser: bool = True) -> None:
     global _server_thread, _uvicorn_server
-    cfg_obj = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
+    cfg_obj = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning", access_log=False)
     _uvicorn_server = uvicorn.Server(cfg_obj)
 
     def run():

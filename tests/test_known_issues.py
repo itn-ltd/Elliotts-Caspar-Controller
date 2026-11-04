@@ -85,13 +85,6 @@ def test_config_import_is_validated(client):
     assert r.status_code in (400, 422)
 
 
-@issue(3, "the remote proxy appends any path to the remote URL, so '@host' redirects it")
-def test_remote_proxy_rejects_host_change(client, write_config):
-    write_config({"remote_controllers": [{"url": f"http://127.0.0.1:{free_port()}"}]})
-    r = client.post("/api/remote/0/proxy", json={"path": f"@127.0.0.1:{free_port()}/x"})
-    assert r.status_code == 400
-
-
 @issue(3, "the app updates itself from the original author's personal GitHub")
 def test_no_self_updater():
     assert "api.github.com" not in (PACKAGE / "gui_launcher.py").read_text(encoding="utf-8")

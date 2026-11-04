@@ -1,12 +1,17 @@
 """Read/write app config and regenerate per-instance casparcg.config files."""
 
 import json
+import logging
 import os
 import sys
 
 from elliotts_casper_controller.auth import hash_password, new_api_key, verify_password
 
+log = logging.getLogger(__name__)
+
 SECRET_KEYS = ("api_key", "web_password_hash")
+# Belong to this machine: config imports never change them.
+MACHINE_KEYS = (*SECRET_KEYS, "password_change_required")
 # Seeds the first web UI password (e.g. set by Intune); users must change it on first sign-in.
 INITIAL_PASSWORD_ENV = "CASPAR_CONTROLLER_INITIAL_PASSWORD"
 
@@ -105,7 +110,11 @@ def load() -> dict:
         inst.setdefault("url", "")
 
     if _secure_secrets(config):
-        save(config)
+        try:
+            save(config)
+        except OSError as e:
+            # Read-only config folder: run with what we have rather than refuse to start.
+            log.warning("Couldn't save %s: %s", cfg_file, e)
     return config
 
 
@@ -140,12 +149,33 @@ def _secure_secrets(config: dict) -> bool:
 
 
 def without_secrets(config: dict) -> dict:
-    return {k: v for k, v in config.items() if k not in SECRET_KEYS}
+    """Config minus the password hash and API keys, including each remote's key."""
+    view = {k: v for k, v in config.items() if k not in SECRET_KEYS}
+    if "remote_controllers" in config:
+        view["remote_controllers"] = [
+            {
+                **{k: v for k, v in r.items() if k != "api_key"},
+                "api_key_set": bool(r.get("api_key")),
+            }
+            for r in config["remote_controllers"]
+        ]
+    return view
 
 
-def public_view(config: dict) -> dict:
-    """Config without secrets, plus whether a password is set."""
-    return {**without_secrets(config), "password_set": bool(config.get("web_password_hash"))}
+def keep_remote_keys(remotes: list, previous: list) -> list:
+    """Fill blank remote API keys from the saved remote with the same URL."""
+
+    def url(r: dict) -> str:
+        return r.get("url", "").rstrip("/")
+
+    saved = {url(r): r.get("api_key", "") for r in previous}
+    return [
+        {
+            **{k: v for k, v in r.items() if k != "api_key_set"},
+            "api_key": r.get("api_key") or saved.get(url(r), ""),
+        }
+        for r in remotes
+    ]
 
 
 def save(config: dict) -> None:

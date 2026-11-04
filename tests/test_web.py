@@ -97,8 +97,10 @@ def test_import_replaces_everything_except_secrets(client, write_config, config_
     assert saved == {
         "server_name": "Imported",
         "instances": [],
+        "remote_controllers": [],
         "api_key": API_KEY,
         "web_password_hash": "scrypt$aa$bb",
+        "password_change_required": False,
     }
 
 

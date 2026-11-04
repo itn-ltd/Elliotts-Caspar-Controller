@@ -33,6 +33,7 @@ FAKE_CASPAR = TESTS_DIR / "fake_caspar.py"
 FIXTURES = TESTS_DIR / "fixtures"
 API_KEY = "test-api-key"
 LOCAL = ("127.0.0.1", 50000)
+LOCAL_URL = "http://127.0.0.1:5280"  # Host header a local browser sends
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="launches Windows processes")
 
@@ -110,7 +111,7 @@ def write_config(config_dir):
 @pytest.fixture
 def client():
     """A trusted operator: on this PC and sending the API key."""
-    return TestClient(core.app, client=LOCAL, headers={"X-API-Key": API_KEY})
+    return TestClient(core.app, base_url=LOCAL_URL, client=LOCAL, headers={"X-API-Key": API_KEY})
 
 
 @pytest.fixture
@@ -122,7 +123,7 @@ def anon():
 @pytest.fixture
 def local_anon():
     """A browser on this PC with no credentials."""
-    return TestClient(core.app, client=LOCAL)
+    return TestClient(core.app, base_url=LOCAL_URL, client=LOCAL)
 
 
 @pytest.fixture

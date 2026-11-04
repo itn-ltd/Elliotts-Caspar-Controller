@@ -1,9 +1,11 @@
 """Access control: API key, password login, first-run setup and secrets (#2)."""
 
 import json
+import threading
+import types
 
 import pytest
-from conftest import API_KEY, instance
+from conftest import API_KEY, LOCAL, LOCAL_URL, instance
 from fake_amcp import FakeAMCPServer
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
@@ -12,6 +14,7 @@ from elliotts_casper_controller import config_manager as cm, core
 from elliotts_casper_controller.auth import hash_password, key_matches, verify_password
 
 OPEN_ROUTES = {"/api/health"}
+SESSION_ONLY_ROUTES = {"/api/password", "/api/key", "/api/key/rotate"}
 API_ROUTES = [
     (method, route.path.replace("{inst_id}", "1").replace("{idx}", "0"))
     for route in core.app.routes
@@ -24,6 +27,23 @@ API_ROUTES = [
 @pytest.fixture
 def password_on(write_config):
     return write_config({"web_password_hash": hash_password("hunter2")})
+
+
+@pytest.fixture
+def inline_threads(monkeypatch):
+    """Run routes' background threads inline, so none outlive the kill-helper stubs."""
+
+    class InlineThread:
+        def __init__(self, target, args=(), **_):
+            self._run = lambda: target(*args)
+
+        def start(self):
+            self._run()
+
+    namespace = types.SimpleNamespace(
+        Thread=InlineThread, Lock=threading.Lock, Event=threading.Event
+    )
+    monkeypatch.setattr(core, "threading", namespace)
 
 
 def login(client) -> str:
@@ -42,6 +62,18 @@ def test_every_api_route_needs_credentials(anon, password_on, method, path):
     r = anon.request(method, path)
     assert r.status_code == 401
     assert r.json() == {"detail": "Invalid or missing API key"}
+
+
+@pytest.mark.parametrize(("method", "path"), API_ROUTES)
+def test_every_api_route_accepts_a_session(anon, password_on, inline_threads, method, path):
+    login(anon)
+    assert anon.request(method, path).status_code not in (401, 403)
+
+
+@pytest.mark.parametrize(("method", "path"), API_ROUTES)
+def test_api_key_works_except_on_account_routes(anon, password_on, inline_threads, method, path):
+    r = anon.request(method, path, headers={"X-API-Key": API_KEY})
+    assert (r.status_code == 401) == (path in SESSION_ONLY_ROUTES)
 
 
 @pytest.mark.parametrize(
@@ -86,7 +118,9 @@ def test_trigger_url_with_key(anon, write_config):
 
 
 def test_rotated_key_replaces_old(anon, password_on):
-    new = anon.post("/api/key/rotate", headers={"X-API-Key": API_KEY}).json()["api_key"]
+    login(anon)
+    new = anon.post("/api/key/rotate").json()["api_key"]
+    anon.cookies.clear()
     assert new != API_KEY
     assert anon.get("/api/config", headers={"X-API-Key": API_KEY}).status_code == 401
     assert anon.get("/api/config", headers={"X-API-Key": new}).status_code == 200
@@ -123,6 +157,22 @@ def test_first_run_this_pc_has_access(local_anon, write_config):
     write_config({})
     assert local_anon.get("/").status_code == 200
     assert local_anon.get("/api/config").status_code == 200
+    assert local_anon.get("/", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("base_url", "headers"),
+    [
+        ("http://evil.example:5280", {}),  # DNS rebinding: local socket, foreign Host
+        (LOCAL_URL, {"Sec-Fetch-Site": "cross-site"}),  # another site's page (CSRF)
+        (LOCAL_URL, {"Sec-Fetch-Site": "same-site"}),
+    ],
+)
+def test_first_run_trust_needs_a_local_same_origin_request(write_config, base_url, headers):
+    write_config({})
+    browser = TestClient(core.app, base_url=base_url, client=LOCAL)
+    assert browser.get("/api/key", headers=headers).status_code == 401
+    assert browser.get("/", headers=headers, follow_redirects=False).status_code == 403
 
 
 def test_login_and_static_are_open(anon, password_on):
@@ -159,6 +209,13 @@ def test_login_before_password_set_is_400(anon, write_config):
     assert anon.post("/login", json={"password": "x"}).status_code == 400
 
 
+def test_lone_surrogate_password_is_rejected_not_500(anon, password_on):
+    r = anon.post(
+        "/login", content='{"password": "\\ud800"}', headers={"content-type": "application/json"}
+    )
+    assert r.status_code == 401
+
+
 def test_logout_revokes_session(anon, password_on):
     token = login(anon)
     assert anon.get("/", follow_redirects=False).status_code == 200
@@ -183,9 +240,27 @@ def test_password_saved_as_hash_only(local_anon, write_config, config_dir):
     ("password", "detail"),
     [("  ", "Password can't be empty"), ("hunter2", "Choose a different password")],
 )
-def test_bad_new_password_rejected(client, password_on, password, detail):
-    r = client.post("/api/password", json={"password": password})
+def test_bad_new_password_rejected(anon, password_on, password, detail):
+    login(anon)
+    r = anon.post("/api/password", json={"password": password, "current_password": "hunter2"})
     assert (r.status_code, r.json()["detail"]) == (400, detail)
+
+
+@pytest.mark.parametrize("current", ["", "wrong"])
+def test_changing_password_needs_the_current_one(anon, password_on, current):
+    login(anon)
+    r = anon.post("/api/password", json={"password": "new-pw", "current_password": current})
+    assert (r.status_code, r.json()["detail"]) == (400, "Current password is incorrect")
+
+
+def test_changing_password_signs_out_other_sessions(password_on):
+    me, other = TestClient(core.app), TestClient(core.app)
+    login(me)
+    login(other)
+    r = me.post("/api/password", json={"password": "new-pw", "current_password": "hunter2"})
+    assert r.json() == {"ok": True}
+    assert me.get("/", follow_redirects=False).status_code == 200
+    assert other.get("/", follow_redirects=False).status_code == 307
 
 
 def test_config_api_no_longer_sets_password(client, password_on, config_dir):
@@ -236,20 +311,52 @@ def test_must_change_initial_password_on_first_sign_in(anon, write_config, initi
     assert anon.get("/api/config").json()["password_change_required"] is False
 
 
-def test_api_key_unaffected_by_pending_change(write_config, initial_password):
+def test_api_key_unaffected_by_pending_change(anon, write_config, initial_password):
     write_config({})
     cm.load()  # seed the password
-    device = TestClient(core.app, headers={"X-API-Key": API_KEY})
-    assert device.get("/api/config").status_code == 200
+    assert anon.get("/api/config", headers={"X-API-Key": API_KEY}).status_code == 200
 
 
-def test_config_and_export_never_contain_secrets(client, password_on):
+def test_import_cannot_clear_pending_change(client, write_config, initial_password, config_dir):
+    write_config({})
+    cm.load()
+    client.post("/api/config/import", json={"password_change_required": False})
+    assert cm.load()["password_change_required"] is True
+
+
+def test_config_and_export_never_contain_secrets(client, write_config):
+    write_config(
+        {
+            "web_password_hash": hash_password("hunter2"),
+            "remote_controllers": [{"url": "http://r:5280", "api_key": "remote-secret"}],
+        }
+    )
     cfg = client.get("/api/config").json()
     exported = client.get("/api/config/export").json()
-    for secret in ("api_key", "web_password_hash", "web_password"):
-        assert secret not in cfg
-        assert secret not in exported
+    for view in (cfg, exported):
+        text = json.dumps(view)
+        assert API_KEY not in text and "remote-secret" not in text
+        assert "web_password_hash" not in view and "web_password" not in view
+        assert view["remote_controllers"] == [{"url": "http://r:5280", "api_key_set": True}]
     assert cfg["password_set"] is True
+
+
+def test_blank_remote_key_keeps_the_saved_one(client, write_config, config_dir):
+    write_config({"remote_controllers": [{"url": "http://r:5280/", "api_key": "remote-secret"}]})
+    client.post(
+        "/api/config", json={"remote_controllers": [{"url": "http://r:5280", "api_key": ""}]}
+    )
+    client.post("/api/config/import", json={"remote_controllers": [{"url": "http://r:5280"}]})
+    saved = json.loads((config_dir / "elliotts_caspar_config.json").read_text())
+    assert saved["remote_controllers"] == [{"url": "http://r:5280", "api_key": "remote-secret"}]
+
+
+def test_load_survives_a_read_only_config_dir(monkeypatch):
+    def read_only(_config):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(cm, "save", read_only)
+    assert cm.load()["api_key"]  # generated, just not saved
 
 
 @pytest.mark.parametrize(("enabled", "hashed"), [(True, True), (False, False)])

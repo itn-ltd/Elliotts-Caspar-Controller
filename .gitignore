@@ -10,6 +10,8 @@ build/
 *.spec.bak
 version.txt
 elliotts_casper_config.json
+# Holds the API key and password hash once the app has run.
+elliotts_caspar_config.json
 casparcg.config
 log/
 media/
