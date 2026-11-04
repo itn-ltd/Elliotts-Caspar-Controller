@@ -13,8 +13,9 @@ import pytest
 from conftest import FIXTURES, free_port, instance, run_status_worker_once
 from fake_amcp import FakeAMCPServer
 
-from caspar_controller import config_manager as cm, core, ndi_tally
-from caspar_controller.process_manager import CasparProcessManager
+from caspar_controller import settings, tally
+from caspar_controller.caspar.info import parse_layer_info
+from caspar_controller.caspar.process import CasparProcessManager
 
 
 def issue(number: int, why: str, raises: type | tuple = AssertionError) -> pytest.MarkDecorator:
@@ -79,7 +80,7 @@ def test_clip_names_with_numeric_suffix_kept():
         '<layer><foreground><producer type="ffmpeg-producer">'
         "<filename>PROMO_2024</filename></producer></foreground></layer>"
     )
-    assert core._parse_layer_info("201 INFO OK\n" + xml)["clip"] == "PROMO_2024"
+    assert parse_layer_info("201 INFO OK\n" + xml)["clip"] == "PROMO_2024"
 
 
 @issue(
@@ -92,7 +93,7 @@ def test_caspar_23_info_layout_parsed():
         "<file><clip>0 60</clip><name>AMB</name><path>media/AMB.mp4</path><time>12.5 60</time></file>"
         "<loop>false</loop><paused>false</paused><producer>ffmpeg</producer></foreground></layer>"
     )
-    info = core._parse_layer_info("201 INFO OK\n" + xml)
+    info = parse_layer_info("201 INFO OK\n" + xml)
     assert info["clip"] == "AMB"
     assert info["time"] == 12.5
 
@@ -107,12 +108,12 @@ def test_tally_matches_exact_ndi_name(monkeypatch):
         find_get_current_sources=lambda finder: [other],
         find_destroy=lambda finder: None,
     )
-    monkeypatch.setattr(ndi_tally, "ndi", fake_ndi)
+    monkeypatch.setattr(tally, "ndi", fake_ndi)
     stop = types.SimpleNamespace(is_set=lambda: False)
     # One search pass, then the 15 s deadline has passed.
     clock = itertools.chain([0, 0], itertools.repeat(99))
-    monkeypatch.setattr(ndi_tally, "time", types.SimpleNamespace(time=clock.__next__))
-    assert ndi_tally._find_source("PCR3 GFX1", stop) is None
+    monkeypatch.setattr(tally, "time", types.SimpleNamespace(time=clock.__next__))
+    assert tally._find_source("PCR3 GFX1", stop) is None
 
 
 # ---------------------------------------------------------------- #12 v1.x migration
@@ -121,7 +122,7 @@ def test_tally_matches_exact_ndi_name(monkeypatch):
 @issue(12, "v1 'channels' migration never runs: DEFAULT_CONFIG already has 'instances'")
 def test_v1_channels_format_is_migrated(config_dir):
     shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "elliotts_caspar_config.json")
-    cfg = cm.load()
+    cfg = settings.load()
     assert "channels" not in cfg
     assert [i["name"] for i in cfg["instances"]] == [
         "GFX1",
@@ -145,4 +146,4 @@ def test_v1_channels_format_is_migrated(config_dir):
 @issue(12, "old 'amcp_port' is dropped instead of becoming 'amcp_base_port'")
 def test_v1_amcp_port_is_migrated(write_config):
     write_config({"amcp_port": 6000})
-    assert cm.load()["amcp_base_port"] == 6000
+    assert settings.load()["amcp_base_port"] == 6000

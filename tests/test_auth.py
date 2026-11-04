@@ -10,14 +10,16 @@ from fake_amcp import FakeAMCPServer
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from caspar_controller import config_manager as cm, core
+from caspar_controller import __version__, instances, settings
+from caspar_controller.api import instances as instances_api
+from caspar_controller.api.app import ROUTERS, app
 from caspar_controller.auth import hash_password, key_matches, verify_password
 
 OPEN_ROUTES = {"/api/health"}
 SESSION_ONLY_ROUTES = {"/api/password", "/api/key", "/api/key/rotate"}
 API_ROUTES = [
     (method, route.path.replace("{inst_id}", "1").replace("{idx}", "0"))
-    for route in core.app.routes
+    for route in [*app.routes, *(r for router in ROUTERS for r in router.routes)]
     if isinstance(route, APIRoute) and route.path.startswith("/api/")
     if route.path not in OPEN_ROUTES
     for method in route.methods
@@ -43,7 +45,8 @@ def inline_threads(monkeypatch):
     namespace = types.SimpleNamespace(
         Thread=InlineThread, Lock=threading.Lock, Event=threading.Event
     )
-    monkeypatch.setattr(core, "threading", namespace)
+    monkeypatch.setattr(instances_api, "threading", namespace)
+    monkeypatch.setattr(instances, "threading", namespace)
 
 
 def login(client) -> str:
@@ -99,7 +102,7 @@ def test_bad_api_key_is_401(anon, password_on, key):
 
 
 def test_health_is_open(anon, password_on):
-    assert anon.get("/api/health").json() == {"ok": True, "version": core.__version__}
+    assert anon.get("/api/health").json() == {"ok": True, "version": __version__}
     assert anon.get("/api/healthz").status_code == 401  # exact match only
 
 
@@ -170,7 +173,7 @@ def test_first_run_this_pc_has_access(local_anon, write_config):
 )
 def test_first_run_trust_needs_a_local_same_origin_request(write_config, base_url, headers):
     write_config({})
-    browser = TestClient(core.app, base_url=base_url, client=LOCAL)
+    browser = TestClient(app, base_url=base_url, client=LOCAL)
     assert browser.get("/api/key", headers=headers).status_code == 401
     assert browser.get("/", headers=headers, follow_redirects=False).status_code == 403
 
@@ -254,7 +257,7 @@ def test_changing_password_needs_the_current_one(anon, password_on, current):
 
 
 def test_changing_password_signs_out_other_sessions(password_on):
-    me, other = TestClient(core.app), TestClient(core.app)
+    me, other = TestClient(app), TestClient(app)
     login(me)
     login(other)
     r = me.post("/api/password", json={"password": "new-pw", "current_password": "hunter2"})
@@ -274,24 +277,24 @@ def test_config_api_no_longer_sets_password(client, password_on, config_dir):
 
 @pytest.fixture
 def initial_password(monkeypatch):
-    monkeypatch.setenv(cm.INITIAL_PASSWORD_ENV, "intune-default")
+    monkeypatch.setenv(settings.INITIAL_PASSWORD_ENV, "intune-default")
 
 
 def test_initial_password_seeds_first_run(initial_password):
-    cfg = cm.load()
+    cfg = settings.load()
     assert verify_password("intune-default", cfg["web_password_hash"])
     assert cfg["password_change_required"] is True
 
 
 def test_initial_password_never_overwrites(initial_password, password_on):
-    cfg = cm.load()
+    cfg = settings.load()
     assert verify_password("hunter2", cfg["web_password_hash"])
     assert cfg["password_change_required"] is False
 
 
 def test_blank_initial_password_is_ignored(monkeypatch):
-    monkeypatch.setenv(cm.INITIAL_PASSWORD_ENV, "  ")
-    assert cm.load()["web_password_hash"] == ""
+    monkeypatch.setenv(settings.INITIAL_PASSWORD_ENV, "  ")
+    assert settings.load()["web_password_hash"] == ""
 
 
 def test_must_change_initial_password_on_first_sign_in(anon, write_config, initial_password):
@@ -313,15 +316,15 @@ def test_must_change_initial_password_on_first_sign_in(anon, write_config, initi
 
 def test_api_key_unaffected_by_pending_change(anon, write_config, initial_password):
     write_config({})
-    cm.load()  # seed the password
+    settings.load()  # seed the password
     assert anon.get("/api/config", headers={"X-API-Key": API_KEY}).status_code == 200
 
 
 def test_import_cannot_clear_pending_change(client, write_config, initial_password, config_dir):
     write_config({})
-    cm.load()
+    settings.load()
     client.post("/api/config/import", json={"password_change_required": False})
-    assert cm.load()["password_change_required"] is True
+    assert settings.load()["password_change_required"] is True
 
 
 def test_config_and_export_never_contain_secrets(client, write_config):
@@ -355,14 +358,14 @@ def test_load_survives_a_read_only_config_dir(monkeypatch):
     def read_only(_config):
         raise PermissionError("read-only")
 
-    monkeypatch.setattr(cm, "save", read_only)
-    assert cm.load()["api_key"]  # generated, just not saved
+    monkeypatch.setattr(settings, "save", read_only)
+    assert settings.load()["api_key"]  # generated, just not saved
 
 
 @pytest.mark.parametrize(("enabled", "hashed"), [(True, True), (False, False)])
 def test_v1_plaintext_password_is_hashed_on_load(write_config, config_dir, enabled, hashed):
     write_config({"web_password": "old-pw", "web_password_enabled": enabled})
-    cfg = cm.load()
+    cfg = settings.load()
     raw = (config_dir / "elliotts_caspar_config.json").read_text()
     assert "old-pw" not in raw
     assert "web_password" not in cfg and "web_password_enabled" not in cfg
@@ -370,9 +373,9 @@ def test_v1_plaintext_password_is_hashed_on_load(write_config, config_dir, enabl
 
 
 def test_api_key_generated_once_and_kept():
-    first = cm.load()["api_key"]
+    first = settings.load()["api_key"]
     assert first
-    assert cm.load()["api_key"] == first
+    assert settings.load()["api_key"] == first
 
 
 # ---------------------------------------------------------------- auth helpers

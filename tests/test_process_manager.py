@@ -5,9 +5,9 @@ import pytest
 from conftest import free_port, instance, windows_only
 from fake_amcp import FakeAMCPServer
 
-from caspar_controller import config_manager as cm
-from caspar_controller.amcp_client import AMCPClient
-from caspar_controller.process_manager import CasparProcessManager
+from caspar_controller.caspar import config_xml
+from caspar_controller.caspar.amcp import AMCPClient
+from caspar_controller.caspar.process import CasparProcessManager
 
 pytestmark = windows_only
 
@@ -20,7 +20,7 @@ def manager(caspar_dir):
         "video_mode": "1080p2500",
         "instances": [instance(1, "GFX1", amcp_port=port)],
     }
-    cm.regenerate_instance_config(cfg, cfg["instances"][0])
+    config_xml.regenerate_instance_config(cfg, cfg["instances"][0])
     m = CasparProcessManager(
         exe_path=cfg["caspar_exe_path"],
         amcp_port=port,

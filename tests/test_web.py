@@ -5,7 +5,7 @@ import json
 import pytest
 from conftest import API_KEY, instance
 
-from caspar_controller import core
+from caspar_controller import log
 
 # ---------------------------------------------------------------- pages
 
@@ -72,7 +72,7 @@ def test_post_config_merges_saves_and_regenerates(client, write_config, config_d
     assert saved["server_name"] == "New"
     assert saved["web_port"] == 6000  # untouched fields kept
     assert (exe.parent / "casparcg_inst_1.config").exists()
-    assert core._log[-1].endswith("Config saved and instance configs regenerated.")
+    assert log._log[-1].endswith("Config saved and instance configs regenerated.")
 
 
 def test_post_config_rejects_wrong_types(client):

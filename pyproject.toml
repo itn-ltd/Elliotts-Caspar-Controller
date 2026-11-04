@@ -67,7 +67,7 @@ Issues = "https://github.com/BlueElliott/Elliotts-Casper-Controller/issues"
 Documentation = "https://github.com/BlueElliott/Elliotts-Casper-Controller#readme"
 
 [project.scripts]
-caspar-controller = "caspar_controller.core:main"
+caspar-controller = "caspar_controller.gui_launcher:main"
 
 [tool.setuptools]
 packages = ["caspar_controller"]

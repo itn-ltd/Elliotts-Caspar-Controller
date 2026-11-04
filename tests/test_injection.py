@@ -7,9 +7,9 @@ import pytest
 from conftest import TESTS_DIR, amcp_log, free_port, instance, windows_only
 from fake_amcp import FakeAMCPServer
 
-from caspar_controller import config_manager as cm, process_manager
-from caspar_controller.amcp_client import AMCPClient
-from caspar_controller.process_manager import CasparProcessManager
+from caspar_controller.caspar import config_xml, process
+from caspar_controller.caspar.amcp import AMCPClient
+from caspar_controller.caspar.process import CasparProcessManager
 
 PACKAGE = TESTS_DIR.parent / "caspar_controller"
 NASTY_NAME = 'A | B & C <D> -- "E"'
@@ -24,7 +24,7 @@ def test_caspar_launched_directly_without_a_shell(monkeypatch, tmp_path):
         captured["args"] = args
         raise RuntimeError("not launching in this test")
 
-    monkeypatch.setattr(process_manager.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
     exe = str(tmp_path / "casparcg.exe")
     m = CasparProcessManager(
         exe_path=exe, amcp_port=free_port(), window_title=NASTY_NAME, config_filename="c.config"
@@ -43,7 +43,7 @@ def test_odd_name_starts_where_current_dir_search_is_off(caspar_dir, monkeypatch
         "video_mode": "1080p2500",
         "instances": [instance(1, NASTY_NAME, amcp_port=port)],
     }
-    cm.regenerate_instance_config(cfg, cfg["instances"][0])
+    config_xml.regenerate_instance_config(cfg, cfg["instances"][0])
     m = CasparProcessManager(
         exe_path=cfg["caspar_exe_path"],
         amcp_port=port,
@@ -67,7 +67,7 @@ def test_generated_config_escapes_names(tmp_path):
         "media_path": "D:\\A&B <media>",
         "instances": [instance(1, NASTY_NAME, ndi_name="N&D <I> --")],
     }
-    path = cm.regenerate_instance_config(cfg, cfg["instances"][0])
+    path = config_xml.regenerate_instance_config(cfg, cfg["instances"][0])
     root = ET.parse(path).getroot()  # valid XML despite <, &, -- and quotes
     assert root.find("./channels/channel/consumers/ndi/name").text == "N&D <I> --"
     assert root.find("./paths/media-path").text == "D:\\A&B <media>"
@@ -209,6 +209,6 @@ def test_server_name_escaped_in_pages(client):
 
 
 def test_no_self_updater():
-    sources = " ".join(p.read_text(encoding="utf-8") for p in PACKAGE.glob("*.py"))
+    sources = " ".join(p.read_text(encoding="utf-8") for p in PACKAGE.rglob("*.py"))
     assert "api.github.com" not in sources
     assert "Check for Updates" not in sources

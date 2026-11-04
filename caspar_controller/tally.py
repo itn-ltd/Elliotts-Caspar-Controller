@@ -22,6 +22,8 @@ import time
 import xml.etree.ElementTree as ET
 from typing import Dict
 
+from caspar_controller.settings import load as load_config
+
 # ---------------------------------------------------------------------------
 # NDI Runtime path hint — the runtime DLL ships with CasparCG / NDI Tools.
 # Add the most common install locations to PATH before importing so the
@@ -192,3 +194,10 @@ def stop_all():
     _monitors.clear()
     with _lock:
         _tally.clear()
+
+
+def refresh_monitors() -> None:
+    """Start/stop tally monitors to match current instance config."""
+    cfg = load_config()
+    ndi_names = [i["ndi_name"] for i in cfg.get("instances", []) if i.get("ndi_name")]
+    start_monitoring(ndi_names)

@@ -9,7 +9,6 @@ import json
 import os
 import socket
 import sys
-import tempfile
 import threading
 import time
 import types
@@ -19,14 +18,10 @@ import psutil
 import pytest
 from fastapi.testclient import TestClient
 
-from caspar_controller import config_manager
-
-# core loads (and may save) the config on import, so keep that out of the repo.
-_import_dir = tempfile.mkdtemp(prefix="caspar-tests-")
-config_manager._config_dir = lambda: _import_dir
-
-from caspar_controller import core, ndi_tally  # noqa: E402
-from caspar_controller.process_manager import CasparProcessManager  # noqa: E402
+from caspar_controller import instances, log, remotes, settings, tally
+from caspar_controller.api import auth as api_auth
+from caspar_controller.api.app import app
+from caspar_controller.caspar.process import CasparProcessManager
 
 TESTS_DIR = Path(__file__).parent
 FAKE_CASPAR = TESTS_DIR / "fake_caspar.py"
@@ -64,18 +59,18 @@ def no_global_kills(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_ndi(monkeypatch):
     """Behave as if ndi-python isn't installed, whatever the environment."""
-    monkeypatch.setattr(ndi_tally, "is_available", lambda: False)
-    monkeypatch.setattr(core, "_refresh_tally_monitors", lambda: None)
+    monkeypatch.setattr(tally, "is_available", lambda: False)
+    monkeypatch.setattr(tally, "refresh_monitors", lambda: None)
 
 
 @pytest.fixture(autouse=True)
 def fresh_core_state(monkeypatch):
-    """Reset core's module-level state between tests."""
-    monkeypatch.setattr(core, "_managers", {})
-    monkeypatch.setattr(core, "_log", [])
-    monkeypatch.setattr(core, "_sessions", set())
-    monkeypatch.setattr(core, "_remote_name_cache", {})
-    monkeypatch.setattr(core, "_status_cache", {"live": {}, "ts": 0.0})
+    """Reset module-level state between tests."""
+    monkeypatch.setattr(instances, "_managers", {})
+    monkeypatch.setattr(log, "_log", [])
+    monkeypatch.setattr(api_auth, "_sessions", set())
+    monkeypatch.setattr(remotes, "_remote_name_cache", {})
+    monkeypatch.setattr(instances, "_status_cache", {"live": {}, "ts": 0.0})
 
 
 @pytest.fixture(autouse=True)
@@ -86,10 +81,10 @@ def config_dir(tmp_path, monkeypatch):
     casparcg_inst_N.config files into the current directory.
     """
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv(config_manager.INITIAL_PASSWORD_ENV, raising=False)
+    monkeypatch.delenv(settings.INITIAL_PASSWORD_ENV, raising=False)
     d = tmp_path / "app"
     d.mkdir()
-    monkeypatch.setattr(config_manager, "_config_dir", lambda: str(d))
+    monkeypatch.setattr(settings, "_config_dir", lambda: str(d))
     return d
 
 
@@ -111,27 +106,27 @@ def write_config(config_dir):
 @pytest.fixture
 def client():
     """A trusted operator: on this PC and sending the API key."""
-    return TestClient(core.app, base_url=LOCAL_URL, client=LOCAL, headers={"X-API-Key": API_KEY})
+    return TestClient(app, base_url=LOCAL_URL, client=LOCAL, headers={"X-API-Key": API_KEY})
 
 
 @pytest.fixture
 def anon():
     """Another device on the network with no credentials."""
-    return TestClient(core.app)
+    return TestClient(app)
 
 
 @pytest.fixture
 def local_anon():
     """A browser on this PC with no credentials."""
-    return TestClient(core.app, base_url=LOCAL_URL, client=LOCAL)
+    return TestClient(app, base_url=LOCAL_URL, client=LOCAL)
 
 
 @pytest.fixture
 def recorded_sleeps(monkeypatch):
-    """Replace core's time module so start-sequence gaps are recorded, not slept."""
+    """Replace the instances module's time so start-sequence gaps are recorded, not slept."""
     sleeps = []
     fake_time = types.SimpleNamespace(sleep=sleeps.append, time=time.time, strftime=time.strftime)
-    monkeypatch.setattr(core, "time", fake_time)
+    monkeypatch.setattr(instances, "time", fake_time)
     return sleeps
 
 
@@ -161,14 +156,14 @@ def amcp_log(caspar_dir: Path, port: int) -> list:
 
 
 def run_status_worker_once() -> None:
-    """Run core's background status worker until it has published one snapshot."""
-    core._status_refresh_stop.clear()
-    t = threading.Thread(target=core._background_status_worker, daemon=True)
+    """Run the background status worker until it has published one snapshot."""
+    instances._status_refresh_stop.clear()
+    t = threading.Thread(target=instances._background_status_worker, daemon=True)
     t.start()
     deadline = time.time() + 10
-    while core._status_cache["ts"] == 0.0 and time.time() < deadline:
+    while instances._status_cache["ts"] == 0.0 and time.time() < deadline:
         time.sleep(0.05)
-    core._status_refresh_stop.set()
+    instances._status_refresh_stop.set()
     t.join(timeout=5)
 
 
