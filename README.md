@@ -230,7 +230,7 @@ git clone https://github.com/itn-ltd/Elliotts-Caspar-Controller.git
 cd Elliotts-Caspar-Controller
 python -m venv .venv && .venv\Scripts\activate
 pip install -e ".[dev]"          # add ,ndi for NDI tally
-python -m elliotts_casper_controller
+python -m caspar_controller
 ```
 
 | | |

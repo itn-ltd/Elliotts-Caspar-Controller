@@ -10,8 +10,8 @@ from fake_amcp import FakeAMCPServer
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from elliotts_casper_controller import config_manager as cm, core
-from elliotts_casper_controller.auth import hash_password, key_matches, verify_password
+from caspar_controller import config_manager as cm, core
+from caspar_controller.auth import hash_password, key_matches, verify_password
 
 OPEN_ROUTES = {"/api/health"}
 SESSION_ONLY_ROUTES = {"/api/password", "/api/key", "/api/key/rotate"}

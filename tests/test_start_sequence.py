@@ -5,9 +5,9 @@ import time
 import pytest
 from conftest import amcp_log, free_port, instance, windows_only
 
-from elliotts_casper_controller import core
-from elliotts_casper_controller.amcp_client import AMCPClient
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller import core
+from caspar_controller.amcp_client import AMCPClient
+from caspar_controller.process_manager import CasparProcessManager
 
 pytestmark = windows_only
 

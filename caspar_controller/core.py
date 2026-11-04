@@ -21,10 +21,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from elliotts_casper_controller import __version__, ndi_tally
-from elliotts_casper_controller.amcp_client import AMCPClient, has_control_chars, is_amcp_safe
-from elliotts_casper_controller.auth import key_matches, new_api_key, verify_password
-from elliotts_casper_controller.config_manager import (
+from caspar_controller import __version__, ndi_tally
+from caspar_controller.amcp_client import AMCPClient, has_control_chars, is_amcp_safe
+from caspar_controller.auth import key_matches, new_api_key, verify_password
+from caspar_controller.config_manager import (
     MACHINE_KEYS,
     ensure_test_pattern_images,
     instance_amcp_port,
@@ -38,7 +38,7 @@ from elliotts_casper_controller.config_manager import (
     validate_remote_url,
     without_secrets,
 )
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller.process_manager import CasparProcessManager
 
 # ---------------------------------------------------------------------------
 # State
@@ -2475,6 +2475,6 @@ def stop_server() -> None:
 
 
 def main() -> None:
-    from elliotts_casper_controller.gui_launcher import launch
+    from caspar_controller.gui_launcher import launch
 
     launch()

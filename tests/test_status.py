@@ -9,7 +9,7 @@ import pytest
 from conftest import free_port, instance, run_status_worker_once
 from fake_amcp import EMPTY_LAYER_XML, FakeAMCPServer
 
-from elliotts_casper_controller import core
+from caspar_controller import core
 
 PLAYING_XML = (
     '<layer><foreground><producer type="ffmpeg-producer">'

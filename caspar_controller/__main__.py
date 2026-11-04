@@ -18,7 +18,7 @@ if getattr(sys, "frozen", False) and sys.platform == "win32":
 
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from elliotts_casper_controller.gui_launcher import main
+from caspar_controller.gui_launcher import main
 
 if __name__ == "__main__":
     main()

@@ -19,14 +19,14 @@ import psutil
 import pytest
 from fastapi.testclient import TestClient
 
-from elliotts_casper_controller import config_manager
+from caspar_controller import config_manager
 
 # core loads (and may save) the config on import, so keep that out of the repo.
 _import_dir = tempfile.mkdtemp(prefix="caspar-tests-")
 config_manager._config_dir = lambda: _import_dir
 
-from elliotts_casper_controller import core, ndi_tally  # noqa: E402
-from elliotts_casper_controller.process_manager import CasparProcessManager  # noqa: E402
+from caspar_controller import core, ndi_tally  # noqa: E402
+from caspar_controller.process_manager import CasparProcessManager  # noqa: E402
 
 TESTS_DIR = Path(__file__).parent
 FAKE_CASPAR = TESTS_DIR / "fake_caspar.py"

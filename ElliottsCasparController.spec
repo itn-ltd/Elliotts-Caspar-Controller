@@ -10,7 +10,7 @@ except ImportError:
 
 sys.path.insert(0, os.path.abspath('.'))
 try:
-    from elliotts_casper_controller import __version__
+    from caspar_controller import __version__
     VERSION = __version__
 except Exception:
     VERSION = "0.1.0"
@@ -22,7 +22,7 @@ if os.path.exists('README.md'):
     datas.append(('README.md', '.'))
 
 a = Analysis(
-    ['elliotts_casper_controller/__main__.py'],
+    ['caspar_controller/__main__.py'],
     pathex=[],
     binaries=[],
     datas=datas,

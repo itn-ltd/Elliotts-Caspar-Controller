@@ -7,8 +7,8 @@ import sys
 from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
-from elliotts_casper_controller.amcp_client import has_control_chars, is_amcp_safe
-from elliotts_casper_controller.auth import hash_password, new_api_key, verify_password
+from caspar_controller.amcp_client import has_control_chars, is_amcp_safe
+from caspar_controller.auth import hash_password, new_api_key, verify_password
 
 log = logging.getLogger(__name__)
 

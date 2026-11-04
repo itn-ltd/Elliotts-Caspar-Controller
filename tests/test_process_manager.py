@@ -5,9 +5,9 @@ import pytest
 from conftest import free_port, instance, windows_only
 from fake_amcp import FakeAMCPServer
 
-from elliotts_casper_controller import config_manager as cm
-from elliotts_casper_controller.amcp_client import AMCPClient
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller import config_manager as cm
+from caspar_controller.amcp_client import AMCPClient
+from caspar_controller.process_manager import CasparProcessManager
 
 pytestmark = windows_only
 

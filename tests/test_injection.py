@@ -7,11 +7,11 @@ import pytest
 from conftest import TESTS_DIR, amcp_log, free_port, instance, windows_only
 from fake_amcp import FakeAMCPServer
 
-from elliotts_casper_controller import config_manager as cm, process_manager
-from elliotts_casper_controller.amcp_client import AMCPClient
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller import config_manager as cm, process_manager
+from caspar_controller.amcp_client import AMCPClient
+from caspar_controller.process_manager import CasparProcessManager
 
-PACKAGE = TESTS_DIR.parent / "elliotts_casper_controller"
+PACKAGE = TESTS_DIR.parent / "caspar_controller"
 NASTY_NAME = 'A | B & C <D> -- "E"'
 
 # ---------------------------------------------------------------- launching CasparCG

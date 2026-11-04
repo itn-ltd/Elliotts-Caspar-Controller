@@ -13,8 +13,8 @@ import pytest
 from conftest import FIXTURES, free_port, instance, run_status_worker_once
 from fake_amcp import FakeAMCPServer
 
-from elliotts_casper_controller import config_manager as cm, core, ndi_tally
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller import config_manager as cm, core, ndi_tally
+from caspar_controller.process_manager import CasparProcessManager
 
 
 def issue(number: int, why: str, raises: type | tuple = AssertionError) -> pytest.MarkDecorator:

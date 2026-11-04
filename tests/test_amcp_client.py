@@ -4,7 +4,7 @@ import pytest
 from conftest import free_port
 from fake_amcp import FakeAMCPServer
 
-from elliotts_casper_controller.amcp_client import AMCPClient
+from caspar_controller.amcp_client import AMCPClient
 
 
 @pytest.fixture

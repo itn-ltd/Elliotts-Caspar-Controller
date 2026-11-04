@@ -5,7 +5,7 @@ import json
 import pytest
 from conftest import API_KEY, instance
 
-from elliotts_casper_controller import core
+from caspar_controller import core
 
 # ---------------------------------------------------------------- pages
 

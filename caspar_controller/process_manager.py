@@ -8,7 +8,7 @@ from typing import Optional
 
 import psutil
 
-from elliotts_casper_controller.amcp_client import AMCPClient
+from caspar_controller.amcp_client import AMCPClient
 
 
 class _AdoptedProcess:

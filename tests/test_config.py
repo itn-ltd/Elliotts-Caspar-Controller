@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from conftest import FIXTURES, TESTS_DIR, instance
 
-from elliotts_casper_controller import config_manager as cm
+from caspar_controller import config_manager as cm
 
 GOLDEN = TESTS_DIR / "golden"
 

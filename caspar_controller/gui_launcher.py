@@ -16,16 +16,16 @@ import psutil
 import pystray
 from PIL import Image, ImageDraw, ImageTk
 
-from elliotts_casper_controller import __version__
-from elliotts_casper_controller.amcp_client import AMCPClient
-from elliotts_casper_controller.config_manager import (
+from caspar_controller import __version__
+from caspar_controller.amcp_client import AMCPClient
+from caspar_controller.config_manager import (
     instance_amcp_port,
     load as load_config,
     regenerate_all_instance_configs,
     regenerate_instance_config,
     save as save_config,
 )
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller.process_manager import CasparProcessManager
 
 # Set Windows taskbar app ID
 try:
@@ -463,7 +463,7 @@ class CasparControllerGUI:
     def _start_web_server(self):
         import uvicorn
 
-        from elliotts_casper_controller.core import app
+        from caspar_controller.core import app
 
         if _is_port_in_use(self._web_port):
             _kill_port(self._web_port)
@@ -496,7 +496,7 @@ class CasparControllerGUI:
 
                 tb = traceback.format_exc()
                 try:
-                    from elliotts_casper_controller.config_manager import _config_dir
+                    from caspar_controller.config_manager import _config_dir
 
                     log_path = os.path.join(_config_dir(), "webserver_error.log")
                     with open(log_path, "w") as f:
@@ -675,7 +675,7 @@ class CasparControllerGUI:
                     if not first:
                         time.sleep(5)
                     first = False
-                    from elliotts_casper_controller.config_manager import regenerate_instance_config
+                    from caspar_controller.config_manager import regenerate_instance_config
 
                     regenerate_instance_config(cfg, inst)
                     m = CasparProcessManager(
@@ -751,7 +751,7 @@ class CasparControllerGUI:
     def _sync_api_managers(self) -> None:
         """Mirror self._managers into core._managers so dashboard controls work."""
 
-        core = sys.modules.get("elliotts_casper_controller.core")
+        core = sys.modules.get("caspar_controller.core")
         if core is None:
             return
         try:
