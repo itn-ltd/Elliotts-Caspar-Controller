@@ -10,9 +10,6 @@ import psutil
 
 from elliotts_casper_controller.amcp_client import AMCPClient
 
-# Console colour: black bg (0), cyan text (B)
-_CONSOLE_COLOR = "0B"
-
 
 class _AdoptedProcess:
     """Minimal Popen-compatible wrapper around an existing process found via psutil."""
@@ -60,24 +57,13 @@ class CasparProcessManager:
         if self.is_running():
             return True
         try:
-            exe_name = os.path.basename(self.exe_path)
-            safe_title = self.window_title.replace('"', "'").replace("&", "and")
-            cmd = f'cmd /k "color {_CONSOLE_COLOR} && title {safe_title} && {exe_name} {self.config_filename}"'
-
-            # Launch hidden — the console window is shown only on demand via show_console().
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            si.wShowWindow = 0  # SW_HIDE
-
             self._console_hwnd = None
+            # No shell: names never reach a command line. Full path: works even where
+            # NoDefaultCurrentDirectoryInExePath stops the current folder being searched.
             self._process = subprocess.Popen(
-                cmd,
+                [os.path.abspath(self.exe_path), self.config_filename],
                 cwd=self._exe_dir(),
-                startupinfo=si,
-                # Each instance must get its own fresh console, independent of
-                # our Python process's current console attachment (AttachConsole
-                # from a previous instance's thread would otherwise be inherited).
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             # Poll AMCP every second — move on as soon as it responds.
             # 90s hard timeout handles slow cold starts without hanging forever.
@@ -85,10 +71,6 @@ class CasparProcessManager:
             while time.time() < deadline:
                 time.sleep(1)
                 if self._client.ping():
-                    threading.Thread(
-                        target=self._rename_console_after_delay,
-                        daemon=True,
-                    ).start()
                     return True
             return False
         except Exception:

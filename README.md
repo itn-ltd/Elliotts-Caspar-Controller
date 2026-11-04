@@ -50,7 +50,7 @@ Releases include two files:
 2. Optionally tick **Lite Caspar Server**. The installer then downloads `LiteCasparServer.zip` and extracts it (default `C:\CasparCG`). Otherwise, extract the zip yourself.
 3. Launch the controller from the Start menu or desktop shortcut.
 
-> Releases are currently published on the original author's repository, and the installer and in-app updater download from there. Moving to Intune is planned in #10 and #11, and removing the self-updater in #3.
+> Releases are currently published on the original author's repository, and the installer's optional CasparCG download comes from there. Moving to Intune is planned in #10 and #11. The app no longer updates itself; install new versions with the installer (Intune, once #11 is done).
 
 ---
 
@@ -58,7 +58,7 @@ Releases include two files:
 
 1. **Open the web UI on the controller PC itself:** click **Open Web UI** in the desktop app, or browse to `http://127.0.0.1:5280`.
 2. **Set a password:** **Settings → Web UI Password**. Until you do, other devices can't use the UI. You can also have one set automatically: see [Default password](#default-password-for-new-installs).
-3. **Point it at CasparCG:** **Settings → CasparCG Executable**, for example `C:\CasparCG\casparcg.exe`, then **Save Path**.
+3. **Point it at CasparCG:** **Settings → CasparCG Executable**, for example `C:\CasparCG\casparcg.exe`, then **Save Path**. It must be an existing file called `casparcg.exe`, since the app runs it.
 4. **Choose the video mode** (default 1080p 25fps).
 5. **Add your outputs** under **Instances**, with **+ Add Instance** for each one:
    - **Name**: shown on the dashboard, and used in clip-trigger URLs
@@ -151,6 +151,7 @@ GET http://<controller-ip>:5280/api/load?instance=<name>&clip=<clip>&loop=false&
 
 - **`instance`** is the output's name (not case-sensitive) and must be a `Media` output.
 - **Looping is the default;** add `loop=false` to play once.
+- **Clip names** can't contain quotes, backslashes or control characters (rejected with `400`), so a trigger can't smuggle in extra AMCP commands.
 - **Building URLs:** the **HTTP Generator** page builds them, key included, ready to copy.
 
 ```bash
@@ -187,16 +188,17 @@ All need the key or a signed-in session, except `/api/health`.
 
 ### Remote Controllers
 
-- **Add other controllers** in **Settings → Remote Controllers**, with each one's URL (for example `http://192.168.1.101:5280`) and its API key. **Test** checks both.
+- **Add other controllers** in **Settings → Remote Controllers**, with each one's URL and its API key. **Test** checks both.
+- **URLs** must be plain `http(s)://host:port`, for example `http://192.168.1.101:5280`, with no path or user name.
 - **On the dashboard,** each remote appears with its outputs, Start All / Stop All and clip controls. If its key is wrong, the dashboard says so.
 
 ---
 
 ## Desktop app
 
-- **The window shows:** the web port, the network and local URLs, status, uptime, and buttons for **Start/Stop CasparCG**, **Open Web UI**, **Check for Updates**, **Hide to Tray** and **Quit**.
+- **The window shows:** the web port, the network and local URLs, status, uptime, and buttons for **Start/Stop CasparCG**, **Open Web UI**, **Hide to Tray** and **Quit**.
 - **The tray menu has:** Show Window, Open Web UI, Restart All Instances and Quit.
-- **Check for Updates** downloads and runs the latest installer from GitHub. It's being removed in #3, since Intune will handle updates.
+- **CasparCG runs without a console window.** Its output will be viewable in the web UI's console panel (#8).
 
 ---
 
@@ -210,7 +212,7 @@ All need the key or a signed-in session, except `/api/health`.
 
 - **Editing:** you can edit it directly while the app isn't running, but Settings is easier.
 - **Secrets:** `api_key`, `web_password_hash` and the remote controllers' keys live here. Treat the file as sensitive.
-- **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys.
+- **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys, and its CasparCG path if the imported one doesn't exist here.
 
 **Per-output files next to `casparcg.exe`:**
 - `casparcg_inst_N.config`, regenerated on every start, so don't edit them
