@@ -205,6 +205,20 @@ def restart_all(cfg: dict) -> None:
             _managers.pop(inst["id"], None)
 
 
+def adopt_running() -> int:
+    """Take over instances already answering AMCP (e.g. after the app restarted). Returns count."""
+    cfg = load_config()
+    adopted = 0
+    for inst in cfg.get("instances", []):
+        if inst["id"] in _managers:
+            continue
+        m = _make_manager(inst, cfg)
+        if m.adopt_existing():
+            _managers[inst["id"]] = m
+            adopted += 1
+    return adopted
+
+
 def stop(inst: dict, port: int) -> None:
     """Stop one instance. Runs in a thread."""
     inst_id = inst["id"]
