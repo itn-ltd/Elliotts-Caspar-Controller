@@ -168,11 +168,15 @@ def without_secrets(config: dict) -> dict:
 def validate_remote_url(url: str) -> None:
     """Raise ValueError unless ``url`` is a plain ``http(s)://host[:port]``."""
     parts = urlsplit(url)
+    try:
+        port_ok = parts.port != 0
+    except ValueError:  # non-numeric or out of range
+        port_ok = False
     if (
-        parts.scheme not in ("http", "https")
+        not port_ok
+        or parts.scheme not in ("http", "https")
         or not parts.hostname
-        or parts.username
-        or parts.password
+        or "@" in parts.netloc
         or parts.path not in ("", "/")
         or parts.query
         or parts.fragment
@@ -180,16 +184,26 @@ def validate_remote_url(url: str) -> None:
         raise ValueError(f"Remote URL must look like http://host:port, not {url!r}")
 
 
-def _check_text(field: str, value, required: bool = False, quotes_ok: bool = True) -> None:
+def _check_text(field: str, value, required: bool = False) -> None:
     if not isinstance(value, str) or (required and not value.strip()):
         raise ValueError(f"{field} must be text" + (" and can't be empty" if required else ""))
-    if has_control_chars(value) or (not quotes_ok and not is_amcp_safe(value)):
+    if has_control_chars(value):
         raise ValueError(f"{field} contains characters that aren't allowed")
 
 
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _check_list(field: str, data: dict) -> list:
+    value = data.get(field, [])
+    if not isinstance(value, list) or not all(isinstance(v, dict) for v in value):
+        raise ValueError(f"{field} must be a list of objects")
+    return value
+
+
 def _check_port(field: str, value, allow_zero: bool = False) -> None:
-    ok = isinstance(value, int) and not isinstance(value, bool)
-    if not ok or not ((allow_zero and value == 0) or 1 <= value <= 65535):
+    if not _is_int(value) or not ((allow_zero and value == 0) or 1 <= value <= 65535):
         raise ValueError(f"{field} must be a port number")
 
 
@@ -207,19 +221,23 @@ def validate_config(data: dict) -> None:
     for field in ("web_port", "amcp_base_port"):
         if field in data:
             _check_port(field, data[field])
-    for inst in data.get("instances", []):
-        if not isinstance(inst, dict) or not isinstance(inst.get("id", 1), int):
+    if not _is_int(data.get("startup_delay", 60)):
+        raise ValueError("startup_delay must be a whole number of seconds")
+    if not isinstance(data.get("autostart_caspar", False), bool):
+        raise ValueError("autostart_caspar must be true or false")
+    for inst in _check_list("instances", data):
+        if not _is_int(inst.get("id")):
             raise ValueError("Each instance needs a numeric id")
         _check_text("Instance name", inst.get("name"), required=True)
         _check_text("NDI name", inst.get("ndi_name"), required=True)
         if inst.get("type", "html") not in ("html", "media"):
             raise ValueError("Instance type must be html or media")
-        _check_text("Instance URL", inst.get("url", ""), quotes_ok=False)
+        _check_text("Instance URL", inst.get("url", ""))
+        if not is_amcp_safe(inst.get("url", "")):
+            raise ValueError("Instance URL can't contain quotes or backslashes")
         _check_text("Startup command", inst.get("startup_command", ""))
         _check_port("Instance AMCP port", inst.get("amcp_port", 0), allow_zero=True)
-    for remote in data.get("remote_controllers", []):
-        if not isinstance(remote, dict):
-            raise ValueError("Each remote controller needs a URL")
+    for remote in _check_list("remote_controllers", data):
         _check_text("Remote URL", remote.get("url"), required=True)
         validate_remote_url(remote["url"])
         _check_text("Remote API key", remote.get("api_key", ""))

@@ -151,7 +151,7 @@ GET http://<controller-ip>:5280/api/load?instance=<name>&clip=<clip>&loop=false&
 
 - **`instance`** is the output's name (not case-sensitive) and must be a `Media` output.
 - **Looping is the default;** add `loop=false` to play once.
-- **Clip names** can't contain quotes or control characters (rejected with `400`), so a trigger can't smuggle in extra AMCP commands.
+- **Clip names** can't contain quotes, backslashes or control characters (rejected with `400`), so a trigger can't smuggle in extra AMCP commands.
 - **Building URLs:** the **HTTP Generator** page builds them, key included, ready to copy.
 
 ```bash
@@ -212,7 +212,7 @@ All need the key or a signed-in session, except `/api/health`.
 
 - **Editing:** you can edit it directly while the app isn't running, but Settings is easier.
 - **Secrets:** `api_key`, `web_password_hash` and the remote controllers' keys live here. Treat the file as sensitive.
-- **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys.
+- **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys, and its CasparCG path if the imported one doesn't exist here.
 
 **Per-output files next to `casparcg.exe`:**
 - `casparcg_inst_N.config`, regenerated on every start, so don't edit them

@@ -9,8 +9,8 @@ def has_control_chars(text: str) -> bool:
 
 
 def is_amcp_safe(value: str) -> bool:
-    """True if ``value`` can go inside a quoted AMCP argument (no quotes or control chars)."""
-    return '"' not in value and not has_control_chars(value)
+    """True if ``value`` can go inside a quoted AMCP argument."""
+    return '"' not in value and "\\" not in value and not has_control_chars(value)
 
 
 class AMCPClient:
@@ -22,7 +22,7 @@ class AMCPClient:
     def send(self, command: str) -> str:
         # CR/LF would end this command and smuggle in another.
         if has_control_chars(command):
-            raise ValueError("AMCP commands can't contain control characters")
+            return "ERROR: AMCP commands can't contain control characters"
         try:
             with socket.create_connection((self.host, self.port), timeout=self.timeout) as sock:
                 sock.sendall((command + "\r\n").encode())
@@ -49,6 +49,8 @@ class AMCPClient:
         return self.send(f"INFO {channel}-{layer}")
 
     def play_html(self, channel: int, url: str) -> str:
+        if not is_amcp_safe(url):
+            return "ERROR: URL can't contain quotes, backslashes or control characters"
         return self.send(f'PLAY {channel}-1 [HTML] "{url}"')
 
     def stop_channel(self, channel: int) -> str:

@@ -1,5 +1,6 @@
 """FastAPI application — web UI and REST API for Elliott's Caspar Controller."""
 
+import html
 import os
 import re
 import secrets
@@ -21,7 +22,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from elliotts_casper_controller import __version__, ndi_tally
-from elliotts_casper_controller.amcp_client import AMCPClient, is_amcp_safe
+from elliotts_casper_controller.amcp_client import AMCPClient, has_control_chars, is_amcp_safe
 from elliotts_casper_controller.auth import key_matches, new_api_key, verify_password
 from elliotts_casper_controller.config_manager import (
     MACHINE_KEYS,
@@ -530,13 +531,20 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => map[c]);
 }
 
+function options(values, current) {
+  return values.map(v => `<option value="${escapeHtml(v)}"${v === current ? ' selected' : ''}>${escapeHtml(v)}</option>`).join('');
+}
+
 function api(url, method='GET', body=null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   return fetch(url, opts).then(r => {
     if (r.status === 401) { location.href = '/login'; throw new Error('signed out'); }
     if (r.status === 403 && url !== '/api/password') { location.href = '/change-password'; throw new Error('password change required'); }
-    return r.json();
+    if (r.ok) return r.json();
+    return r.json().catch(() => ({})).then(d => {
+      throw new Error(typeof d.detail === 'string' ? d.detail : 'Request failed (' + r.status + ')');
+    });
   });
 }
 """
@@ -566,7 +574,7 @@ def nav(active: str, server_name: str = "") -> str:
 
 def page(title: str, active: str, body: str, extra_js: str = "") -> str:
     cfg = load_config()
-    server_name = cfg.get("server_name", "").strip()
+    server_name = html.escape(cfg.get("server_name", "").strip())
     tab_title = (
         f"{title} — {server_name}" if server_name else f"{title} — Elliott's Caspar Controller"
     )
@@ -854,10 +862,11 @@ def api_instance_amcp(inst_id: int, req: AMCPCommandRequest):
     if inst_id not in inst_map:
         raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
     port = instance_amcp_port(cfg, inst_map[inst_id])
-    try:
-        res = AMCPClient(port=port).send(req.command.strip())
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+    if has_control_chars(req.command.strip()):
+        raise HTTPException(
+            status_code=400, detail="AMCP commands can't contain control characters"
+        )
+    res = AMCPClient(port=port).send(req.command.strip())
     _log_event(f"Inst {inst_id} AMCP: {req.command[:60]} → {res[:60]}")
     return {"ok": True, "response": res}
 
@@ -866,7 +875,8 @@ def _play_clip(cfg: dict, inst: dict, clip: str, loop: bool) -> tuple[str, str]:
     """Play a clip on a media instance. Returns (AMCP command, reply)."""
     if not is_amcp_safe(clip):
         raise HTTPException(
-            status_code=400, detail="Clip names can't contain quotes or control characters"
+            status_code=400,
+            detail="Clip names can't contain quotes, backslashes or control characters",
         )
     cmd = f'PLAY 1-1 "{clip}"' + (" LOOP" if loop else "")
     return cmd, AMCPClient(port=instance_amcp_port(cfg, inst)).send(cmd)
@@ -1038,8 +1048,11 @@ async def api_config_import(request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Config must be a JSON object")
-    _or_400(validate_config, body)
     current = load_config()
+    # Another PC's CasparCG path is meaningless here: keep this PC's.
+    if "caspar_exe_path" in body and not os.path.isfile(body["caspar_exe_path"] or ""):
+        body["caspar_exe_path"] = current["caspar_exe_path"]
+    _or_400(validate_config, body)
     # Imports never change this machine's password, API key or forced-change flag.
     body = {k: v for k, v in body.items() if k not in MACHINE_KEYS}
     body["remote_controllers"] = keep_remote_keys(
@@ -1189,7 +1202,7 @@ def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
 
 def _card_page(title: str, inner: str, script: str = "") -> str:
     """Small centred page (login, setup required) outside the main nav."""
-    server_name = load_config().get("server_name", "").strip()
+    server_name = html.escape(load_config().get("server_name", "").strip())
     name_html = (
         f'<p style="color:var(--muted);font-size:14px">{server_name}</p>' if server_name else ""
     )
@@ -1359,10 +1372,10 @@ function loadMediaClips() {
     document.querySelectorAll('[id^="media_"]').forEach(sel => {
       const current = sel.value;
       let html = '<option value="">— pick a clip —</option>';
-      html += regular.map(c => `<option value="${escapeHtml(c)}"${c===current?' selected':''}>${escapeHtml(c)}</option>`).join('');
+      html += options(regular, current);
       if (tests.length) {
         html += '<option disabled>─── Test Patterns ───</option>';
-        html += tests.map(c => `<option value="${escapeHtml(c)}"${c===current?' selected':''}>${escapeHtml(c)}</option>`).join('');
+        html += options(tests, current);
       }
       sel.innerHTML = html;
     });
@@ -1555,7 +1568,7 @@ function sendAmcp(id) {
   if (!cmd) { toast('Enter an AMCP command first', 'warning'); return; }
   api('/api/instance/' + id + '/amcp', 'POST', { command: cmd }).then(d => {
     toast('Inst' + id + ': ' + (d.response || 'OK'), 'success');
-  }).catch(() => toast('Failed to send AMCP', 'error'));
+  }).catch(e => toast(e.message, 'error'));
 }
 
 // ── Remote Controllers ─────────────────────────────────────────
@@ -1744,10 +1757,10 @@ function populateRemoteMediaDropdowns(idx, instances) {
       const sel = document.getElementById('rmedia_' + idx + '_' + inst.id);
       if (!sel) return;
       let html = '<option value="">— pick a clip —</option>';
-      html += regular.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      html += options(regular);
       if (tests.length) {
         html += '<option disabled>─── Test Patterns ───</option>';
-        html += tests.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        html += options(tests);
       }
       sel.innerHTML = html;
     });
@@ -1872,7 +1885,7 @@ function loadData() {
       sel.innerHTML = '<option value="">No media instances configured</option>';
     } else {
       sel.innerHTML = '<option value="">— select instance —</option>' +
-        _mediaInstances.map(i => `<option value="${escapeHtml(i.name)}">${escapeHtml(i.name)}</option>`).join('');
+        options(_mediaInstances.map(i => i.name));
     }
     onSelectionChange();
   });
@@ -1880,7 +1893,7 @@ function loadData() {
     _clips = data.clips || [];
     const sel = document.getElementById('gen-clip');
     sel.innerHTML = '<option value="">— select clip —</option>' +
-      _clips.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      options(_clips);
     onSelectionChange();
   });
 }
@@ -2171,14 +2184,14 @@ function testRemote(i) {
     } else {
       toast('Could not reach ' + url, 'error');
     }
-  }).catch(() => toast('Test failed', 'error'));
+  }).catch(e => toast(e.message, 'error'));
 }
 
 function saveRemotes() {
   const remotes = getFormRemotes();
   api('/api/config', 'POST', { remote_controllers: remotes })
     .then(() => { _remotes = remotes; renderRemoteList(); toast('Remote controllers saved', 'success'); })
-    .catch(() => toast('Failed to save', 'error'));
+    .catch(e => toast(e.message, 'error'));
 }
 
 function loadSettings() {
@@ -2328,7 +2341,7 @@ function saveExePath() {
       toast('CasparCG path saved', 'success');
       document.getElementById('exe-warning').style.display = path ? 'none' : 'block';
     })
-    .catch(() => toast('Failed to save path', 'error'));
+    .catch(e => toast(e.message, 'error'));
 }
 
 function saveSettings() {
@@ -2344,14 +2357,14 @@ function saveSettings() {
   api('/api/config', 'POST', payload).then(() => {
     currentInstances = instances;
     toast('Settings saved — restart CasparCG to apply', 'success');
-  }).catch(() => toast('Failed to save settings', 'error'));
+  }).catch(e => toast(e.message, 'error'));
 }
 
 function saveServerName() {
   const name = document.getElementById('server_name').value.trim();
   api('/api/config', 'POST', { server_name: name })
     .then(() => { toast('Server name saved', 'success'); location.reload(); })
-    .catch(() => toast('Failed to save', 'error'));
+    .catch(e => toast(e.message, 'error'));
 }
 
 function savePassword() {
@@ -2360,14 +2373,13 @@ function savePassword() {
   if (!pw.trim()) { toast('Enter a password', 'warning'); return; }
   api('/api/password', 'POST', { password: pw, current_password: current })
     .then(d => {
-      if (!d.ok) { toast(d.detail || 'Failed to save', 'error'); return; }
       ['web_password', 'current_password'].forEach(id => document.getElementById(id).value = '');
       if (_passwordSet) { toast('Password changed', 'success'); return; }
       // First password: this browser was trusted as local, now it needs to sign in.
       toast('Password saved, please sign in', 'success');
       setTimeout(() => location.href = '/login', 1200);
     })
-    .catch(() => toast('Failed to save', 'error'));
+    .catch(e => toast(e.message, 'error'));
 }
 
 function loadApiKey() {
@@ -2420,7 +2432,7 @@ function importConfig() {
       if (!confirm('This will replace all current settings. Continue?')) return;
       api('/api/config/import', 'POST', cfg)
         .then(() => { toast('Config imported', 'success'); loadSettings(); })
-        .catch(() => toast('Import failed', 'error'));
+        .catch(e => toast(e.message, 'error'));
     };
     reader.readAsText(file);
   };
