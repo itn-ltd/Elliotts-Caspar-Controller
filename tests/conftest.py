@@ -9,6 +9,7 @@ import json
 import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import types
@@ -18,12 +19,21 @@ import psutil
 import pytest
 from fastapi.testclient import TestClient
 
-from elliotts_casper_controller import config_manager, core, ndi_tally
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from elliotts_casper_controller import config_manager
+
+# core loads (and may save) the config on import, so keep that out of the repo.
+_import_dir = tempfile.mkdtemp(prefix="caspar-tests-")
+config_manager._config_dir = lambda: _import_dir
+
+from elliotts_casper_controller import core, ndi_tally  # noqa: E402
+from elliotts_casper_controller.process_manager import CasparProcessManager  # noqa: E402
 
 TESTS_DIR = Path(__file__).parent
 FAKE_CASPAR = TESTS_DIR / "fake_caspar.py"
 FIXTURES = TESTS_DIR / "fixtures"
+API_KEY = "test-api-key"
+LOCAL = ("127.0.0.1", 50000)
+LOCAL_URL = "http://127.0.0.1:5280"  # Host header a local browser sends
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="launches Windows processes")
 
@@ -76,6 +86,7 @@ def config_dir(tmp_path, monkeypatch):
     casparcg_inst_N.config files into the current directory.
     """
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(config_manager.INITIAL_PASSWORD_ENV, raising=False)
     d = tmp_path / "app"
     d.mkdir()
     monkeypatch.setattr(config_manager, "_config_dir", lambda: str(d))
@@ -84,17 +95,35 @@ def config_dir(tmp_path, monkeypatch):
 
 @pytest.fixture
 def write_config(config_dir):
+    """Write a config file, with the test API key unless the test sets its own."""
+
     def _write(cfg: dict) -> dict:
+        cfg = {"api_key": API_KEY, **cfg}
         (config_dir / "elliotts_caspar_config.json").write_text(json.dumps(cfg), encoding="utf-8")
         return cfg
 
     return _write
 
 
+# No context manager on these clients: the lifespan (status thread, NDI tally) isn't started.
+
+
 @pytest.fixture
 def client():
-    # No context manager: the lifespan (status thread, NDI tally) is not started.
+    """A trusted operator: on this PC and sending the API key."""
+    return TestClient(core.app, base_url=LOCAL_URL, client=LOCAL, headers={"X-API-Key": API_KEY})
+
+
+@pytest.fixture
+def anon():
+    """Another device on the network with no credentials."""
     return TestClient(core.app)
+
+
+@pytest.fixture
+def local_anon():
+    """A browser on this PC with no credentials."""
+    return TestClient(core.app, base_url=LOCAL_URL, client=LOCAL)
 
 
 @pytest.fixture

@@ -1,8 +1,19 @@
 """Read/write app config and regenerate per-instance casparcg.config files."""
 
 import json
+import logging
 import os
 import sys
+
+from elliotts_casper_controller.auth import hash_password, new_api_key, verify_password
+
+log = logging.getLogger(__name__)
+
+SECRET_KEYS = ("api_key", "web_password_hash")
+# Belong to this machine: config imports never change them.
+MACHINE_KEYS = (*SECRET_KEYS, "password_change_required")
+# Seeds the first web UI password (e.g. set by Intune); users must change it on first sign-in.
+INITIAL_PASSWORD_ENV = "CASPAR_CONTROLLER_INITIAL_PASSWORD"
 
 
 def _config_dir() -> str:
@@ -20,8 +31,9 @@ DEFAULT_CONFIG = {
     "autostart_caspar": False,
     "media_path": "",
     "server_name": "",
-    "web_password": "",
-    "web_password_enabled": False,
+    "web_password_hash": "",
+    "password_change_required": False,
+    "api_key": "",
     "instances": [],
     "remote_controllers": [],
 }
@@ -97,7 +109,73 @@ def load() -> dict:
         inst.setdefault("startup_command", "")
         inst.setdefault("url", "")
 
+    if _secure_secrets(config):
+        try:
+            save(config)
+        except OSError as e:
+            # Read-only config folder: run with what we have rather than refuse to start.
+            log.warning("Couldn't save %s: %s", cfg_file, e)
     return config
+
+
+def set_password(config: dict, password: str, must_change: bool = False) -> None:
+    """Store a new web UI password hash. Raises ValueError if it's blank or unchanged."""
+    if not password.strip():
+        raise ValueError("Password can't be empty")
+    current = config["web_password_hash"]
+    if current and verify_password(password, current):
+        raise ValueError("Choose a different password")
+    config["web_password_hash"] = hash_password(password)
+    config["password_change_required"] = must_change
+
+
+def _secure_secrets(config: dict) -> bool:
+    """Hash v1 passwords, apply the initial password and create the API key. True if changed."""
+    changed = False
+    plaintext = config.pop("web_password", None)
+    enabled = config.pop("web_password_enabled", None)
+    if plaintext is not None or enabled is not None:
+        changed = True
+        if enabled and plaintext and plaintext.strip() and not config["web_password_hash"]:
+            config["web_password_hash"] = hash_password(plaintext)
+    initial = os.environ.get(INITIAL_PASSWORD_ENV, "")
+    if initial.strip() and not config["web_password_hash"]:
+        set_password(config, initial, must_change=True)
+        changed = True
+    if not config["api_key"]:
+        config["api_key"] = new_api_key()
+        changed = True
+    return changed
+
+
+def without_secrets(config: dict) -> dict:
+    """Config minus the password hash and API keys, including each remote's key."""
+    view = {k: v for k, v in config.items() if k not in SECRET_KEYS}
+    if "remote_controllers" in config:
+        view["remote_controllers"] = [
+            {
+                **{k: v for k, v in r.items() if k != "api_key"},
+                "api_key_set": bool(r.get("api_key")),
+            }
+            for r in config["remote_controllers"]
+        ]
+    return view
+
+
+def keep_remote_keys(remotes: list, previous: list) -> list:
+    """Fill blank remote API keys from the saved remote with the same URL."""
+
+    def url(r: dict) -> str:
+        return r.get("url", "").rstrip("/")
+
+    saved = {url(r): r.get("api_key", "") for r in previous}
+    return [
+        {
+            **{k: v for k, v in r.items() if k != "api_key_set"},
+            "api_key": r.get("api_key") or saved.get(url(r), ""),
+        }
+        for r in remotes
+    ]
 
 
 def save(config: dict) -> None:

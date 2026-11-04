@@ -25,29 +25,6 @@ def issue(number: int, why: str, raises: type | tuple = AssertionError) -> pytes
     return pytest.mark.xfail(reason=f"#{number}: {why}", raises=raises)
 
 
-# ---------------------------------------------------------------- #2 access control
-
-
-@issue(2, "/api/* routes skip the password check")
-def test_api_requires_auth_when_password_set(client, write_config):
-    write_config({"web_password": "hunter2", "web_password_enabled": True})
-    assert client.get("/api/config").status_code == 401
-
-
-@issue(2, "GET /api/config returns the password in plain text")
-def test_config_api_never_returns_password(client, write_config):
-    write_config({"web_password": "hunter2", "web_password_enabled": True})
-    client.post("/login", json={"password": "hunter2"})
-    assert "web_password" not in client.get("/api/config").json()
-
-
-@issue(2, "/static joins absolute paths, so any file on disk can be read")
-def test_static_route_cannot_read_outside_static(client, tmp_path):
-    secret = tmp_path / "secret.txt"
-    secret.write_text("top secret")
-    assert client.get("/static/" + secret.as_posix()).status_code == 404
-
-
 # ---------------------------------------------------------------- #3 injection, updater
 
 
@@ -106,13 +83,6 @@ def test_config_import_is_validated(client):
         json={"caspar_exe_path": "C:\\Windows\\System32\\calc.exe", "instances": []},
     )
     assert r.status_code in (400, 422)
-
-
-@issue(3, "the remote proxy appends any path to the remote URL, so '@host' redirects it")
-def test_remote_proxy_rejects_host_change(client, write_config):
-    write_config({"remote_controllers": [{"url": f"http://127.0.0.1:{free_port()}"}]})
-    r = client.post("/api/remote/0/proxy", json={"path": f"@127.0.0.1:{free_port()}/x"})
-    assert r.status_code == 400
 
 
 @issue(3, "the app updates itself from the original author's personal GitHub")
