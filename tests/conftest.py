@@ -136,14 +136,11 @@ def recorded_sleeps(monkeypatch):
 
 
 @pytest.fixture
-def caspar_dir(tmp_path, monkeypatch):
+def caspar_dir(tmp_path):
     """A folder holding a casparcg.cmd shim that runs tests/fake_caspar.py.
 
     Any process left running in this folder is killed afterwards.
     """
-    # Today's launcher relies on cmd finding the exe in the current directory,
-    # which this variable (set by some hardened shells) disables. See #3.
-    monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
     d = tmp_path / "caspar"
     d.mkdir()
     (d / "casparcg.cmd").write_text(f'@"{sys.executable}" "{FAKE_CASPAR}" %*\r\n', encoding="utf-8")

@@ -78,7 +78,6 @@ BTN_GREEN = "#4caf50"
 BTN_RED = "#ff5252"
 BTN_RED_DK = "#c0392b"
 BTN_GRAY = "#3d3d3d"
-BTN_ORNG = "#e67e22"
 SUCCESS = "#22c55e"
 ERROR = "#ef4444"
 WARNING = "#f59e0b"
@@ -331,10 +330,6 @@ class CasparControllerGUI:
             row2, "Open Web UI", self._open_browser, BTN_BLUE, h=46, state=tk.DISABLED
         )
         self._btn_web.pack(side=tk.LEFT, padx=6)
-        self._btn_update = self._make_btn(
-            row2, "Check for Updates", self._check_updates, ACCENT, h=46
-        )
-        self._btn_update.pack(side=tk.LEFT, padx=6)
 
         row3 = tk.Frame(btn_area, bg=BG_DARK)
         row3.pack(pady=4)
@@ -524,8 +519,6 @@ class CasparControllerGUI:
             cfg = load_config()
             if cfg.get("autostart_caspar"):
                 self.root.after(800, self._auto_start_caspar)
-            # Silent update check on startup — shows button only if update found
-            self.root.after(2000, lambda: self._check_updates(silent=True))
             return
 
         if self._server_error:
@@ -558,165 +551,6 @@ class CasparControllerGUI:
     # -----------------------------------------------------------------------
     # CasparCG process management
     # -----------------------------------------------------------------------
-
-    def _check_updates(self, silent: bool = False):
-        if not silent:
-            self._disable_btn(self._btn_update, "Checking...")
-
-        def run():
-            try:
-                import requests as _req
-
-                url = "https://api.github.com/repos/BlueElliott/Elliotts-Caspar-Controller/releases/latest"
-                r = _req.get(url, headers={"User-Agent": "ElliotsCasparController"}, timeout=8)
-                data = r.json()
-                latest = data.get("tag_name", "").lstrip("v")
-                current = __version__
-                if latest and latest != current:
-                    # Look for the installer asset specifically.
-                    installer_url = None
-                    for asset in data.get("assets", []):
-                        if asset.get("name", "").lower().endswith("setup.exe"):
-                            installer_url = asset.get("browser_download_url")
-                            break
-                    self.root.after(
-                        0,
-                        lambda: self._update_available(
-                            latest, data.get("html_url", ""), installer_url
-                        ),
-                    )
-                else:
-                    if not silent:
-                        self.root.after(0, self._up_to_date)
-            # Known bug: `e` is deleted when the except block ends, so the lambda
-            # raises NameError. This updater is removed in #3.
-            except Exception as e:  # noqa: F841
-                if not silent:
-                    self.root.after(0, lambda: self._update_error(str(e)))  # noqa: F821
-
-        threading.Thread(target=run, daemon=True).start()
-
-    def _update_available(self, latest: str, release_url: str, installer_url: str | None):
-        if installer_url and getattr(sys, "frozen", False):
-            # Running as installed exe — offer one-click silent update via installer.
-            self._pending_installer_url = installer_url
-            self._pending_latest = latest
-            self._enable_btn(self._btn_update, self._do_auto_update, f"Install v{latest}", BTN_ORNG)
-        else:
-            # Running from source, or no installer asset found — open release page.
-            self._enable_btn(
-                self._btn_update,
-                lambda: webbrowser.open(release_url),
-                f"v{latest} Available!",
-                BTN_ORNG,
-            )
-        self._status_label.config(text=f"Update available: v{latest}", fg=WARNING)
-
-    def _do_auto_update(self):
-        import tempfile
-
-        import requests as _req
-
-        installer_url = getattr(self, "_pending_installer_url", None)
-        latest = getattr(self, "_pending_latest", "?")
-        if not installer_url:
-            return
-
-        confirmed = messagebox.askyesno(
-            "Install Update",
-            f"Download and install v{latest} now?\n\nThe app will close to apply the update.",
-            parent=self.root,
-        )
-        if not confirmed:
-            return
-
-        self._disable_btn(self._btn_update, "Downloading...")
-        self._status_label.config(text=f"Downloading v{latest}...", fg=MUTED)
-
-        pending_installer = os.path.join(tempfile.gettempdir(), "ElliottsCasparControllerSetup.exe")
-
-        def download():
-            try:
-                r = _req.get(
-                    installer_url,
-                    stream=True,
-                    timeout=120,
-                    headers={"User-Agent": "ElliotsCasparController"},
-                )
-                r.raise_for_status()
-                total = int(r.headers.get("content-length", 0))
-                downloaded = 0
-                with open(pending_installer, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=65536):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if total:
-                                pct = int(downloaded * 100 / total)
-                                self.root.after(
-                                    0,
-                                    lambda p=pct: self._disable_btn(
-                                        self._btn_update, f"Downloading {p}%..."
-                                    ),
-                                )
-
-                self.root.after(0, lambda: self._apply_update(pending_installer))
-
-            # Known bug: `e` is deleted when the except block ends, so the lambda
-            # raises NameError. This updater is removed in #3.
-            except Exception as e:  # noqa: F841
-                self.root.after(0, lambda: self._update_error(f"Download failed: {e}"))  # noqa: F821
-                self.root.after(
-                    0,
-                    lambda: self._enable_btn(
-                        self._btn_update, self._do_auto_update, f"Install v{latest}", BTN_ORNG
-                    ),
-                )
-
-        threading.Thread(target=download, daemon=True).start()
-
-    def _apply_update(self, installer_path: str):
-        import subprocess
-
-        # Pass the current install directory so the silent installer overwrites
-        # in-place rather than defaulting to a fresh location.
-        install_dir = os.path.dirname(sys.executable)
-
-        self._status_label.config(text="Launching installer…", fg=MUTED)
-
-        CREATE_NO_WINDOW = 0x08000000
-        subprocess.Popen(
-            [
-                installer_path,
-                "/VERYSILENT",
-                "/SUPPRESSMSGBOXES",
-                "/NORESTART",
-                f"/DIR={install_dir}",
-            ],
-            creationflags=CREATE_NO_WINDOW,
-            close_fds=True,
-        )
-
-        # Exit so the installer can replace our files cleanly.
-        self.root.after(1000, lambda: os._exit(0))
-
-    def _up_to_date(self):
-        self._redraw_btn(self._btn_update, "Up to Date ✓", SUCCESS, tk.NORMAL)
-        self.root.after(
-            3000,
-            lambda: self._enable_btn(
-                self._btn_update, self._check_updates, "Check for Updates", ACCENT
-            ),
-        )
-
-    def _update_error(self, err: str):
-        self._redraw_btn(self._btn_update, "Check Failed", BTN_GRAY, tk.NORMAL)
-        self.root.after(
-            3000,
-            lambda: self._enable_btn(
-                self._btn_update, self._check_updates, "Check for Updates", ACCENT
-            ),
-        )
 
     def _auto_start_caspar(self):
         self._status_label.config(text="Auto-starting CasparCG...", fg=MUTED)
@@ -916,7 +750,6 @@ class CasparControllerGUI:
 
     def _sync_api_managers(self) -> None:
         """Mirror self._managers into core._managers so dashboard controls work."""
-        import sys
 
         core = sys.modules.get("elliotts_casper_controller.core")
         if core is None:
@@ -1223,7 +1056,6 @@ class CasparControllerGUI:
         self._set_btn_color(self._btn_start, BTN_GREEN)
         self._set_btn_color(self._btn_stop, BTN_RED)
         self._set_btn_color(self._btn_web, BTN_BLUE)
-        self._set_btn_color(self._btn_update, ACCENT)
         self._set_btn_color(self._btn_hide, BTN_GRAY)
         self._set_btn_color(self._btn_quit, BTN_RED_DK)
 
@@ -1239,7 +1071,6 @@ class CasparControllerGUI:
             self._btn_start,
             self._btn_stop,
             self._btn_web,
-            self._btn_update,
             self._btn_hide,
             self._btn_quit,
         ):

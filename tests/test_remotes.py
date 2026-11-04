@@ -180,7 +180,7 @@ def test_remote_action_proxy(client, remotes_config, remote):
     ]
 
     assert client.post("/api/remote/1/proxy", json={"path": "/api/server/stop"}).status_code == 502
-    assert client.post("/api/remote/9/proxy", json={"path": "/x"}).status_code == 404
+    assert client.post("/api/remote/9/proxy", json={"path": "/api/server/stop"}).status_code == 404
 
 
 @pytest.mark.parametrize("path", ["@evil.example/x", "//evil.example/x", "\\\\evil/x", "api/x"])

@@ -1,6 +1,7 @@
 """FastAPI application — web UI and REST API for Elliott's Caspar Controller."""
 
 import os
+import re
 import secrets
 import sys
 import threading
@@ -20,7 +21,7 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from elliotts_casper_controller import __version__, ndi_tally
-from elliotts_casper_controller.amcp_client import AMCPClient
+from elliotts_casper_controller.amcp_client import AMCPClient, is_amcp_safe
 from elliotts_casper_controller.auth import key_matches, new_api_key, verify_password
 from elliotts_casper_controller.config_manager import (
     MACHINE_KEYS,
@@ -32,6 +33,8 @@ from elliotts_casper_controller.config_manager import (
     regenerate_instance_config,
     save as save_config,
     set_password,
+    validate_config,
+    validate_remote_url,
     without_secrets,
 )
 from elliotts_casper_controller.process_manager import CasparProcessManager
@@ -522,6 +525,11 @@ function toast(msg, type='info') {
   setTimeout(() => t.remove(), 3500);
 }
 
+function escapeHtml(value) {
+  const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+  return String(value ?? '').replace(/[&<>"']/g, c => map[c]);
+}
+
 function api(url, method='GET', body=null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -846,10 +854,22 @@ def api_instance_amcp(inst_id: int, req: AMCPCommandRequest):
     if inst_id not in inst_map:
         raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
     port = instance_amcp_port(cfg, inst_map[inst_id])
-    client = AMCPClient(port=port)
-    res = client.send(req.command.strip())
+    try:
+        res = AMCPClient(port=port).send(req.command.strip())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     _log_event(f"Inst {inst_id} AMCP: {req.command[:60]} → {res[:60]}")
     return {"ok": True, "response": res}
+
+
+def _play_clip(cfg: dict, inst: dict, clip: str, loop: bool) -> tuple[str, str]:
+    """Play a clip on a media instance. Returns (AMCP command, reply)."""
+    if not is_amcp_safe(clip):
+        raise HTTPException(
+            status_code=400, detail="Clip names can't contain quotes or control characters"
+        )
+    cmd = f'PLAY 1-1 "{clip}"' + (" LOOP" if loop else "")
+    return cmd, AMCPClient(port=instance_amcp_port(cfg, inst)).send(cmd)
 
 
 @app.get("/api/load")
@@ -873,11 +893,7 @@ def api_load_clip(instance: str, clip: str, loop: bool = True):
             status_code=400,
             detail=f"Instance '{instance}' is not a media type — only media instances support clip loading",
         )
-    port = instance_amcp_port(cfg, inst)
-    client = AMCPClient(port=port)
-    loop_str = " LOOP" if loop else ""
-    cmd = f'PLAY 1-1 "{clip}"{loop_str}'
-    res = client.send(cmd)
+    cmd, res = _play_clip(cfg, inst, clip, loop)
     _log_event(f"HTTP load: {instance} → {cmd} → {res[:60]}")
     return {"ok": True, "instance": instance, "clip": clip, "command": cmd, "response": res}
 
@@ -895,11 +911,7 @@ def api_instance_load_clip(inst_id: int, clip: str, loop: bool = True):
     inst = inst_map[inst_id]
     if inst.get("type", "html") != "media":
         raise HTTPException(status_code=400, detail=f"Instance {inst_id} is not a media type")
-    port = instance_amcp_port(cfg, inst)
-    client = AMCPClient(port=port)
-    loop_str = " LOOP" if loop else ""
-    cmd = f'PLAY 1-1 "{clip}"{loop_str}'
-    res = client.send(cmd)
+    cmd, res = _play_clip(cfg, inst, clip, loop)
     _log_event(f"HTTP load: Inst {inst_id} ({inst['name']}) → {cmd} → {res[:60]}")
     return {"ok": True, "instance": inst["name"], "clip": clip, "command": cmd, "response": res}
 
@@ -976,10 +988,7 @@ def api_password(req: _PasswordChange, request: Request):
     if stored and not cfg["password_change_required"]:
         if not verify_password(req.current_password, stored):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
-    try:
-        set_password(cfg, req.password)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
+    _or_400(set_password, cfg, req.password)
     save_config(cfg)
     # Sign out every other session: the old password may have leaked.
     _sessions.intersection_update({request.cookies.get("session", "")})
@@ -991,6 +1000,7 @@ def api_password(req: _PasswordChange, request: Request):
 def api_config_post(update: ConfigUpdate):
     cfg = load_config()
     data = update.model_dump(exclude_none=True)
+    _or_400(validate_config, data)
     if "remote_controllers" in data:
         data["remote_controllers"] = keep_remote_keys(
             data["remote_controllers"], cfg["remote_controllers"]
@@ -1028,6 +1038,7 @@ async def api_config_import(request: Request):
         raise HTTPException(status_code=400, detail="Invalid JSON") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Config must be a JSON object")
+    _or_400(validate_config, body)
     current = load_config()
     # Imports never change this machine's password, API key or forced-change flag.
     body = {k: v for k, v in body.items() if k not in MACHINE_KEYS}
@@ -1039,6 +1050,14 @@ async def api_config_import(request: Request):
     regenerate_all_instance_configs(body)
     _log_event("Config imported via web UI.")
     return {"ok": True}
+
+
+def _or_400(check, *args) -> None:
+    """Run a validator, turning its ValueError into a 400."""
+    try:
+        check(*args)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 def _call_remote(
@@ -1127,6 +1146,7 @@ class _RemoteTestRequest(BaseModel):
 @app.post("/api/remote/test")
 def api_remote_test(req: _RemoteTestRequest):
     # A blank key means "use the saved one" (Settings never shows saved remote keys).
+    _or_400(validate_remote_url, req.url)
     remote = keep_remote_keys([req.model_dump()], load_config()["remote_controllers"])[0]
     try:
         r = _call_remote(remote, "GET", "/api/status", timeout=3)
@@ -1148,8 +1168,14 @@ class _RemoteProxyRequest(BaseModel):
     body: Optional[dict] = None
 
 
+# The only remote actions the dashboard sends (Start/Stop All, per-instance start/stop/AMCP).
+_REMOTE_ACTIONS = re.compile(r"/api/(server/(start|stop)|instance/(\d+|all)/(restart|stop|amcp))")
+
+
 @app.post("/api/remote/{idx}/proxy")
 def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
+    if not _REMOTE_ACTIONS.fullmatch(req.path):
+        raise HTTPException(status_code=400, detail="Invalid remote path")
     remote = _get_remote(idx)
     try:
         r = _call_remote(remote, "POST", req.path, timeout=5, json=req.body)
@@ -1333,10 +1359,10 @@ function loadMediaClips() {
     document.querySelectorAll('[id^="media_"]').forEach(sel => {
       const current = sel.value;
       let html = '<option value="">— pick a clip —</option>';
-      html += regular.map(c => `<option value="${c}"${c===current?' selected':''}>${c}</option>`).join('');
+      html += regular.map(c => `<option value="${escapeHtml(c)}"${c===current?' selected':''}>${escapeHtml(c)}</option>`).join('');
       if (tests.length) {
         html += '<option disabled>─── Test Patterns ───</option>';
-        html += tests.map(c => `<option value="${c}"${c===current?' selected':''}>${c}</option>`).join('');
+        html += tests.map(c => `<option value="${escapeHtml(c)}"${c===current?' selected':''}>${escapeHtml(c)}</option>`).join('');
       }
       sel.innerHTML = html;
     });
@@ -1349,7 +1375,10 @@ function onMediaSelect(id) {
   document.getElementById('amcp_' + id).value = `PLAY 1-1 "${clip}" LOOP`;
 }
 
+let _instanceNames = {};
+
 function renderInstances(instances) {
+  _instanceNames = Object.fromEntries(instances.map(i => [i.id, i.name]));
   const g = document.getElementById('instance-grid');
   g.innerHTML = instances.map(inst => {
     const isHtml = inst.type === 'html' || !inst.type;
@@ -1382,7 +1411,7 @@ function renderInstances(instances) {
       const bar = li.duration > 0 && !li.loop
         ? `<div class="clip-progress"><div class="clip-progress-bar" style="width:${pct.toFixed(1)}%"></div></div>`
         : '';
-      return `<div class="clip-info"><span class="clip-name">${li.clip}</span> &nbsp;${timeLabel}</div>${bar}`;
+      return `<div class="clip-info"><span class="clip-name">${escapeHtml(li.clip)}</span> &nbsp;${timeLabel}</div>${bar}`;
     })();
     const sourceInfo = layerHtml;
     const loadUrl = '';
@@ -1406,14 +1435,14 @@ function renderInstances(instances) {
         <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
         <div style="display:flex;gap:4px;align-items:center">${tallyBadge}${typeBadge}</div>
       </div>
-      <div class="ch-name">${inst.name}</div>
-      <div class="ch-ndi">NDI: ${inst.ndi_name}</div>
+      <div class="ch-name">${escapeHtml(inst.name)}</div>
+      <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
       ${sourceInfo}
       ${loadUrl}
-      <span class="badge ${inst.status === 'live' ? 'badge-success' : 'badge-error'}">${inst.status}</span>
+      <span class="badge ${inst.status === 'live' ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
       ${inst.status === 'live'
-        ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id}, '${inst.name}')">■ Stop</button>`
-        : `<button class="btn btn-success btn-sm" style="width:100%" onclick="startInstance(${inst.id}, '${inst.name}')">▶ Start</button>`
+        ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`
+        : `<button class="btn btn-success btn-sm" style="width:100%" onclick="startInstance(${inst.id})">▶ Start</button>`
       }
       ${amcpRow}
     </div>`;
@@ -1472,7 +1501,7 @@ function updateStatus() {
     lastRunning = running;
   });
   api('/api/log').then(data => {
-    document.getElementById('log-box').innerHTML = data.log.slice().reverse().map(l => `<p>${l}</p>`).join('');
+    document.getElementById('log-box').innerHTML = data.log.slice().reverse().map(l => `<p>${escapeHtml(l)}</p>`).join('');
   });
 }
 
@@ -1488,7 +1517,8 @@ function serverAction(action) {
   }).catch(() => toast('Failed to ' + action, 'error'));
 }
 
-function startInstance(id, name) {
+function startInstance(id) {
+  const name = _instanceNames[id];
   toast('Starting ' + name + '...', 'info');
   api('/api/instance/' + id + '/restart', 'POST').then(d => {
     toast(d.message || (name + ' starting...'), 'info');
@@ -1510,7 +1540,8 @@ function startInstance(id, name) {
   }).catch(() => toast('Failed to start ' + name, 'error'));
 }
 
-function stopInstance(id, name) {
+function stopInstance(id) {
+  const name = _instanceNames[id];
   toast('Stopping ' + name + '...', 'warning');
   api('/api/instance/' + id + '/stop', 'POST').then(() => {
     toast(name + ' stopped', 'success');
@@ -1553,7 +1584,9 @@ function toggleRemote(idx) {
   }
 }
 
-function remoteInstanceCard(rem, inst) {
+function remoteInstanceCard(rem, remoteInst) {
+  // Another controller's data: force numbers, escape text.
+  const inst = {...remoteInst, id: Number(remoteInst.id) || 0, amcp_port: Number(remoteInst.amcp_port) || 0};
   const isLive = inst.status === 'live';
   const isMedia = inst.type === 'media';
   const tallyClass = inst.on_program ? 'tally-program' : inst.on_preview ? 'tally-preview' : '';
@@ -1585,9 +1618,9 @@ function remoteInstanceCard(rem, inst) {
       <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
       ${tallyBadge}
     </div>
-    <div class="ch-name">${inst.name}</div>
-    <div class="ch-ndi">NDI: ${inst.ndi_name}</div>
-    <span class="badge ${isLive ? 'badge-success' : 'badge-error'}">${inst.status}</span>
+    <div class="ch-name">${escapeHtml(inst.name)}</div>
+    <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
+    <span class="badge ${isLive ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
     ${actionBtn}
     ${mediaRow}
   </div>`;
@@ -1627,7 +1660,7 @@ function renderRemotes(remotes) {
     const versionChip = effectiveStatus
       ? `<span style="background:var(--input-bg);border:1px solid var(--border);border-radius:20px;
                       padding:4px 12px;font-size:12px;color:var(--muted);white-space:nowrap">
-           v${effectiveStatus.version || '?'}
+           v${escapeHtml(effectiveStatus.version || '?')}
          </span>` : '';
 
     // Always show Start All so instances can be restarted even when CasparCG is stopped
@@ -1645,7 +1678,7 @@ function renderRemotes(remotes) {
            style="justify-content:space-between">
         <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
           <span class="remote-chevron">▼</span>
-          <span style="font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${rem.display_name}</span>
+          <span style="font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(rem.display_name)}</span>
           ${statusBadge}
           ${liveChip}
           ${versionChip}
@@ -1662,7 +1695,7 @@ function renderRemotes(remotes) {
             ? '<div class="remote-offline-msg">⚠ API key rejected. Check this remote\\'s key in Settings.</div>'
           : rem.online
             ? '<div class="remote-offline-msg">No instances configured on this controller.</div>'
-            : `<div class="remote-offline-msg">Cannot reach ${rem.url} — check that the controller is running and the URL is correct.</div>`
+            : `<div class="remote-offline-msg">Cannot reach ${escapeHtml(rem.url)} — check that the controller is running and the URL is correct.</div>`
         }
       </div>
     </div>`;
@@ -1711,10 +1744,10 @@ function populateRemoteMediaDropdowns(idx, instances) {
       const sel = document.getElementById('rmedia_' + idx + '_' + inst.id);
       if (!sel) return;
       let html = '<option value="">— pick a clip —</option>';
-      html += regular.map(c => `<option value="${c}">${c}</option>`).join('');
+      html += regular.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
       if (tests.length) {
         html += '<option disabled>─── Test Patterns ───</option>';
-        html += tests.map(c => `<option value="${c}">${c}</option>`).join('');
+        html += tests.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
       }
       sel.innerHTML = html;
     });
@@ -1839,7 +1872,7 @@ function loadData() {
       sel.innerHTML = '<option value="">No media instances configured</option>';
     } else {
       sel.innerHTML = '<option value="">— select instance —</option>' +
-        _mediaInstances.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+        _mediaInstances.map(i => `<option value="${escapeHtml(i.name)}">${escapeHtml(i.name)}</option>`).join('');
     }
     onSelectionChange();
   });
@@ -1847,7 +1880,7 @@ function loadData() {
     _clips = data.clips || [];
     const sel = document.getElementById('gen-clip');
     sel.innerHTML = '<option value="">— select clip —</option>' +
-      _clips.map(c => `<option value="${c}">${c}</option>`).join('');
+      _clips.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
     onSelectionChange();
   });
 }
@@ -2088,10 +2121,10 @@ function renderRemoteList() {
   }
   el.innerHTML = _remotes.map((r, i) => `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <input type="text" id="remote_url_${i}" value="${(r.url||'').replace(/"/g,'&quot;')}"
+      <input type="text" id="remote_url_${i}" value="${escapeHtml(r.url)}"
              placeholder="http://192.168.1.101:5280"
              style="flex:1;min-width:0">
-      <input type="password" id="remote_key_${i}" value="${(r.api_key||'').replace(/"/g,'&quot;')}"
+      <input type="password" id="remote_key_${i}" value="${escapeHtml(r.api_key)}"
              placeholder="${r.api_key_set ? 'Key saved (blank keeps it)' : "Remote's API key"}"
              style="flex:1;min-width:0">
       <button class="btn btn-secondary btn-sm" onclick="testRemote(${i})" title="Test connection">Test</button>
@@ -2189,10 +2222,10 @@ function renderInstanceTable(insts) {
   const last = insts.length - 1;
   document.getElementById('instances-tbody').innerHTML = insts.map((inst, i) => {
     const isHtml = (inst.type || 'html') === 'html';
-    const urlVal = (inst.url || '').replace(/"/g, '&quot;');
-    const cmdVal = (inst.startup_command || '').replace(/"/g, '&quot;');
-    const nameVal = (inst.name || '').replace(/"/g, '&quot;');
-    const ndiVal  = (inst.ndi_name || '').replace(/"/g, '&quot;');
+    const urlVal = escapeHtml(inst.url);
+    const cmdVal = escapeHtml(inst.startup_command);
+    const nameVal = escapeHtml(inst.name);
+    const ndiVal  = escapeHtml(inst.ndi_name);
     const port = computedPort(i);
     return `
     <div class="ch-edit-card">

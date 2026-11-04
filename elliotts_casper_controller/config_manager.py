@@ -4,7 +4,10 @@ import json
 import logging
 import os
 import sys
+from urllib.parse import urlsplit
+from xml.sax.saxutils import escape
 
+from elliotts_casper_controller.amcp_client import has_control_chars, is_amcp_safe
 from elliotts_casper_controller.auth import hash_password, new_api_key, verify_password
 
 log = logging.getLogger(__name__)
@@ -162,6 +165,66 @@ def without_secrets(config: dict) -> dict:
     return view
 
 
+def validate_remote_url(url: str) -> None:
+    """Raise ValueError unless ``url`` is a plain ``http(s)://host[:port]``."""
+    parts = urlsplit(url)
+    if (
+        parts.scheme not in ("http", "https")
+        or not parts.hostname
+        or parts.username
+        or parts.password
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+    ):
+        raise ValueError(f"Remote URL must look like http://host:port, not {url!r}")
+
+
+def _check_text(field: str, value, required: bool = False, quotes_ok: bool = True) -> None:
+    if not isinstance(value, str) or (required and not value.strip()):
+        raise ValueError(f"{field} must be text" + (" and can't be empty" if required else ""))
+    if has_control_chars(value) or (not quotes_ok and not is_amcp_safe(value)):
+        raise ValueError(f"{field} contains characters that aren't allowed")
+
+
+def _check_port(field: str, value, allow_zero: bool = False) -> None:
+    ok = isinstance(value, int) and not isinstance(value, bool)
+    if not ok or not ((allow_zero and value == 0) or 1 <= value <= 65535):
+        raise ValueError(f"{field} must be a port number")
+
+
+def validate_config(data: dict) -> None:
+    """Raise ValueError if any field present in ``data`` is unsafe or malformed."""
+    exe = data.get("caspar_exe_path")
+    if exe is not None:
+        _check_text("CasparCG path", exe)
+        # The path is executed on start, so only accept a real casparcg.exe.
+        if exe and (os.path.basename(exe).lower() != "casparcg.exe" or not os.path.isfile(exe)):
+            raise ValueError("CasparCG path must point to an existing casparcg.exe")
+    for field in ("media_path", "server_name", "video_mode"):
+        if field in data:
+            _check_text(field, data[field])
+    for field in ("web_port", "amcp_base_port"):
+        if field in data:
+            _check_port(field, data[field])
+    for inst in data.get("instances", []):
+        if not isinstance(inst, dict) or not isinstance(inst.get("id", 1), int):
+            raise ValueError("Each instance needs a numeric id")
+        _check_text("Instance name", inst.get("name"), required=True)
+        _check_text("NDI name", inst.get("ndi_name"), required=True)
+        if inst.get("type", "html") not in ("html", "media"):
+            raise ValueError("Instance type must be html or media")
+        _check_text("Instance URL", inst.get("url", ""), quotes_ok=False)
+        _check_text("Startup command", inst.get("startup_command", ""))
+        _check_port("Instance AMCP port", inst.get("amcp_port", 0), allow_zero=True)
+    for remote in data.get("remote_controllers", []):
+        if not isinstance(remote, dict):
+            raise ValueError("Each remote controller needs a URL")
+        _check_text("Remote URL", remote.get("url"), required=True)
+        validate_remote_url(remote["url"])
+        _check_text("Remote API key", remote.get("api_key", ""))
+
+
 def keep_remote_keys(remotes: list, previous: list) -> list:
     """Fill blank remote API keys from the saved remote with the same URL."""
 
@@ -199,8 +262,10 @@ def regenerate_instance_config(config: dict, inst: dict) -> str:
     conflicts when multiple CasparCG processes run from the same folder simultaneously.
     """
     port = instance_amcp_port(config, inst)
-    inst_id = inst["id"]
-    media_path_xml = config.get("media_path", "").strip() or "media\\"
+    inst_id = int(inst["id"])
+    media_path_xml = escape(config.get("media_path", "").strip() or "media\\")
+    video_mode = escape(config["video_mode"])
+    ndi_name = escape(inst["ndi_name"])
 
     exe = config.get("caspar_exe_path", "")
     if exe and os.path.isabs(exe):
@@ -220,12 +285,12 @@ def regenerate_instance_config(config: dict, inst: dict) -> str:
   <log-level>info</log-level>
 
   <channels>
-    <!-- Instance: {inst["name"]} -->
+    <!-- Instance {inst_id} -->
     <channel>
-      <video-mode>{config["video_mode"]}</video-mode>
+      <video-mode>{video_mode}</video-mode>
       <consumers>
         <ndi>
-          <name>{inst["ndi_name"]}</name>
+          <name>{ndi_name}</name>
           <allow-fields>false</allow-fields>
         </ndi>
       </consumers>
