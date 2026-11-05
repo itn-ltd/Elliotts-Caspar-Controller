@@ -1,6 +1,6 @@
 # Elliott's Caspar Controller
 
-> Run and control several CasparCG NDI outputs from one Windows PC, through a desktop app and a web UI.
+> Run and control several CasparCG NDI outputs from one Windows PC, from a web UI and an HTTP API.
 
 [![CI](https://github.com/itn-ltd/Elliotts-Caspar-Controller/actions/workflows/ci.yml/badge.svg)](https://github.com/itn-ltd/Elliotts-Caspar-Controller/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -24,8 +24,8 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 - **HTTP clip triggering** for Companion, hardware panels and automation, plus an **HTTP Generator** page that builds the URLs
 - **Remote Controllers**: monitor and control other controllers from one dashboard
 - **Settings page**: CasparCG path, video mode, ports, outputs (add, remove, reorder), media folder, server name, password, API key, config backup
-- **Test patterns**: colour and bars PNGs added to the media folder on start if missing
-- **Desktop app** with a system tray icon, and optional auto-start of CasparCG when the app opens
+- **Test patterns**: colour and bars PNGs copied into the media folder on start if missing
+- **Tray app** that runs the web server, with optional auto-start of CasparCG when the app opens
 - **Secured access**: a web UI password and an API key (see [Password and API key](#password-and-api-key))
 
 ---
@@ -194,10 +194,11 @@ All need the key or a signed-in session, except `/api/health`.
 
 ---
 
-## Desktop app
+## Tray app
 
-- **The window shows:** the web port, the network and local URLs, status, uptime, and buttons for **Start/Stop CasparCG**, **Open Web UI**, **Hide to Tray** and **Quit**.
-- **The tray menu has:** Show Window, Open Web UI, Restart All Instances and Quit.
+- **On launch** the app starts the web server, opens the web UI and sits in the system tray. If the web port is already in use, the tray says so.
+- **The tray menu has:** Open Caspar Controller (also a click on the icon), how many instances are live, Restart all instances and Quit. Quitting stops the web server but leaves CasparCG running.
+- **CasparCG left running** (for example after the app restarted) is reconnected rather than restarted. **Auto-start** then starts only the instances that aren't running, without touching the live ones.
 - **CasparCG runs without a console window.** Its output will be viewable in the web UI's console panel (#8).
 
 ---
@@ -230,7 +231,7 @@ git clone https://github.com/itn-ltd/Elliotts-Caspar-Controller.git
 cd Elliotts-Caspar-Controller
 python -m venv .venv && .venv\Scripts\activate
 pip install -e ".[dev]"          # add ,ndi for NDI tally
-python -m elliotts_casper_controller
+python -m caspar_controller
 ```
 
 | | |
@@ -256,17 +257,19 @@ iscc /DMyAppVersion="1.2.3" installer\setup.iss  # installer\Output\ElliottsCasp
 ### Architecture
 
 ```
-ElliottsCasparController.exe
-├── Tkinter desktop window + tray   (gui_launcher.py)
-├── FastAPI web UI and API          (core.py)            → http://0.0.0.0:<web-port>
-├── Password hashing and API keys   (auth.py)
-├── AMCP TCP client                 (amcp_client.py)     → 127.0.0.1:<amcp-port>
-├── CasparCG process manager        (process_manager.py)
-├── NDI tally monitor               (ndi_tally.py)
-└── Config                          (config_manager.py)  → elliotts_caspar_config.json
+caspar_controller/
+├── __main__.py, tray.py   Entry point and tray icon; runs the web server
+├── settings.py            Config file: load, validate, save   → elliotts_caspar_config.json
+├── auth.py                Password hashing and API keys
+├── instances.py           Start, stop, restart and live status of each output
+├── remotes.py             Client for other controllers
+├── tally.py               NDI tally monitor
+├── log.py                 Event log shown on the dashboard
+├── caspar/                AMCP client, INFO parsing, casparcg.config, process, test patterns
+├── static/                Fonts and icons
+└── api/                   FastAPI app and one router per area   → http://0.0.0.0:<web-port>
+    └── pages.py           HTML pages (moving to static files in #7)
 ```
-
-The desktop window and the web server each have their own start/stop code today. #4 and #5 restructure this into one instance manager.
 
 ---
 

@@ -4,7 +4,7 @@ import pytest
 from conftest import free_port, instance
 from fake_amcp import FakeAMCPServer
 
-from elliotts_casper_controller import core
+from caspar_controller import log
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def test_load_by_name_loops_by_default(client, media_server):
         "response": "202 PLAY OK",
     }
     assert media_server.commands == ['PLAY 1-1 "MYCLIP" LOOP']
-    assert core._log[-1].endswith('HTTP load: clipplayer → PLAY 1-1 "MYCLIP" LOOP → 202 PLAY OK')
+    assert log._log[-1].endswith('HTTP load: clipplayer → PLAY 1-1 "MYCLIP" LOOP → 202 PLAY OK')
 
 
 def test_load_once(client, media_server):

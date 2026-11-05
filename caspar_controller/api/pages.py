@@ -1,272 +1,13 @@
-"""FastAPI application — web UI and REST API for Elliott's Caspar Controller."""
+"""HTML pages. Exempt from the module size limit until the front end moves to web/ (#7)."""
 
 import html
-import os
-import re
-import secrets
-import sys
-import threading
-import time
-import webbrowser
-import xml.etree.ElementTree as _ET
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
-from typing import Optional
 
-import requests as _requests
-import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 
-from elliotts_casper_controller import __version__, ndi_tally
-from elliotts_casper_controller.amcp_client import AMCPClient, has_control_chars, is_amcp_safe
-from elliotts_casper_controller.auth import key_matches, new_api_key, verify_password
-from elliotts_casper_controller.config_manager import (
-    MACHINE_KEYS,
-    ensure_test_pattern_images,
-    instance_amcp_port,
-    keep_remote_keys,
-    load as load_config,
-    regenerate_all_instance_configs,
-    regenerate_instance_config,
-    save as save_config,
-    set_password,
-    validate_config,
-    validate_remote_url,
-    without_secrets,
-)
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller.settings import load as load_config
 
-# ---------------------------------------------------------------------------
-# State
-# ---------------------------------------------------------------------------
-
-_config = load_config()
-_managers: dict = {}  # inst_id -> CasparProcessManager
-_log: list = []
-_log_lock = threading.Lock()
-_sessions: set = set()  # active session tokens for web UI auth
-_remote_name_cache: dict = {}  # url -> last known server_name for offline display
-
-# Background status cache — refreshed every 2s so /api/status returns instantly
-_status_cache: dict = {"live": {}, "ts": 0.0}
-_status_lock = threading.Lock()
-_status_refresh_stop = threading.Event()
-
-MAX_LOG = 200
-
-
-def _log_event(msg: str) -> None:
-    ts = time.strftime("%H:%M:%S")
-    with _log_lock:
-        _log.append(f"[{ts}] {msg}")
-        if len(_log) > MAX_LOG:
-            _log.pop(0)
-
-
-def _make_manager(inst: dict, cfg: dict) -> CasparProcessManager:
-    port = instance_amcp_port(cfg, inst)
-    return CasparProcessManager(
-        exe_path=cfg["caspar_exe_path"],
-        amcp_port=port,
-        startup_delay=cfg["startup_delay"],
-        window_title=f"PCR3 CasparCG — {inst['name']}",
-        config_filename=f"casparcg_inst_{inst['id']}.config",
-    )
-
-
-def _load_instance(inst: dict, client: AMCPClient) -> str:
-    """Send the startup command for an instance (always channel 1 in each CasparCG process)."""
-    if inst.get("type", "html") == "html":
-        url = inst.get("url", "").strip()
-        return client.play_html(1, url) if url else client.send("CLEAR 1")
-    cmd = inst.get("startup_command", "").strip()
-    return client.send(cmd) if cmd else client.send("CLEAR 1")
-
-
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
-
-
-def _refresh_tally_monitors():
-    """Start/stop tally monitors to match current instance config."""
-    cfg = load_config()
-    ndi_names = [i["ndi_name"] for i in cfg.get("instances", []) if i.get("ndi_name")]
-    ndi_tally.start_monitoring(ndi_names)
-
-
-def _parse_layer_info(raw: str) -> dict:
-    """Parse the raw AMCP INFO 1-1 response into a layer info dict."""
-    empty: dict = {"clip": None, "time": 0.0, "duration": 0.0, "loop": False, "producer": "empty"}
-    try:
-        nl = raw.find("\n")
-        if nl < 0 or not raw.startswith("201"):
-            return empty
-        xml_str = raw[nl + 1 :].strip()
-        if not xml_str:
-            return empty
-        root = _ET.fromstring(xml_str)
-        fg = root.find(".//foreground/producer")
-        if fg is None:
-            return empty
-        ptype = fg.get("type", "")
-        if "empty" in ptype.lower():
-            return empty
-
-        fn_el = fg.find("filename")
-        clip = None
-        if fn_el is not None and fn_el.text:
-            clip = os.path.basename(fn_el.text.replace("\\", "/"))
-            # Strip numeric suffix CasparCG sometimes appends (e.g. "clip.mp4_0")
-            if clip and "_" in clip:
-                stem, _, tail = clip.rpartition("_")
-                if tail.isdigit():
-                    clip = stem
-
-        def _f(tag: str) -> float:
-            el = fg.find(tag)
-            try:
-                return float(el.text) if el is not None and el.text else 0.0
-            except ValueError:
-                return 0.0
-
-        loop_el = fg.find("loop")
-        loop = (
-            (loop_el.text or "0").strip() not in ("0", "false", "False")
-            if loop_el is not None
-            else False
-        )
-
-        return {
-            "clip": clip,
-            "time": round(_f("time"), 2),
-            "duration": round(_f("duration"), 2),
-            "loop": loop,
-            "producer": ptype,
-        }
-    except Exception:
-        return empty
-
-
-def _background_status_worker():
-    """Refresh AMCP state in background so /api/status returns from cache."""
-    while not _status_refresh_stop.is_set():
-        try:
-            cfg = load_config()
-            instances = cfg.get("instances", [])
-            live: dict = {}
-            layer_info: dict = {}
-
-            # Known race (#5): threads still running after join() write into the
-            # *next* poll's dicts, because these names are rebound each loop.
-            def _fetch(inst):
-                client = AMCPClient(port=instance_amcp_port(cfg, inst), timeout=1.0)  # noqa: B023
-                raw = client.info_layer()
-                is_live = raw.startswith("201")
-                live[inst["id"]] = is_live  # noqa: B023
-                layer_info[inst["id"]] = (  # noqa: B023
-                    _parse_layer_info(raw)
-                    if is_live
-                    else {
-                        "clip": None,
-                        "time": 0.0,
-                        "duration": 0.0,
-                        "loop": False,
-                        "producer": "empty",
-                    }
-                )
-
-            threads = [
-                threading.Thread(target=_fetch, args=(inst,), daemon=True) for inst in instances
-            ]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(timeout=1.5)
-
-            with _status_lock:
-                _status_cache["live"] = live
-                _status_cache["layer_info"] = layer_info
-                _status_cache["ts"] = time.time()
-        except Exception:
-            pass
-        _status_refresh_stop.wait(2)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _config
-    _config = load_config()
-    _refresh_tally_monitors()
-    _status_refresh_stop.clear()
-    t = threading.Thread(target=_background_status_worker, daemon=True, name="status-refresh")
-    t.start()
-    yield
-    _status_refresh_stop.set()
-    ndi_tally.stop_all()
-
-
-app = FastAPI(title="Elliott's Caspar Controller", version=__version__, lifespan=lifespan)
-
-
-def _host_name(request: Request) -> str:
-    host = request.headers.get("host", "")
-    return host.split("]")[0] + "]" if host.startswith("[") else host.split(":")[0]
-
-
-def _trusted_local(request: Request) -> bool:
-    """First-run trust: a browser on this PC, addressing it as localhost, on this site."""
-    return (
-        bool(request.client)
-        and request.client.host in ("127.0.0.1", "::1")
-        # Host stops DNS rebinding; Sec-Fetch-Site stops other sites' pages (CSRF).
-        and _host_name(request) in ("127.0.0.1", "localhost", "[::1]")
-        and request.headers.get("sec-fetch-site", "none") in ("none", "same-origin")
-    )
-
-
-_CHANGE_PASSWORD_PATHS = ("/change-password", "/api/password", "/logout")
-# Account control: never with the API key, which lives in panel configs and URLs.
-_SESSION_ONLY_PATHS = ("/api/password", "/api/key", "/api/key/rotate")
-
-
-class _AuthMiddleware(BaseHTTPMiddleware):
-    """API needs a key or session; pages need a session (or this PC, until a password is set)."""
-
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        if path in ("/login", "/api/health") or path.startswith("/static/"):
-            return await call_next(request)
-        cfg = load_config()
-        first_run = not cfg["web_password_hash"]
-        if request.cookies.get("session", "") in _sessions:
-            if cfg["password_change_required"] and path not in _CHANGE_PASSWORD_PATHS:
-                if path.startswith("/api/"):
-                    return JSONResponse({"detail": "Password change required"}, status_code=403)
-                return RedirectResponse(url="/change-password")
-            return await call_next(request)
-        if first_run and _trusted_local(request):
-            return await call_next(request)
-        if path.startswith("/api/"):
-            supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
-            if path not in _SESSION_ONLY_PATHS and key_matches(supplied, cfg["api_key"]):
-                return await call_next(request)
-            return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
-        if first_run:
-            return HTMLResponse(_card_page("Setup required", _SETUP_REQUIRED), status_code=403)
-        return RedirectResponse(url="/login")
-
-
-app.add_middleware(_AuthMiddleware)
-
-
-# ---------------------------------------------------------------------------
-# HTML helpers
-# ---------------------------------------------------------------------------
+router = APIRouter()
 
 FONTS = """
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Regular.ttf'); font-weight: 400; }
@@ -357,10 +98,8 @@ h3 { font-size: 15px; font-weight: 500; }
 
 /* GRID */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 @media (max-width: 700px) {
-  .grid-2, .grid-3, .grid-5 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
 }
 
 /* INPUTS */
@@ -445,14 +184,6 @@ label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px
   100% { box-shadow: 0 0 0 0 rgba(34,197,94,0);   }
 }
 
-/* MULTIVIEWER */
-.mv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 800px) { .mv-grid { grid-template-columns: 1fr 1fr; } }
-.mv-frame { background: #111; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.mv-frame iframe { display: block; width: 100%; height: 180px; border: none; background: #000; }
-.mv-label { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
-.mv-label span { font-size: 13px; font-weight: 600; }
-
 /* TALLY */
 .tally-program {
   border-color: var(--error) !important;
@@ -505,13 +236,6 @@ label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px
   grid-column: 1 / -1; color: var(--muted); font-size: 13px; padding: 8px 0;
 }
 
-/* TABLE */
-table { width: 100%; border-collapse: collapse; }
-thead { background: var(--accent); }
-thead th { color: #fff; padding: 10px 14px; text-align: left; font-weight: 600; }
-tbody tr { border-bottom: 1px solid var(--border); }
-tbody tr:hover { background: rgba(255,255,255,0.03); }
-tbody td { padding: 10px 14px; }
 """
 )
 
@@ -603,604 +327,7 @@ def page(title: str, active: str, body: str, extra_js: str = "") -> str:
 </html>"""
 
 
-# ---------------------------------------------------------------------------
-# Static font serving
-# ---------------------------------------------------------------------------
-
-
-def _app_root() -> str:
-    if getattr(sys, "frozen", False):
-        return sys._MEIPASS
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-STATIC_DIR = os.path.join(_app_root(), "static")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-
-# ---------------------------------------------------------------------------
-# API
-# ---------------------------------------------------------------------------
-
-
-class ConfigUpdate(BaseModel):
-    caspar_exe_path: Optional[str] = None
-    amcp_base_port: Optional[int] = None
-    web_port: Optional[int] = None
-    startup_delay: Optional[int] = None
-    video_mode: Optional[str] = None
-    autostart_caspar: Optional[bool] = None
-    media_path: Optional[str] = None
-    server_name: Optional[str] = None
-    instances: Optional[list] = None
-    remote_controllers: Optional[list] = None
-
-
-class _PasswordRequest(BaseModel):
-    password: str
-
-
-class _PasswordChange(BaseModel):
-    password: str
-    current_password: str = ""
-
-
-@app.get("/api/status")
-def api_status():
-    cfg = load_config()
-    instances = cfg.get("instances", [])
-
-    # Read from background cache — returns in <1ms rather than blocking on AMCP pings
-    with _status_lock:
-        live = dict(_status_cache["live"])
-        layer_info = dict(_status_cache.get("layer_info", {}))
-
-    instances_out = []
-    for inst in instances:
-        port = instance_amcp_port(cfg, inst)
-        running = live.get(inst["id"], False)
-        li = layer_info.get(inst["id"], {})
-        instances_out.append(
-            {
-                "id": inst["id"],
-                "name": inst["name"],
-                "ndi_name": inst["ndi_name"],
-                "type": inst.get("type", "html"),
-                "url": inst.get("url", ""),
-                "startup_command": inst.get("startup_command", ""),
-                "amcp_port": port,
-                "status": "live" if running else "stopped",
-                "layer": li,
-            }
-        )
-    # Merge tally state into each instance
-    tally = ndi_tally.get_tally()
-    for inst in instances_out:
-        t = tally.get(inst["ndi_name"], {})
-        inst["on_program"] = t.get("program", False)
-        inst["on_preview"] = t.get("preview", False)
-
-    any_running = any(i["status"] == "live" for i in instances_out)
-    needs_setup = not cfg.get("caspar_exe_path") or not instances
-    return {
-        "running": any_running,
-        "version": __version__,
-        "instances": instances_out,
-        "needs_setup": needs_setup,
-        "server_name": cfg.get("server_name", ""),
-        "tally_available": ndi_tally.is_available(),
-    }
-
-
-@app.post("/api/server/start")
-def api_server_start():
-    global _managers
-    cfg = load_config()
-    instances = cfg.get("instances", [])
-    if not instances:
-        raise HTTPException(status_code=400, detail="No instances configured")
-
-    # Write all config files and test pattern images before launching
-    regenerate_all_instance_configs(cfg)
-    ensure_test_pattern_images(cfg)
-
-    # Always kill every running CasparCG before launching fresh.
-    # Conditional kill (only when AMCP responds) misses instances on stale ports
-    # and causes processes to accumulate across multiple Start clicks.
-    CasparProcessManager._kill_all_caspar_instances()
-
-    started = []
-    errors = []
-
-    # Sequential startup with 5s gap — ensures NDI sources appear one at a time
-    # in config order so Tricaster/receivers lock onto the correct source.
-    for i, inst in enumerate(instances):
-        m = _make_manager(inst, cfg)
-        _managers[inst["id"]] = m
-        ok = m.start()
-        if ok:
-            res = _load_instance(inst, AMCPClient(port=instance_amcp_port(cfg, inst)))
-            _log_event(f"Inst {inst['id']} ({inst['name']}) started → {res[:60]}")
-            started.append(inst["id"])
-            if i < len(instances) - 1:
-                time.sleep(5)  # let NDI source settle before announcing the next one
-        else:
-            _log_event(f"Inst {inst['id']} ({inst['name']}) FAILED to start")
-            errors.append(inst["id"])
-
-    if not started:
-        raise HTTPException(status_code=500, detail="All instances failed to start")
-    msg = f"Started {len(started)}/{len(instances)} instances"
-    if errors:
-        msg += f" (failed: {errors})"
-    _log_event(msg)
-    return {"ok": True, "message": msg}
-
-
-@app.post("/api/server/stop")
-def api_server_stop():
-    global _managers
-    # Stop any managed instances
-    threads = [threading.Thread(target=m.stop, daemon=True) for m in list(_managers.values())]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=3)
-    _managers = {}
-    # Kill any remaining CasparCG processes (e.g. started via the desktop GUI)
-    CasparProcessManager._kill_all_caspar_instances()
-    _log_event("All CasparCG instances stopped.")
-    return {"ok": True}
-
-
-def _restart_instance_bg(inst_id: int):
-    """Stop the CasparCG process for one instance and relaunch it. Runs in a thread."""
-    global _managers
-    cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    inst = inst_map.get(inst_id)
-    if not inst:
-        return
-    port = instance_amcp_port(cfg, inst)
-    # Kill whatever is on this port — works whether started from GUI or web
-    if inst_id in _managers:
-        _managers[inst_id].stop()
-        _managers.pop(inst_id, None)
-    else:
-        CasparProcessManager._kill_caspar_on_port(port)
-    regenerate_instance_config(cfg, inst)
-    m = _make_manager(inst, cfg)
-    _managers[inst_id] = m
-    ok = m.start()
-    if ok:
-        res = _load_instance(inst, AMCPClient(port=port))
-        _log_event(f"Inst {inst_id} ({inst['name']}) restarted → {res[:60]}")
-    else:
-        _log_event(f"Inst {inst_id} ({inst['name']}) failed to restart")
-        _managers.pop(inst_id, None)
-
-
-@app.post("/api/instance/{inst_id}/restart")
-def api_instance_restart(inst_id: int):
-    cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    if inst_id not in inst_map:
-        raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
-    name = inst_map[inst_id]["name"]
-    _log_event(f"Restarting inst {inst_id} ({name})...")
-    threading.Thread(target=_restart_instance_bg, args=(inst_id,), daemon=True).start()
-    return {"ok": True, "message": f"Restarting {name}..."}
-
-
-@app.post("/api/instance/all/restart")
-def api_instance_restart_all():
-    global _managers
-    cfg = load_config()
-    instances = cfg.get("instances", [])
-
-    def _do_all():
-        global _managers
-        # Stop all managed instances in parallel
-        threads = [threading.Thread(target=m.stop, daemon=True) for m in list(_managers.values())]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=3)
-        # Kill any remaining (e.g. started from GUI)
-        CasparProcessManager._kill_all_caspar_instances()
-        _managers = {}
-        regenerate_all_instance_configs(cfg)
-        # Start sequentially with 5s gap for NDI ordering
-        for i, inst in enumerate(instances):
-            m = _make_manager(inst, cfg)
-            _managers[inst["id"]] = m
-            ok = m.start()
-            if ok:
-                res = _load_instance(inst, AMCPClient(port=instance_amcp_port(cfg, inst)))
-                _log_event(f"Inst {inst['id']} ({inst['name']}) restarted → {res[:60]}")
-                if i < len(instances) - 1:
-                    time.sleep(5)
-            else:
-                _log_event(f"Inst {inst['id']} ({inst['name']}) failed to restart")
-                _managers.pop(inst["id"], None)
-
-    _log_event("Restarting all instances...")
-    threading.Thread(target=_do_all, daemon=True).start()
-    return {"ok": True, "message": "Restarting all instances..."}
-
-
-@app.post("/api/instance/{inst_id}/stop")
-def api_instance_stop(inst_id: int):
-    global _managers
-    cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    if inst_id not in inst_map:
-        raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
-    inst = inst_map[inst_id]
-    port = instance_amcp_port(cfg, inst)
-
-    def _do_stop():
-        if inst_id in _managers:
-            _managers[inst_id].stop()
-            _managers.pop(inst_id, None)
-        else:
-            CasparProcessManager._kill_caspar_on_port(port)
-        _log_event(f"Inst {inst_id} ({inst['name']}) stopped.")
-
-    threading.Thread(target=_do_stop, daemon=True).start()
-    return {"ok": True, "message": f"Stopping {inst['name']}..."}
-
-
-class AMCPCommandRequest(BaseModel):
-    command: str
-
-
-@app.post("/api/instance/{inst_id}/amcp")
-def api_instance_amcp(inst_id: int, req: AMCPCommandRequest):
-    cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    if inst_id not in inst_map:
-        raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
-    port = instance_amcp_port(cfg, inst_map[inst_id])
-    if has_control_chars(req.command.strip()):
-        raise HTTPException(
-            status_code=400, detail="AMCP commands can't contain control characters"
-        )
-    res = AMCPClient(port=port).send(req.command.strip())
-    _log_event(f"Inst {inst_id} AMCP: {req.command[:60]} → {res[:60]}")
-    return {"ok": True, "response": res}
-
-
-def _play_clip(cfg: dict, inst: dict, clip: str, loop: bool) -> tuple[str, str]:
-    """Play a clip on a media instance. Returns (AMCP command, reply)."""
-    if not is_amcp_safe(clip):
-        raise HTTPException(
-            status_code=400,
-            detail="Clip names can't contain quotes, backslashes or control characters",
-        )
-    cmd = f'PLAY 1-1 "{clip}"' + (" LOOP" if loop else "")
-    return cmd, AMCPClient(port=instance_amcp_port(cfg, inst)).send(cmd)
-
-
-@app.get("/api/load")
-def api_load_clip(instance: str, clip: str, loop: bool = True):
-    """Load a clip into a named media instance via HTTP GET.
-
-    Usage: GET /api/load?instance=Clipplayer&clip=MYCLIP
-    Optional: &loop=false to play once without looping.
-
-    Designed for external triggers (hardware controllers, automation systems).
-    """
-    cfg = load_config()
-    inst = next(
-        (i for i in cfg.get("instances", []) if i["name"].lower() == instance.lower()),
-        None,
-    )
-    if not inst:
-        raise HTTPException(status_code=404, detail=f"Instance '{instance}' not found")
-    if inst.get("type", "html") != "media":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Instance '{instance}' is not a media type — only media instances support clip loading",
-        )
-    cmd, res = _play_clip(cfg, inst, clip, loop)
-    _log_event(f"HTTP load: {instance} → {cmd} → {res[:60]}")
-    return {"ok": True, "instance": instance, "clip": clip, "command": cmd, "response": res}
-
-
-@app.get("/api/instance/{inst_id}/load")
-def api_instance_load_clip(inst_id: int, clip: str, loop: bool = True):
-    """Load a clip into a media instance by ID via HTTP GET.
-
-    Usage: GET /api/instance/6/load?clip=MYCLIP
-    """
-    cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    if inst_id not in inst_map:
-        raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
-    inst = inst_map[inst_id]
-    if inst.get("type", "html") != "media":
-        raise HTTPException(status_code=400, detail=f"Instance {inst_id} is not a media type")
-    cmd, res = _play_clip(cfg, inst, clip, loop)
-    _log_event(f"HTTP load: Inst {inst_id} ({inst['name']}) → {cmd} → {res[:60]}")
-    return {"ok": True, "instance": inst["name"], "clip": clip, "command": cmd, "response": res}
-
-
-@app.get("/api/media")
-def api_media():
-    cfg = load_config()
-    custom_media = cfg.get("media_path", "").strip()
-    if custom_media and os.path.isdir(custom_media):
-        media_dir = custom_media
-    else:
-        exe = cfg.get("caspar_exe_path", "")
-        if not exe or not os.path.isfile(exe):
-            return {"clips": [], "error": "CasparCG exe path not set"}
-        media_dir = os.path.join(os.path.dirname(exe), "media")
-    if not os.path.isdir(media_dir):
-        return {"clips": [], "error": f"Media folder not found: {media_dir}"}
-    MEDIA_EXTS = {
-        ".mp4",
-        ".mov",
-        ".avi",
-        ".mxf",
-        ".mkv",
-        ".wmv",
-        ".flv",
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".tga",
-        ".bmp",
-        ".gif",
-    }
-    clips = []
-    for root, _, files in os.walk(media_dir):
-        for fname in sorted(files):
-            ext = os.path.splitext(fname)[1].lower()
-            if ext in MEDIA_EXTS:
-                rel = os.path.relpath(os.path.join(root, fname), media_dir)
-                clip_name = os.path.splitext(rel)[0].replace(os.sep, "/").upper()
-                clips.append(clip_name)
-    return {"clips": sorted(clips), "media_dir": media_dir}
-
-
-@app.get("/api/health")
-def api_health():
-    return {"ok": True, "version": __version__}
-
-
-@app.get("/api/config")
-def api_config_get():
-    cfg = load_config()
-    return {**without_secrets(cfg), "password_set": bool(cfg["web_password_hash"])}
-
-
-@app.get("/api/key")
-def api_key_get():
-    return {"api_key": load_config()["api_key"]}
-
-
-@app.post("/api/key/rotate")
-def api_key_rotate():
-    cfg = load_config()
-    cfg["api_key"] = new_api_key()
-    save_config(cfg)
-    _log_event("API key rotated.")
-    return {"api_key": cfg["api_key"]}
-
-
-@app.post("/api/password")
-def api_password(req: _PasswordChange, request: Request):
-    cfg = load_config()
-    # The current password is skipped only on first run and the forced first change.
-    stored = cfg["web_password_hash"]
-    if stored and not cfg["password_change_required"]:
-        if not verify_password(req.current_password, stored):
-            raise HTTPException(status_code=400, detail="Current password is incorrect")
-    _or_400(set_password, cfg, req.password)
-    save_config(cfg)
-    # Sign out every other session: the old password may have leaked.
-    _sessions.intersection_update({request.cookies.get("session", "")})
-    _log_event("Web UI password changed.")
-    return {"ok": True}
-
-
-@app.post("/api/config")
-def api_config_post(update: ConfigUpdate):
-    cfg = load_config()
-    data = update.model_dump(exclude_none=True)
-    _or_400(validate_config, data)
-    if "remote_controllers" in data:
-        data["remote_controllers"] = keep_remote_keys(
-            data["remote_controllers"], cfg["remote_controllers"]
-        )
-    # Renumber instances by array order so the web UI can reorder freely
-    if "instances" in data:
-        for i, inst in enumerate(data["instances"], start=1):
-            inst["id"] = i
-    cfg.update(data)
-    save_config(cfg)
-    regenerate_all_instance_configs(cfg)
-    _refresh_tally_monitors()
-    _log_event("Config saved and instance configs regenerated.")
-    return {"ok": True}
-
-
-@app.get("/api/config/export")
-def api_config_export():
-    import json as _json
-
-    content = _json.dumps(without_secrets(load_config()), indent=2).encode("utf-8")
-    return Response(
-        content=content,
-        media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=elliotts_caspar_config.json"},
-    )
-
-
-@app.post("/api/config/import")
-async def api_config_import(request: Request):
-
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON") from None
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Config must be a JSON object")
-    current = load_config()
-    # Another PC's CasparCG path is meaningless here: keep this PC's.
-    if "caspar_exe_path" in body and not os.path.isfile(body["caspar_exe_path"] or ""):
-        body["caspar_exe_path"] = current["caspar_exe_path"]
-    _or_400(validate_config, body)
-    # Imports never change this machine's password, API key or forced-change flag.
-    body = {k: v for k, v in body.items() if k not in MACHINE_KEYS}
-    body["remote_controllers"] = keep_remote_keys(
-        body.get("remote_controllers", []), current["remote_controllers"]
-    )
-    body.update({k: current[k] for k in MACHINE_KEYS})
-    save_config(body)
-    regenerate_all_instance_configs(load_config())  # fills defaults the import left out
-    _log_event("Config imported via web UI.")
-    return {"ok": True}
-
-
-def _or_400(check, *args) -> None:
-    """Run a validator, turning its ValueError into a 400."""
-    try:
-        check(*args)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None
-
-
-def _call_remote(
-    remote: dict, method: str, path: str, timeout: float, **kwargs
-) -> _requests.Response:
-    """Request another controller's API with that controller's API key."""
-    # Only "/..." paths: "@host" or "//host" would send the key to a different host.
-    if not path.startswith("/") or path.startswith("//") or any(c in path for c in "@\\"):
-        raise HTTPException(status_code=400, detail="Invalid remote path")
-    url = remote.get("url", "").rstrip("/")
-    headers = {"X-API-Key": remote.get("api_key", "")}
-    # No redirects: requests would forward the key header to wherever it's sent.
-    return _requests.request(
-        method, f"{url}{path}", headers=headers, timeout=timeout, allow_redirects=False, **kwargs
-    )
-
-
-def _get_remote(idx: int) -> dict:
-    remotes = load_config().get("remote_controllers", [])
-    if idx < 0 or idx >= len(remotes):
-        raise HTTPException(status_code=404, detail=f"Remote {idx} not found")
-    return remotes[idx]
-
-
-@app.get("/api/remotes")
-def api_remotes():
-    cfg = load_config()
-    remotes = cfg.get("remote_controllers", [])
-    if not remotes:
-        return {"remotes": []}
-
-    def _fetch(idx: int, remote: dict) -> dict:
-        global _remote_name_cache
-        url = remote.get("url", "").rstrip("/")
-        offline = {
-            "idx": idx,
-            "url": url,
-            "display_name": _remote_name_cache.get(url) or url,
-            "online": False,
-            "status": None,
-        }
-        try:
-            # 6s timeout: remote /api/status pings up to 6 AMCP ports in parallel
-            # (each join has a 3s timeout) so 5s gives a comfortable margin
-            r = _call_remote(remote, "GET", "/api/status", timeout=6)
-            if r.status_code == 401:
-                return {**offline, "online": True, "auth_error": True}
-            data = r.json()
-            server_name = data.get("server_name", "").strip()
-            if not server_name and url not in _remote_name_cache:
-                # Only fetch config the first time — afterwards use the cache
-                try:
-                    cfg_r = _call_remote(remote, "GET", "/api/config", timeout=4)
-                    server_name = cfg_r.json().get("server_name", "").strip()
-                except Exception:
-                    pass
-            if server_name:
-                _remote_name_cache[url] = server_name
-            display_name = server_name or _remote_name_cache.get(url) or url
-            return {**offline, "display_name": display_name, "online": True, "status": data}
-        except Exception:
-            return offline
-
-    results: list = [None] * len(remotes)
-    with ThreadPoolExecutor(max_workers=max(len(remotes), 1)) as ex:
-        futs = {ex.submit(_fetch, i, r): i for i, r in enumerate(remotes)}
-        for f in futs:
-            results[futs[f]] = f.result()
-    return {"remotes": results}
-
-
-@app.get("/api/remote/{idx}/media")
-def api_remote_media_proxy(idx: int):
-    remote = _get_remote(idx)
-    try:
-        return _call_remote(remote, "GET", "/api/media", timeout=5).json()
-    except Exception:
-        return {"clips": [], "error": "Could not reach remote"}
-
-
-class _RemoteTestRequest(BaseModel):
-    url: str
-    api_key: str = ""
-
-
-@app.post("/api/remote/test")
-def api_remote_test(req: _RemoteTestRequest):
-    # A blank key means "use the saved one" (Settings never shows saved remote keys).
-    _or_400(validate_remote_url, req.url)
-    remote = keep_remote_keys([req.model_dump()], load_config()["remote_controllers"])[0]
-    try:
-        r = _call_remote(remote, "GET", "/api/status", timeout=3)
-        if r.status_code == 401:
-            return {"online": True, "authorised": False}
-        data = r.json()
-        return {
-            "online": True,
-            "authorised": True,
-            "server_name": data.get("server_name", ""),
-            "version": data.get("version", ""),
-        }
-    except Exception:
-        return {"online": False}
-
-
-class _RemoteProxyRequest(BaseModel):
-    path: str
-    body: Optional[dict] = None
-
-
-# The only remote actions the dashboard sends (Start/Stop All, per-instance start/stop/AMCP).
-_REMOTE_ACTIONS = re.compile(r"/api/(server/(start|stop)|instance/(\d+|all)/(restart|stop|amcp))")
-
-
-@app.post("/api/remote/{idx}/proxy")
-def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
-    if not _REMOTE_ACTIONS.fullmatch(req.path):
-        raise HTTPException(status_code=400, detail="Invalid remote path")
-    remote = _get_remote(idx)
-    try:
-        r = _call_remote(remote, "POST", req.path, timeout=5, json=req.body)
-        if r.status_code == 401:
-            # 502, not 401: a 401 here would sign this browser out.
-            raise HTTPException(status_code=502, detail="Remote rejected its API key")
-        return r.json()
-    except (_requests.RequestException, ValueError) as e:
-        raise HTTPException(status_code=502, detail=f"Remote unreachable: {e}") from e
-
-
-def _card_page(title: str, inner: str, script: str = "") -> str:
+def card_page(title: str, inner: str, script: str = "") -> str:
     """Small centred page (login, setup required) outside the main nav."""
     server_name = html.escape(load_config().get("server_name", "").strip())
     name_html = (
@@ -1221,7 +348,7 @@ def _card_page(title: str, inner: str, script: str = "") -> str:
 </body></html>"""
 
 
-_SETUP_REQUIRED = (
+SETUP_REQUIRED = (
     '<p style="color:var(--warning)">No web UI password is set yet.</p>'
     '<p style="color:var(--muted);margin-top:8px">Open Caspar Controller on the machine it runs on '
     "(at http://127.0.0.1:5280) and set one in Settings, then reload this page.</p>"
@@ -1239,7 +366,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
 _FORM_ERROR = '<p id="form-error" style="color:var(--error);font-size:13px;margin-top:12px"></p>'
 
 
-@app.get("/login", response_class=HTMLResponse)
+@router.get("/login", response_class=HTMLResponse)
 def page_login():
     inner = f"""
   <div class="form-group">
@@ -1252,10 +379,10 @@ def page_login():
         _PASSWORD_FORM_JS
         + "\nfunction submit() { submitPassword('/login', document.getElementById('pw').value); }"
     )
-    return HTMLResponse(_card_page("Login", inner, script))
+    return HTMLResponse(card_page("Login", inner, script))
 
 
-@app.get("/change-password", response_class=HTMLResponse)
+@router.get("/change-password", response_class=HTMLResponse)
 def page_change_password():
     inner = f"""
   <p style="color:var(--muted);margin-bottom:16px">Choose a new password to continue.</p>
@@ -1281,49 +408,10 @@ function submit() {
   submitPassword('/api/password', pw);
 }"""
     )
-    return HTMLResponse(_card_page("Change password", inner, script))
+    return HTMLResponse(card_page("Change password", inner, script))
 
 
-@app.post("/login")
-def api_login(req: _PasswordRequest, response: Response):
-    stored = load_config()["web_password_hash"]
-    if not stored:
-        raise HTTPException(status_code=400, detail="No password is set yet")
-    if not verify_password(req.password, stored):
-        raise HTTPException(status_code=401, detail="Incorrect password")
-    token = secrets.token_urlsafe(32)
-    _sessions.add(token)
-    response.set_cookie("session", token, httponly=True, samesite="strict", max_age=86400 * 30)
-    return {"ok": True}
-
-
-@app.post("/logout")
-def api_logout(request: Request, response: Response):
-    _sessions.discard(request.cookies.get("session", ""))
-    response.delete_cookie("session")
-    return {"ok": True}
-
-
-@app.get("/api/log")
-def api_log():
-    with _log_lock:
-        return {"log": list(_log)}
-
-
-@app.get("/api/tally")
-def api_tally():
-    return {
-        "available": ndi_tally.is_available(),
-        "tally": ndi_tally.get_tally(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Pages
-# ---------------------------------------------------------------------------
-
-
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 def page_dashboard():
     body = """
 <div id="setup-banner" style="display:none;background:rgba(245,158,11,0.12);border:2px solid var(--warning);border-radius:12px;padding:20px 24px;margin-bottom:16px">
@@ -1426,8 +514,6 @@ function renderInstances(instances) {
         : '';
       return `<div class="clip-info"><span class="clip-name">${escapeHtml(li.clip)}</span> &nbsp;${timeLabel}</div>${bar}`;
     })();
-    const sourceInfo = layerHtml;
-    const loadUrl = '';
     const amcpRow = !isHtml ? `
       <div style="display:flex;gap:4px;margin-top:4px">
         <select id="media_${inst.id}"
@@ -1450,8 +536,7 @@ function renderInstances(instances) {
       </div>
       <div class="ch-name">${escapeHtml(inst.name)}</div>
       <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
-      ${sourceInfo}
-      ${loadUrl}
+      ${layerHtml}
       <span class="badge ${inst.status === 'live' ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
       ${inst.status === 'live'
         ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`
@@ -1802,7 +887,7 @@ def _get_network_ip() -> str:
         return "127.0.0.1"
 
 
-@app.get("/http-generator", response_class=HTMLResponse)
+@router.get("/http-generator", response_class=HTMLResponse)
 def page_http_generator():
     cfg = load_config()
     network_base = f"http://{_get_network_ip()}:{cfg.get('web_port', 5280)}"
@@ -1958,7 +1043,7 @@ loadData();
     return HTMLResponse(page("HTTP Generator", "http-generator", body, js))
 
 
-@app.get("/settings", response_class=HTMLResponse)
+@router.get("/settings", response_class=HTMLResponse)
 def page_settings():
     body = """
 <!-- Server Identity -->
@@ -2446,35 +1531,3 @@ loadApiKey();
 
 
 # ---------------------------------------------------------------------------
-# Server entry point
-# ---------------------------------------------------------------------------
-
-_server_thread: Optional[threading.Thread] = None
-_uvicorn_server: Optional[uvicorn.Server] = None
-
-
-def start_server(port: int = 5280, open_browser: bool = True) -> None:
-    global _server_thread, _uvicorn_server
-    cfg_obj = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning", access_log=False)
-    _uvicorn_server = uvicorn.Server(cfg_obj)
-
-    def run():
-        _uvicorn_server.run()
-
-    _server_thread = threading.Thread(target=run, daemon=True)
-    _server_thread.start()
-
-    if open_browser:
-        time.sleep(1.5)
-        webbrowser.open(f"http://127.0.0.1:{port}")
-
-
-def stop_server() -> None:
-    if _uvicorn_server:
-        _uvicorn_server.should_exit = True
-
-
-def main() -> None:
-    from elliotts_casper_controller.gui_launcher import launch
-
-    launch()

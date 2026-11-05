@@ -5,9 +5,9 @@ import time
 import pytest
 from conftest import amcp_log, free_port, instance, windows_only
 
-from elliotts_casper_controller import core
-from elliotts_casper_controller.amcp_client import AMCPClient
-from elliotts_casper_controller.process_manager import CasparProcessManager
+from caspar_controller import instances, log
+from caspar_controller.caspar.amcp import AMCPClient
+from caspar_controller.caspar.process import CasparProcessManager
 
 pytestmark = windows_only
 
@@ -46,7 +46,7 @@ def start_order(monkeypatch):
 @pytest.fixture(autouse=True)
 def stop_everything():
     yield
-    for m in list(core._managers.values()):
+    for m in list(instances._managers.values()):
         m.stop()
 
 
@@ -73,8 +73,8 @@ def test_start_all(
     assert amcp_log(caspar_dir, ports[1])[-1] == "CLEAR 1"
     assert amcp_log(caspar_dir, ports[2])[-1] == 'PLAY 1-1 "AMB" LOOP'
     assert all("VERSION" in amcp_log(caspar_dir, p) for p in ports)
-    assert sorted(core._managers) == [1, 2, 3]
-    assert any("Started 3/3 instances" in line for line in core._log)
+    assert sorted(instances._managers) == [1, 2, 3]
+    assert any("Started 3/3 instances" in line for line in log._log)
 
 
 def test_stop_all(client, three_instances, recorded_sleeps, no_global_kills):
@@ -84,10 +84,10 @@ def test_stop_all(client, three_instances, recorded_sleeps, no_global_kills):
     r = client.post("/api/server/stop")
 
     assert r.json() == {"ok": True}
-    assert core._managers == {}
+    assert instances._managers == {}
     assert no_global_kills == ["kill_all", "kill_all"]
     assert not any(AMCPClient(port=p, timeout=0.5).ping() for p in ports)
-    assert core._log[-1].endswith("All CasparCG instances stopped.")
+    assert log._log[-1].endswith("All CasparCG instances stopped.")
 
 
 def test_start_with_no_instances_is_400(client, write_config):
@@ -110,7 +110,7 @@ def test_partial_failure_still_returns_200(client, three_instances, recorded_sle
 
     assert r.status_code == 200
     assert r.json()["message"] == "Started 2/3 instances (failed: [2])"
-    assert any("Inst 2 (GFX2) FAILED to start" in line for line in core._log)
+    assert any("Inst 2 (GFX2) FAILED to start" in line for line in log._log)
     # The gap is skipped after a failed instance.
     assert recorded_sleeps == [5]
 
@@ -125,32 +125,43 @@ def test_all_failing_is_500(client, three_instances, recorded_sleeps, monkeypatc
 def test_restart_one_instance(client, three_instances, caspar_dir, recorded_sleeps):
     client.post("/api/server/start")
     port = three_instances["instances"][2]["amcp_port"]
-    old_pid = core._managers[3].pid
+    old_pid = instances._managers[3].pid
 
-    core._restart_instance_bg(3)  # what POST /api/instance/3/restart runs in a thread
+    instances.restart(3)  # what POST /api/instance/3/restart runs in a thread
 
-    assert core._managers[3].pid != old_pid
-    log = amcp_log(caspar_dir, port)  # appended to by both the old and new process
-    assert log[-1] == 'PLAY 1-1 "AMB" LOOP'
-    assert log.count('PLAY 1-1 "AMB" LOOP') == 2
-    assert "BYE" in log
+    assert instances._managers[3].pid != old_pid
+    commands = amcp_log(caspar_dir, port)  # appended to by both the old and new process
+    assert commands[-1] == 'PLAY 1-1 "AMB" LOOP'
+    assert commands.count('PLAY 1-1 "AMB" LOOP') == 2
+    assert "BYE" in commands
     assert AMCPClient(port=port).ping() is True
-    assert any("Inst 3 (MEDIA1) restarted" in line for line in core._log)
+    assert any("Inst 3 (MEDIA1) restarted" in line for line in log._log)
 
 
 def test_restart_unmanaged_instance_kills_by_port(three_instances, caspar_dir, no_global_kills):
     port = three_instances["instances"][0]["amcp_port"]
-    core._restart_instance_bg(1)
+    instances.restart(1)
     assert no_global_kills == [("kill_port", port)]
     assert AMCPClient(port=port).ping() is True
 
 
 def test_restart_endpoint_returns_immediately(client, three_instances, monkeypatch):
     started = []
-    monkeypatch.setattr(core, "_restart_instance_bg", started.append)
+    monkeypatch.setattr(instances, "restart", started.append)
     r = client.post("/api/instance/2/restart")
     assert r.json() == {"ok": True, "message": "Restarting GFX2..."}
     assert client.post("/api/instance/99/restart").status_code == 404
+
+
+def test_restart_all_endpoint_reaches_restart_all(
+    client, three_instances, monkeypatch, inline_threads
+):
+    # Used to 422: the /{inst_id}/restart route captured "all".
+    calls = []
+    monkeypatch.setattr(instances, "restart_all", lambda cfg: calls.append(len(cfg["instances"])))
+    r = client.post("/api/instance/all/restart")
+    assert r.json() == {"ok": True, "message": "Restarting all instances..."}
+    assert calls == [3]
 
 
 def test_stop_one_instance(client, three_instances, recorded_sleeps):
@@ -160,10 +171,10 @@ def test_stop_one_instance(client, three_instances, recorded_sleeps):
     r = client.post("/api/instance/1/stop")
     assert r.json() == {"ok": True, "message": "Stopping GFX1..."}
     for _ in range(50):  # stop runs on a background thread
-        if 1 not in core._managers:
+        if 1 not in instances._managers:
             break
-        time.sleep(0.1)  # real sleep: only core.time is patched
+        time.sleep(0.1)  # real sleep: only instances.time is patched
 
-    assert 1 not in core._managers
+    assert 1 not in instances._managers
     assert AMCPClient(port=port, timeout=0.5).ping() is False
-    assert sorted(core._managers) == [2, 3]
+    assert sorted(instances._managers) == [2, 3]

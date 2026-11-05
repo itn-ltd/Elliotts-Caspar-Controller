@@ -9,7 +9,8 @@ import pytest
 from conftest import free_port, instance, run_status_worker_once
 from fake_amcp import EMPTY_LAYER_XML, FakeAMCPServer
 
-from elliotts_casper_controller import core
+from caspar_controller import log, tally
+from caspar_controller.caspar.info import parse_layer_info
 
 PLAYING_XML = (
     '<layer><foreground><producer type="ffmpeg-producer">'
@@ -23,7 +24,7 @@ EMPTY = {"clip": None, "time": 0.0, "duration": 0.0, "loop": False, "producer": 
 
 
 def test_parse_playing_clip():
-    assert core._parse_layer_info("201 INFO OK\r\n" + PLAYING_XML) == {
+    assert parse_layer_info("201 INFO OK\r\n" + PLAYING_XML) == {
         "clip": "AMB.mp4",
         "time": 12.5,
         "duration": 60.0,
@@ -34,7 +35,7 @@ def test_parse_playing_clip():
 
 def test_parse_strips_numeric_suffix():
     xml = PLAYING_XML.replace("AMB.mp4", "AMB.mp4_0")
-    assert core._parse_layer_info("201 INFO OK\n" + xml)["clip"] == "AMB.mp4"
+    assert parse_layer_info("201 INFO OK\n" + xml)["clip"] == "AMB.mp4"
 
 
 @pytest.mark.parametrize(
@@ -51,13 +52,13 @@ def test_parse_strips_numeric_suffix():
     ],
 )
 def test_parse_non_playing_replies_are_empty(raw):
-    assert core._parse_layer_info(raw) == EMPTY
+    assert parse_layer_info(raw) == EMPTY
 
 
 def test_parse_loop_false_values():
     for value in ("0", "false", "False"):
         xml = PLAYING_XML.replace("<loop>1</loop>", f"<loop>{value}</loop>")
-        assert core._parse_layer_info("201 INFO OK\n" + xml)["loop"] is False
+        assert parse_layer_info("201 INFO OK\n" + xml)["loop"] is False
 
 
 # ---------------------------------------------------------------- status
@@ -136,20 +137,20 @@ def test_worker_marks_live_instances_and_clip_info(client, write_config):
 def test_tally_is_merged_by_ndi_name(client, write_config, monkeypatch):
     write_config({"instances": [instance(1, "GFX1"), instance(2, "GFX2")]})
     monkeypatch.setattr(
-        core.ndi_tally, "get_tally", lambda: {"PCR3 GFX2": {"program": True, "preview": False}}
+        tally, "get_tally", lambda: {"PCR3 GFX2": {"program": True, "preview": False}}
     )
     a, b = client.get("/api/status").json()["instances"]
     assert (a["on_program"], b["on_program"], b["on_preview"]) == (False, True, False)
 
 
 def test_log_endpoint_returns_event_log(client):
-    core._log_event("hello")
+    log.log_event("hello")
     lines = client.get("/api/log").json()["log"]
     assert len(lines) == 1 and lines[0].endswith("] hello")
 
 
 def test_log_keeps_last_200():
     for i in range(205):
-        core._log_event(f"e{i}")
-    assert len(core._log) == 200
-    assert core._log[0].endswith("e5")
+        log.log_event(f"e{i}")
+    assert len(log._log) == 200
+    assert log._log[0].endswith("e5")

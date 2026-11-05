@@ -1,14 +1,13 @@
-"""Read/write app config and regenerate per-instance casparcg.config files."""
+"""Read, validate and save the app config."""
 
 import json
 import logging
 import os
 import sys
 from urllib.parse import urlsplit
-from xml.sax.saxutils import escape
 
-from elliotts_casper_controller.amcp_client import has_control_chars, is_amcp_safe
-from elliotts_casper_controller.auth import hash_password, new_api_key, verify_password
+from caspar_controller.auth import hash_password, new_api_key, verify_password
+from caspar_controller.caspar.amcp import has_control_chars, is_amcp_safe
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +28,6 @@ DEFAULT_CONFIG = {
     "caspar_exe_path": "",
     "amcp_base_port": 5250,
     "web_port": 5280,
-    "startup_delay": 60,
     "video_mode": "1080p2500",
     "autostart_caspar": False,
     "media_path": "",
@@ -103,8 +101,7 @@ def load() -> dict:
     config.setdefault("autostart_caspar", False)
     config.setdefault("instances", [])
     config.setdefault("remote_controllers", [])
-    if config.get("startup_delay", 60) <= 15:
-        config["startup_delay"] = 60
+    config.pop("startup_delay", None)  # v1.x setting that was never used
 
     # Backfill per-instance fields
     for inst in config.get("instances", []):
@@ -221,8 +218,6 @@ def validate_config(data: dict) -> None:
     for field in ("web_port", "amcp_base_port"):
         if field in data:
             _check_port(field, data[field])
-    if not _is_int(data.get("startup_delay", 60)):
-        raise ValueError("startup_delay must be a whole number of seconds")
     if not isinstance(data.get("autostart_caspar", False), bool):
         raise ValueError("autostart_caspar must be true or false")
     for inst in _check_list("instances", data):
@@ -262,151 +257,3 @@ def keep_remote_keys(remotes: list, previous: list) -> list:
 def save(config: dict) -> None:
     with open(_config_file(), "w") as f:
         json.dump(config, f, indent=2)
-
-
-def caspar_instance_config_path(config: dict, inst: dict) -> str:
-    """Return the full path for a per-instance casparcg config file."""
-    filename = f"casparcg_inst_{inst['id']}.config"
-    exe = config.get("caspar_exe_path", "")
-    if exe and os.path.isabs(exe):
-        return os.path.join(os.path.dirname(exe), filename)
-    return filename
-
-
-def regenerate_instance_config(config: dict, inst: dict) -> str:
-    """Write a single-channel casparcg.config for one instance. Returns the path written.
-
-    Each instance gets its own log/inst_N and data/inst_N subdirectory to prevent file-locking
-    conflicts when multiple CasparCG processes run from the same folder simultaneously.
-    """
-    port = instance_amcp_port(config, inst)
-    inst_id = int(inst["id"])
-    media_path_xml = escape(config.get("media_path", "").strip() or "media\\")
-    video_mode = escape(config["video_mode"])
-    ndi_name = escape(inst["ndi_name"])
-
-    exe = config.get("caspar_exe_path", "")
-    if exe and os.path.isabs(exe):
-        import shutil
-
-        exe_dir = os.path.dirname(exe)
-        for subdir in (f"log\\inst_{inst_id}", f"data\\inst_{inst_id}"):
-            os.makedirs(os.path.join(exe_dir, subdir), exist_ok=True)
-        # Wipe the CEF session cache before each start so Chromium never shows
-        # a "Restore pages?" dialog or navigates to the config file on startup.
-        html_cache = os.path.join(exe_dir, f"html_cache\\inst_{inst_id}")
-        shutil.rmtree(html_cache, ignore_errors=True)
-        os.makedirs(html_cache, exist_ok=True)
-
-    xml = f"""<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <log-level>info</log-level>
-
-  <channels>
-    <!-- Instance {inst_id} -->
-    <channel>
-      <video-mode>{video_mode}</video-mode>
-      <consumers>
-        <ndi>
-          <name>{ndi_name}</name>
-          <allow-fields>false</allow-fields>
-        </ndi>
-      </consumers>
-    </channel>
-  </channels>
-
-  <paths>
-    <media-path>{media_path_xml}</media-path>
-    <log-path>log\\inst_{inst_id}\\</log-path>
-    <data-path>data\\inst_{inst_id}\\</data-path>
-    <template-path>template\\</template-path>
-  </paths>
-
-  <controllers>
-    <tcp>
-      <port>{port}</port>
-      <protocol>AMCP</protocol>
-    </tcp>
-  </controllers>
-
-  <html>
-    <remote-debugging-port>0</remote-debugging-port>
-    <enable-gpu>false</enable-gpu>
-    <cache-path>html_cache\\inst_{inst_id}\\</cache-path>
-  </html>
-
-</configuration>
-"""
-    out_path = caspar_instance_config_path(config, inst)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(xml)
-    return out_path
-
-
-def regenerate_all_instance_configs(config: dict) -> list:
-    """Regenerate config files for every instance. Returns list of paths written."""
-    return [regenerate_instance_config(config, inst) for inst in config.get("instances", [])]
-
-
-_TEST_COLOURS = {
-    "TEST_BLACK": (0, 0, 0),
-    "TEST_WHITE": (255, 255, 255),
-    "TEST_RED": (255, 0, 0),
-    "TEST_GREEN": (0, 255, 0),
-    "TEST_BLUE": (0, 0, 255),
-    "TEST_GREY": (128, 128, 128),
-}
-
-# 7 standard EBU/SMPTE colour bar stripes (100%)
-_SMPTE_BARS = [
-    (255, 255, 255),  # White
-    (255, 255, 0),  # Yellow
-    (0, 255, 255),  # Cyan
-    (0, 255, 0),  # Green
-    (255, 0, 255),  # Magenta
-    (255, 0, 0),  # Red
-    (0, 0, 255),  # Blue
-]
-
-
-def _make_bars_image():
-    from PIL import Image, ImageDraw
-
-    W, H = 1920, 1080
-    img = Image.new("RGB", (W, H))
-    draw = ImageDraw.Draw(img)
-    bar_w = W // len(_SMPTE_BARS)
-    for i, colour in enumerate(_SMPTE_BARS):
-        x0 = i * bar_w
-        x1 = x0 + bar_w if i < len(_SMPTE_BARS) - 1 else W
-        draw.rectangle([x0, 0, x1, H], fill=colour)
-    return img
-
-
-def ensure_test_pattern_images(config: dict) -> None:
-    """Write solid-colour and bars PNG test patterns into the CasparCG media folder.
-
-    Called on every server start so test clips are always available.
-    Skips if exe path is not set or media folder doesn't exist yet.
-    """
-    custom_media = config.get("media_path", "").strip()
-    if custom_media:
-        media_dir = custom_media
-    else:
-        exe = config.get("caspar_exe_path", "")
-        if not exe or not os.path.isabs(exe):
-            return
-        media_dir = os.path.join(os.path.dirname(exe), "media")
-    os.makedirs(media_dir, exist_ok=True)
-    try:
-        from PIL import Image
-
-        for name, rgb in _TEST_COLOURS.items():
-            path = os.path.join(media_dir, f"{name}.png")
-            if not os.path.exists(path):
-                Image.new("RGB", (1920, 1080), rgb).save(path)
-        bars_path = os.path.join(media_dir, "TEST_BARS.png")
-        if not os.path.exists(bars_path):
-            _make_bars_image().save(bars_path)
-    except Exception:
-        pass

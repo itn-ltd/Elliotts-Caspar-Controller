@@ -1,0 +1,164 @@
+"""Launch, monitor, and stop the CasparCG server process."""
+
+import os
+import subprocess
+import time
+from typing import Optional
+
+import psutil
+
+from caspar_controller.caspar.amcp import AMCPClient
+
+
+class _AdoptedProcess:
+    """Minimal Popen-compatible wrapper around an existing process found via psutil."""
+
+    def __init__(self, pid: int):
+        self._pid = pid
+        try:
+            self._psutil = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            self._psutil = None
+
+    def poll(self):
+        if self._psutil is None:
+            return 0
+        try:
+            return None if self._psutil.is_running() else 0
+        except psutil.NoSuchProcess:
+            return 0
+
+    @property
+    def pid(self) -> int:
+        return self._pid
+
+
+class CasparProcessManager:
+    def __init__(
+        self,
+        exe_path: str,
+        amcp_port: int = 5250,
+        config_filename: str = "casparcg.config",
+    ):
+        self.exe_path = exe_path
+        self.amcp_port = amcp_port
+        self.config_filename = config_filename
+        self._process: Optional[subprocess.Popen] = None
+        self._client = AMCPClient(port=amcp_port)
+
+    def start(self) -> bool:
+        """Launch CasparCG using self.config_filename. Caller must pre-write the config."""
+        if self.is_running():
+            return True
+        try:
+            # No shell: names never reach a command line. Full path: works even where
+            # NoDefaultCurrentDirectoryInExePath stops the current folder being searched.
+            self._process = subprocess.Popen(
+                [os.path.abspath(self.exe_path), self.config_filename],
+                cwd=self._exe_dir(),
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            # Poll AMCP every second — move on as soon as it responds.
+            # 90s hard timeout handles slow cold starts without hanging forever.
+            deadline = time.time() + 90
+            while time.time() < deadline:
+                time.sleep(1)
+                if self._client.ping():
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def adopt_existing(self) -> bool:
+        """Adopt the CasparCG already listening on this AMCP port. Returns True if adopted."""
+        if not self._client.ping():
+            return False
+        proc = _listening_on(self.amcp_port)
+        if not proc:
+            return False
+        self._process = _AdoptedProcess(_launch_root(proc).pid)
+        return True
+
+    @staticmethod
+    def _kill_caspar_on_port(port: int) -> None:
+        """Kill the CasparCG process (and its cmd parent) listening on a specific AMCP port."""
+        proc = _listening_on(port)
+        if proc:
+            CasparProcessManager._kill_tree(_launch_root(proc).pid)
+        time.sleep(0.3)
+
+    @staticmethod
+    def _kill_all_caspar_instances() -> None:
+        """Kill every casparcg.exe (and its cmd.exe parent) found on this machine."""
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                if "casparcg" in proc.name().lower():
+                    CasparProcessManager._kill_tree(_launch_root(proc).pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        time.sleep(1.5)
+
+    def stop(self) -> None:
+        """Stop CasparCG: send BYE then immediately kill the process tree."""
+        self._client.send("BYE")
+        time.sleep(0.2)  # brief grace period for graceful shutdown
+        if self._process and self._process.poll() is None:
+            self._kill_tree(self._process.pid)
+        self._process = None
+
+    def is_running(self) -> bool:
+        """Check if OUR process is still alive and AMCP responds."""
+        if self._process and self._process.poll() is None:
+            return self._client.ping()
+        # Don't fall back to scanning all processes — that would detect
+        # other CasparCG instances that we don't own.
+        return False
+
+    @property
+    def pid(self) -> Optional[int]:
+        return self._process.pid if self._process else None
+
+    @staticmethod
+    def _kill_tree(pid: int) -> None:
+        """Kill a process and all its children (cmd.exe + casparcg.exe)."""
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.terminate()
+                except psutil.NoSuchProcess:
+                    pass
+            parent.terminate()
+            psutil.wait_procs([parent] + children, timeout=5)
+            # Force-kill anything still alive
+            for proc in [parent] + children:
+                try:
+                    proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except psutil.NoSuchProcess:
+            pass
+
+    def _exe_dir(self) -> str:
+        return os.path.dirname(os.path.abspath(self.exe_path))
+
+
+def _listening_on(port: int) -> Optional[psutil.Process]:
+    """The process listening on a local TCP port, if any."""
+    for conn in psutil.net_connections(kind="inet"):
+        if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN and conn.pid:
+            try:
+                return psutil.Process(conn.pid)
+            except psutil.NoSuchProcess:
+                return None
+    return None
+
+
+def _launch_root(proc: psutil.Process) -> psutil.Process:
+    """proc, or its cmd.exe parent if v1.x launched it via cmd /k (#12)."""
+    try:
+        parent = proc.parent()
+        return parent if parent and "cmd" in parent.name().lower() else proc
+    except psutil.Error:
+        return proc
