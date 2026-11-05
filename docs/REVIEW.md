@@ -441,28 +441,34 @@ The team wants graphics played from CasparCG templates directly, instead of load
 | **4. Polish** | Supportable long-term | File logs, health endpoint, docs |
 | **Backlog** | Only if needed | TLS, central dashboard, CasparCG version upgrade |
 
-Each phase ends in a tagged release. A task is done when its **Done when** check passes.
+All phases land on the `feature/v2-refactor` branch and ship together; there's no release per phase. A task is done when its **Done when** check passes.
 
-### Phase 0: Stop the bleeding
+**Progress (2026-11-05):** Phases 0 and 1 are done (#1–#6). Phase 2 is next.
 
-- [ ] **Test safety net, before any other change:** `tests/`, `pytest` in CI, `fake_amcp.py`, and the characterisation suite (4.10) on unchanged code. *Done when:* `pytest` runs on every PR, and every 4.10 row has a passing or xfail test that keeps passing through the refactor.
-- [ ] **API key and session auth** on all `/api/*`; remove localhost bypass. *Done when:* auth-matrix test passes for every route except `/api/health`.
-- [ ] **`StaticFiles` mount.** *Done when:* `/static/C:/Windows/win.ini` and `/static/../pyproject.toml` return 404.
-- [ ] **Launch CasparCG without `cmd /k`.** *Done when:* an instance named `A | B & C <D>` starts and the process tree is only `casparcg.exe`.
-- [ ] **Hash the password; never return it.** *Done when:* `/api/config` contains no `web_password`.
-- [ ] **Disable the self-updater.** *Done when:* no requests to `api.github.com`.
-- [ ] **Escape generated XML and UI text.** *Done when:* names containing `<&"--` give valid XML and render as text.
+### Phase 0: Stop the bleeding ✅
 
-### Phase 1: Restructure
+Done in #1, #2 and #3.
 
-- [ ] **New package layout** (4.1), moving code before changing it. *Done when:* tests pass, `core.py` and `gui_launcher.py` are gone, no module over ~400 lines.
-- [ ] **`InstanceManager` as single owner**; remove `_sync_api_managers` and GUI duplicates. *Done when:* only `instances.py` constructs processes, and concurrent Start All runs once.
-- [ ] **Non-blocking start/restart.** *Done when:* `POST /api/server/start` returns in under 200 ms.
-- [ ] **Stable instance IDs.** *Done when:* reordering while live still stops the right process.
-- [ ] **Kill only owned processes.** *Done when:* an unrelated `casparcg.exe` and a connected browser survive Start All and app launch.
-- [ ] **Pydantic settings, atomic save.** *Done when:* duplicate ports, names and unsafe characters are rejected, and reads never see partial JSON.
-- [ ] **New AMCP client.** *Done when:* reply-code and multi-line tests pass, and a local call takes under 50 ms.
-- [ ] **Apply the 3.3 cuts** in moved code. *Done when:* each line is removed or marked deferred.
+- [x] **Test safety net, before any other change:** `tests/`, `pytest` in CI, `fake_amcp.py`, and the characterisation suite (4.10) on unchanged code. *Done when:* `pytest` runs on every PR, and every 4.10 row has a passing or xfail test that keeps passing through the refactor.
+- [x] **API key and session auth** on all `/api/*`; remove localhost bypass. *Done when:* auth-matrix test passes for every route except `/api/health`.
+- [x] **`StaticFiles` mount.** *Done when:* `/static/C:/Windows/win.ini` and `/static/../pyproject.toml` return 404.
+- [x] **Launch CasparCG without `cmd /k`.** *Done when:* an instance named `A | B & C <D>` starts and the process tree is only `casparcg.exe`.
+- [x] **Hash the password; never return it.** *Done when:* `/api/config` contains no `web_password`.
+- [x] **Disable the self-updater.** *Done when:* no requests to `api.github.com`.
+- [x] **Escape generated XML and UI text.** *Done when:* names containing `<&"--` give valid XML and render as text.
+
+### Phase 1: Restructure ✅
+
+Done in #4, #5 and #6. Instance IDs stayed integers rather than UUIDs, so existing `/api/instance/{id}` panel URLs keep working. Adoption goes by the process on each instance's AMCP port, not a PID file.
+
+- [x] **New package layout** (4.1), moving code before changing it. *Done when:* tests pass, `core.py` and `gui_launcher.py` are gone, no module over ~400 lines.
+- [x] **`InstanceManager` as single owner**; remove `_sync_api_managers` and GUI duplicates. *Done when:* only `instances.py` constructs processes, and concurrent Start All runs once.
+- [x] **Non-blocking start/restart.** *Done when:* `POST /api/server/start` returns in under 200 ms.
+- [x] **Stable instance IDs.** *Done when:* reordering while live still stops the right process.
+- [x] **Kill only owned processes.** *Done when:* an unrelated `casparcg.exe` and a connected browser survive Start All and app launch.
+- [x] **Pydantic settings, atomic save.** *Done when:* duplicate ports, names and unsafe characters are rejected, and reads never see partial JSON.
+- [x] **New AMCP client.** *Done when:* reply-code and multi-line tests pass, and a local call takes under 50 ms.
+- [x] **Apply the 3.3 cuts** in moved code. *Done when:* each line is removed or marked deferred.
 
 ### Phase 2: Web UI
 
