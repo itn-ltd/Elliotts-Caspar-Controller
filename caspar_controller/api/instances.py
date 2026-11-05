@@ -21,12 +21,11 @@ def api_status():
 
     # Read from background cache — returns in <1ms rather than blocking on AMCP pings
     live, layer_info = instances.cached_status()
+    tally_state = tally.get_tally()
 
     instances_out = []
     for inst in insts:
-        port = instance_amcp_port(cfg, inst)
-        running = live.get(inst["id"], False)
-        li = layer_info.get(inst["id"], {})
+        on_air = tally_state.get(inst["ndi_name"], {})
         instances_out.append(
             {
                 "id": inst["id"],
@@ -35,17 +34,13 @@ def api_status():
                 "type": inst.get("type", "html"),
                 "url": inst.get("url", ""),
                 "startup_command": inst.get("startup_command", ""),
-                "amcp_port": port,
-                "status": "live" if running else "stopped",
-                "layer": li,
+                "amcp_port": instance_amcp_port(cfg, inst),
+                "status": "live" if live.get(inst["id"], False) else "stopped",
+                "layer": layer_info.get(inst["id"], {}),
+                "on_program": on_air.get("program", False),
+                "on_preview": on_air.get("preview", False),
             }
         )
-    # Merge tally state into each instance
-    tally_state = tally.get_tally()
-    for inst in instances_out:
-        t = tally_state.get(inst["ndi_name"], {})
-        inst["on_program"] = t.get("program", False)
-        inst["on_preview"] = t.get("preview", False)
 
     any_running = any(i["status"] == "live" for i in instances_out)
     needs_setup = not cfg.get("caspar_exe_path") or not insts

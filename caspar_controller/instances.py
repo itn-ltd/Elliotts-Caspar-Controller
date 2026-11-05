@@ -90,107 +90,87 @@ def cached_status() -> tuple[dict, dict]:
         return dict(_status_cache["live"]), dict(_status_cache.get("layer_info", {}))
 
 
-def start_all(cfg: dict) -> tuple[list, list]:
-    """Start every instance in order. Returns (started ids, failed ids)."""
-    instances = cfg.get("instances", [])
-
-    # Write all config files and test pattern images before launching
-    regenerate_all_instance_configs(cfg)
-    ensure_test_pattern_images(cfg)
-
-    # Always kill every running CasparCG before launching fresh.
-    # Conditional kill (only when AMCP responds) misses instances on stale ports
-    # and causes processes to accumulate across multiple Start clicks.
-    CasparProcessManager._kill_all_caspar_instances()
-
-    started = []
-    errors = []
-
-    # Sequential startup with 5s gap — ensures NDI sources appear one at a time
-    # in config order so Tricaster/receivers lock onto the correct source.
-    for i, inst in enumerate(instances):
+def _start_sequence(cfg: dict, insts: list) -> tuple[list, list]:
+    """Start insts one at a time. Returns (started ids, failed ids)."""
+    started, errors = [], []
+    # One at a time, 5s apart: receivers lock onto the wrong NDI source if outputs start together.
+    for i, inst in enumerate(insts):
         m = _make_manager(inst, cfg)
         _managers[inst["id"]] = m
-        ok = m.start()
-        if ok:
+        if m.start():
             res = _load_instance(inst, AMCPClient(port=instance_amcp_port(cfg, inst)))
             log_event(f"Inst {inst['id']} ({inst['name']}) started → {res[:60]}")
             started.append(inst["id"])
-            if i < len(instances) - 1:
-                time.sleep(5)  # let NDI source settle before announcing the next one
+            if i < len(insts) - 1:
+                time.sleep(5)
         else:
             log_event(f"Inst {inst['id']} ({inst['name']}) FAILED to start")
             errors.append(inst["id"])
     return started, errors
 
 
+def start_all(cfg: dict) -> tuple[list, list]:
+    """Kill every CasparCG, then start every instance in order. Returns (started, failed)."""
+    regenerate_all_instance_configs(cfg)
+    ensure_test_pattern_images(cfg)
+    # Kill by name, not by AMCP reply: stale ports would otherwise pile up processes.
+    CasparProcessManager._kill_all_caspar_instances()
+    return _start_sequence(cfg, cfg.get("instances", []))
+
+
+def start_missing(cfg: dict) -> tuple[list, list]:
+    """Start only the instances this app isn't already running, killing nothing."""
+    missing = [i for i in cfg.get("instances", []) if i["id"] not in _managers]
+    ensure_test_pattern_images(cfg)
+    for inst in missing:
+        regenerate_instance_config(cfg, inst)
+    return _start_sequence(cfg, missing)
+
+
 def stop_all() -> None:
     global _managers
-    # Stop any managed instances
     threads = [threading.Thread(target=m.stop, daemon=True) for m in list(_managers.values())]
     for t in threads:
         t.start()
     for t in threads:
         t.join(timeout=3)
     _managers = {}
-    # Kill any remaining CasparCG processes (e.g. started via the desktop GUI)
+    # Also catches CasparCG this app doesn't manage (stale ports, v1.x installs).
     CasparProcessManager._kill_all_caspar_instances()
     log_event("All CasparCG instances stopped.")
+
+
+def restart_all(cfg: dict) -> None:
+    """Stop everything, then start each instance in order. Runs in a thread."""
+    stop_all()
+    start_all(cfg)
+
+
+def _stop_one(inst_id: int, port: int) -> None:
+    # Unmanaged (e.g. adoption failed): kill whatever listens on its port.
+    if inst_id in _managers:
+        _managers.pop(inst_id).stop()
+    else:
+        CasparProcessManager._kill_caspar_on_port(port)
 
 
 def restart(inst_id: int) -> None:
     """Stop the CasparCG process for one instance and relaunch it. Runs in a thread."""
     cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    inst = inst_map.get(inst_id)
+    inst = next((i for i in cfg.get("instances", []) if i["id"] == inst_id), None)
     if not inst:
         return
     port = instance_amcp_port(cfg, inst)
-    # Kill whatever is on this port — works whether started from GUI or web
-    if inst_id in _managers:
-        _managers[inst_id].stop()
-        _managers.pop(inst_id, None)
-    else:
-        CasparProcessManager._kill_caspar_on_port(port)
+    _stop_one(inst_id, port)
     regenerate_instance_config(cfg, inst)
     m = _make_manager(inst, cfg)
     _managers[inst_id] = m
-    ok = m.start()
-    if ok:
+    if m.start():
         res = _load_instance(inst, AMCPClient(port=port))
         log_event(f"Inst {inst_id} ({inst['name']}) restarted → {res[:60]}")
     else:
         log_event(f"Inst {inst_id} ({inst['name']}) failed to restart")
         _managers.pop(inst_id, None)
-
-
-def restart_all(cfg: dict) -> None:
-    """Stop everything, then start each instance in order. Runs in a thread."""
-    global _managers
-    instances = cfg.get("instances", [])
-    # Stop all managed instances in parallel
-    threads = [threading.Thread(target=m.stop, daemon=True) for m in list(_managers.values())]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=3)
-    # Kill any remaining (e.g. started from GUI)
-    CasparProcessManager._kill_all_caspar_instances()
-    _managers = {}
-    regenerate_all_instance_configs(cfg)
-    # Start sequentially with 5s gap for NDI ordering
-    for i, inst in enumerate(instances):
-        m = _make_manager(inst, cfg)
-        _managers[inst["id"]] = m
-        ok = m.start()
-        if ok:
-            res = _load_instance(inst, AMCPClient(port=instance_amcp_port(cfg, inst)))
-            log_event(f"Inst {inst['id']} ({inst['name']}) restarted → {res[:60]}")
-            if i < len(instances) - 1:
-                time.sleep(5)
-        else:
-            log_event(f"Inst {inst['id']} ({inst['name']}) failed to restart")
-            _managers.pop(inst["id"], None)
 
 
 def adopt_running() -> int:
@@ -209,10 +189,5 @@ def adopt_running() -> int:
 
 def stop(inst: dict, port: int) -> None:
     """Stop one instance. Runs in a thread."""
-    inst_id = inst["id"]
-    if inst_id in _managers:
-        _managers[inst_id].stop()
-        _managers.pop(inst_id, None)
-    else:
-        CasparProcessManager._kill_caspar_on_port(port)
-    log_event(f"Inst {inst_id} ({inst['name']}) stopped.")
+    _stop_one(inst["id"], port)
+    log_event(f"Inst {inst['id']} ({inst['name']}) stopped.")

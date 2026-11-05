@@ -1,7 +1,6 @@
 """The FastAPI app: routers, auth middleware and static files."""
 
 import os
-import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -35,13 +34,7 @@ for router in ROUTERS:
     app.include_router(router)
 
 
-def _app_root() -> str:
-    if getattr(sys, "frozen", False):
-        return sys._MEIPASS
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-STATIC_DIR = os.path.join(_app_root(), "static")
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

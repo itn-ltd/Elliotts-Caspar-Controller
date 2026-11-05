@@ -1,5 +1,6 @@
 """Tray icon: runs the web server; the web UI does everything else."""
 
+import logging
 import os
 import threading
 import time
@@ -33,13 +34,30 @@ def start_caspar() -> None:
     if adopted:
         log_event(f"Reconnected to {adopted} running CasparCG instance(s).")
     cfg = load_config()
-    if adopted or not cfg["autostart_caspar"] or not cfg["instances"]:
+    if not cfg["autostart_caspar"] or adopted == len(cfg["instances"]):
         return
     if not os.path.isfile(cfg["caspar_exe_path"]):
         log_event("Auto-start skipped: set the CasparCG path in Settings.")
         return
-    started, _ = instances.start_all(cfg)
-    log_event(f"Auto-started {len(started)}/{len(cfg['instances'])} instances")
+    # Never kill outputs that are already on air: only start the missing ones.
+    started, _ = (instances.start_missing if adopted else instances.start_all)(cfg)
+    log_event(f"Auto-started {len(started)}/{len(cfg['instances']) - adopted} instances")
+
+
+class _LastError(logging.Handler):
+    """Keeps uvicorn's last error so the tray can say why the server didn't start."""
+
+    message = ""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.message = record.getMessage()
+
+
+def _refresh_menu(icon: pystray.Icon) -> None:
+    # pystray builds the Windows menu once, so rebuild it to update the live count.
+    while icon.visible:
+        time.sleep(3)
+        icon.update_menu()
 
 
 def run() -> None:
@@ -48,8 +66,10 @@ def run() -> None:
     server = uvicorn.Server(
         uvicorn.Config(app, host="0.0.0.0", port=port, access_log=False, log_config=None)
     )
-    # uvicorn exits its thread with SystemExit when it can't bind the port.
+    # uvicorn ends its thread (SystemExit) if it can't bind or start up; this records why.
     server_thread = threading.Thread(target=server.run, daemon=True)
+    last_error = _LastError(logging.ERROR)
+    logging.getLogger("uvicorn.error").addHandler(last_error)
 
     def quit_app(icon: pystray.Icon) -> None:
         server.should_exit = True
@@ -61,10 +81,17 @@ def run() -> None:
         while not server.started and server_thread.is_alive():
             time.sleep(0.1)
         if not server.started:
-            icon.notify(f"The web server couldn't start on port {port}. Is it in use?", TITLE)
+            icon.notify(
+                f"The web server didn't start on port {port}. {last_error.message}"[:250], TITLE
+            )
             return
         webbrowser.open(url)
-        start_caspar()
+        threading.Thread(target=_refresh_menu, args=(icon,), daemon=True).start()
+        try:
+            start_caspar()
+        except Exception as e:  # a thread with nobody to report to
+            log_event(f"Auto-start failed: {e}")
+            icon.notify(f"CasparCG didn't start: {e}"[:250], TITLE)
 
     menu = pystray.Menu(
         pystray.MenuItem("Open Caspar Controller", lambda: webbrowser.open(url), default=True),

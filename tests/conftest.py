@@ -19,7 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from caspar_controller import instances, log, remotes, settings, tally
-from caspar_controller.api import auth as api_auth
+from caspar_controller.api import auth as api_auth, instances as instances_api
 from caspar_controller.api.app import app
 from caspar_controller.caspar.process import CasparProcessManager
 
@@ -119,6 +119,27 @@ def anon():
 def local_anon():
     """A browser on this PC with no credentials."""
     return TestClient(app, base_url=LOCAL_URL, client=LOCAL)
+
+
+@pytest.fixture
+def inline_threads(monkeypatch):
+    """Run routes' background threads inline, so none outlive the kill-helper stubs."""
+
+    class InlineThread:
+        def __init__(self, target, args=(), **_):
+            self._run = lambda: target(*args)
+
+        def start(self):
+            self._run()
+
+        def join(self, timeout=None):
+            pass
+
+    namespace = types.SimpleNamespace(
+        Thread=InlineThread, Lock=threading.Lock, Event=threading.Event
+    )
+    monkeypatch.setattr(instances_api, "threading", namespace)
+    monkeypatch.setattr(instances, "threading", namespace)
 
 
 @pytest.fixture

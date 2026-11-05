@@ -1,8 +1,6 @@
 """Access control: API key, password login, first-run setup and secrets (#2)."""
 
 import json
-import threading
-import types
 
 import pytest
 from conftest import API_KEY, LOCAL, LOCAL_URL, instance
@@ -10,8 +8,7 @@ from fake_amcp import FakeAMCPServer
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from caspar_controller import __version__, instances, settings
-from caspar_controller.api import instances as instances_api
+from caspar_controller import __version__, settings
 from caspar_controller.api.app import ROUTERS, app
 from caspar_controller.auth import hash_password, key_matches, verify_password
 
@@ -29,24 +26,6 @@ API_ROUTES = [
 @pytest.fixture
 def password_on(write_config):
     return write_config({"web_password_hash": hash_password("hunter2")})
-
-
-@pytest.fixture
-def inline_threads(monkeypatch):
-    """Run routes' background threads inline, so none outlive the kill-helper stubs."""
-
-    class InlineThread:
-        def __init__(self, target, args=(), **_):
-            self._run = lambda: target(*args)
-
-        def start(self):
-            self._run()
-
-    namespace = types.SimpleNamespace(
-        Thread=InlineThread, Lock=threading.Lock, Event=threading.Event
-    )
-    monkeypatch.setattr(instances_api, "threading", namespace)
-    monkeypatch.setattr(instances, "threading", namespace)
 
 
 def login(client) -> str:

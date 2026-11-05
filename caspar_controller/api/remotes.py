@@ -28,12 +28,8 @@ def api_remotes():
     remotes = cfg.get("remote_controllers", [])
     if not remotes:
         return {"remotes": []}
-    results: list = [None] * len(remotes)
-    with ThreadPoolExecutor(max_workers=max(len(remotes), 1)) as ex:
-        futs = {ex.submit(remote_status, i, r): i for i, r in enumerate(remotes)}
-        for f in futs:
-            results[futs[f]] = f.result()
-    return {"remotes": results}
+    with ThreadPoolExecutor(max_workers=len(remotes)) as ex:
+        return {"remotes": list(ex.map(remote_status, range(len(remotes)), remotes))}
 
 
 @router.get("/api/remote/{idx}/media")

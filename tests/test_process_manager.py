@@ -66,3 +66,15 @@ def test_stop_sends_bye_first():
     with FakeAMCPServer() as s:
         CasparProcessManager(exe_path="casparcg.exe", amcp_port=s.port).stop()
         assert s.commands == ["BYE"]
+
+
+def test_adopt_takes_the_process_on_its_own_port(manager):
+    assert manager.start() is True
+    tree = {manager.pid, *(p.pid for p in psutil.Process(manager.pid).children(recursive=True))}
+
+    same_port = CasparProcessManager(exe_path=manager.exe_path, amcp_port=manager.amcp_port)
+    assert same_port.adopt_existing() is True
+    assert same_port.pid in tree
+
+    other_port = CasparProcessManager(exe_path=manager.exe_path, amcp_port=free_port())
+    assert other_port.adopt_existing() is False

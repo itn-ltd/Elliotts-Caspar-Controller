@@ -70,47 +70,21 @@ class CasparProcessManager:
             return False
 
     def adopt_existing(self) -> bool:
-        """Find a running CasparCG process and adopt it so we can control it.
-
-        Searches for casparcg.exe, using its parent cmd.exe as the root if v1.x
-        launched it that way (#12). Returns True if adopted.
-        """
+        """Adopt the CasparCG already listening on this AMCP port. Returns True if adopted."""
         if not self._client.ping():
             return False
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                if "casparcg" not in proc.name().lower():
-                    continue
-                # Prefer the parent cmd.exe so kill_tree works the same way
-                try:
-                    parent = proc.parent()
-                    root = parent if parent and "cmd" in parent.name().lower() else proc
-                except Exception:
-                    root = proc
-                self._process = _AdoptedProcess(root.pid)
-                return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        return False
+        proc = _listening_on(self.amcp_port)
+        if not proc:
+            return False
+        self._process = _AdoptedProcess(_launch_root(proc).pid)
+        return True
 
     @staticmethod
     def _kill_caspar_on_port(port: int) -> None:
         """Kill the CasparCG process (and its cmd parent) listening on a specific AMCP port."""
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                for conn in proc.connections(kind="inet"):
-                    if conn.laddr.port == port and conn.status == "LISTEN":
-                        try:
-                            parent = proc.parent()
-                            if parent and "cmd" in parent.name().lower():
-                                CasparProcessManager._kill_tree(parent.pid)
-                            else:
-                                CasparProcessManager._kill_tree(proc.pid)
-                        except Exception:
-                            CasparProcessManager._kill_tree(proc.pid)
-                        break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+        proc = _listening_on(port)
+        if proc:
+            CasparProcessManager._kill_tree(_launch_root(proc).pid)
         time.sleep(0.3)
 
     @staticmethod
@@ -119,14 +93,7 @@ class CasparProcessManager:
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 if "casparcg" in proc.name().lower():
-                    try:
-                        parent = proc.parent()
-                        if parent and "cmd" in parent.name().lower():
-                            CasparProcessManager._kill_tree(parent.pid)
-                        else:
-                            CasparProcessManager._kill_tree(proc.pid)
-                    except Exception:
-                        CasparProcessManager._kill_tree(proc.pid)
+                    CasparProcessManager._kill_tree(_launch_root(proc).pid)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
         time.sleep(1.5)
@@ -175,3 +142,23 @@ class CasparProcessManager:
 
     def _exe_dir(self) -> str:
         return os.path.dirname(os.path.abspath(self.exe_path))
+
+
+def _listening_on(port: int) -> Optional[psutil.Process]:
+    """The process listening on a local TCP port, if any."""
+    for conn in psutil.net_connections(kind="inet"):
+        if conn.laddr.port == port and conn.status == psutil.CONN_LISTEN and conn.pid:
+            try:
+                return psutil.Process(conn.pid)
+            except psutil.NoSuchProcess:
+                return None
+    return None
+
+
+def _launch_root(proc: psutil.Process) -> psutil.Process:
+    """proc, or its cmd.exe parent if v1.x launched it via cmd /k (#12)."""
+    try:
+        parent = proc.parent()
+        return parent if parent and "cmd" in parent.name().lower() else proc
+    except psutil.Error:
+        return proc

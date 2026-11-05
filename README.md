@@ -197,8 +197,8 @@ All need the key or a signed-in session, except `/api/health`.
 ## Tray app
 
 - **On launch** the app starts the web server, opens the web UI and sits in the system tray. If the web port is already in use, the tray says so.
-- **The tray menu has:** Open Caspar Controller (also a double-click), how many instances are live, Restart all instances and Quit. Quitting stops the web server but leaves CasparCG running.
-- **CasparCG left running** (for example after the app restarted) is reconnected rather than restarted. **Auto-start** only starts CasparCG when none of its instances are already running.
+- **The tray menu has:** Open Caspar Controller (also a click on the icon), how many instances are live, Restart all instances and Quit. Quitting stops the web server but leaves CasparCG running.
+- **CasparCG left running** (for example after the app restarted) is reconnected rather than restarted. **Auto-start** then starts only the instances that aren't running, without touching the live ones.
 - **CasparCG runs without a console window.** Its output will be viewable in the web UI's console panel (#8).
 
 ---
@@ -266,6 +266,7 @@ caspar_controller/
 ├── tally.py               NDI tally monitor
 ├── log.py                 Event log shown on the dashboard
 ├── caspar/                AMCP client, INFO parsing, casparcg.config, process, test patterns
+├── static/                Fonts and icons
 └── api/                   FastAPI app and one router per area   → http://0.0.0.0:<web-port>
     └── pages.py           HTML pages (moving to static files in #7)
 ```

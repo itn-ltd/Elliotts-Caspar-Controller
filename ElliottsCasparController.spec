@@ -18,9 +18,8 @@ except Exception:
     VERSION = "0.1.0"
 
 datas = []
-if os.path.exists('static'):
-    datas.append(('static', 'static'))
-datas.append(('caspar_controller/caspar/test_patterns', 'caspar_controller/caspar/test_patterns'))
+for folder in ('caspar_controller/static', 'caspar_controller/caspar/test_patterns'):
+    datas.append((folder, folder))
 if os.path.exists('README.md'):
     datas.append(('README.md', '.'))
 
@@ -55,7 +54,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='static/esc_icon.ico',
+    icon='caspar_controller/static/esc_icon.ico',
 )
 
 coll = COLLECT(

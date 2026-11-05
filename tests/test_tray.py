@@ -43,6 +43,18 @@ def test_autostart_skipped_without_exe(write_config, start_calls):
     assert "set the CasparCG path" in log._log[-1]
 
 
+def test_only_missing_instances_are_auto_started(write_config, exe, start_calls, monkeypatch):
+    monkeypatch.setattr(CasparProcessManager, "adopt_existing", lambda self: self.amcp_port == 5250)
+    missing = []
+    monkeypatch.setattr(instances, "start_missing", lambda cfg: missing.append(cfg) or ([2], []))
+    insts = [instance(1, "GFX1"), instance(2, "GFX2")]
+    write_config({"caspar_exe_path": exe, "autostart_caspar": True, "instances": insts})
+    tray.start_caspar()
+    assert list(instances._managers) == [1]
+    assert (len(missing), start_calls) == (1, [])  # start_all would kill instance 1
+    assert log._log[-1].endswith("Auto-started 1/1 instances")
+
+
 def test_running_instances_are_adopted_not_restarted(write_config, exe, start_calls, monkeypatch):
     monkeypatch.setattr(CasparProcessManager, "adopt_existing", lambda self: True)
     insts = [instance(1, "GFX1"), instance(2, "GFX2")]
