@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triggers — Elliott's Caspar Controller</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="active">Triggers</a><a href="/settings" class="">Settings</a></nav>
+<div id="toast-container"></div>
+<main class="main">
+<h1 style="margin-bottom:24px;color:#fff">Triggers<span class="h1-server" data-server-name hidden></span></h1>
+<p style="color:var(--muted);margin-bottom:20px">
+  Pick an output and a clip to get a ready-to-use trigger. Automator, Companion, hardware panels or
+  anything that can call a URL can fire it.
+</p>
+
+<div class="card">
+  <h2 style="margin-bottom:20px">Build a trigger</h2>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="form-group" style="margin:0">
+      <label>Media Instance</label>
+      <select id="gen-instance" onchange="build()">
+        <option value="">— select instance —</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>Clip</label>
+      <select id="gen-clip" onchange="build()">
+        <option value="">— select clip —</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:20px">
+    <div class="form-group" style="margin:0">
+      <label>Playback</label>
+      <select id="gen-loop" onchange="build()" style="max-width:220px">
+        <option value="">Loop continuously (default)</option>
+        <option value="false">Play once then stop</option>
+      </select>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer">
+      <input type="checkbox" id="show-key" onchange="build()" style="accent-color:var(--accent)">
+      Show the API key
+    </label>
+  </div>
+
+  <div id="gen-output" style="display:none">
+    <label style="margin-bottom:8px;display:block">URL, for Automator and devices that can only call a URL. Click to copy.</label>
+    <div class="trigger-box" id="gen-url" onclick="copy('url')" title="Click to copy"></div>
+    <label style="margin:16px 0 8px;display:block">With the key in a header, for devices that can send one. Click to copy.</label>
+    <div class="trigger-box" id="gen-curl" onclick="copy('curl')" title="Click to copy"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-bottom:12px">How it works</h3>
+  <p style="color:var(--muted);font-size:13px;line-height:1.7">
+    The trigger is an HTTP GET to this controller, which plays the clip on that output at once.
+    Every trigger needs this controller's API key (Settings → API Key): in the URL as <code>api_key=</code>,
+    or in an <code>X-API-Key</code> header, which keeps it out of URLs and logs.
+    Rotating the key in Settings stops every trigger until it's updated.
+  </p>
+</div>
+
+</main>
+<script src="/web/app.js"></script>
+<script src="/web/console.js" defer></script>
+<script>
+let _apiKey = '';
+let _base = location.origin;
+const _copy = {};  // what each box copies: always the real key, even when hidden
+
+function loadData() {
+  api('/api/key').then(data => { _apiKey = data.api_key; build(); });
+  // The address other machines use, even when this page is open on localhost.
+  api('/api/config').then(cfg => { _base = cfg.lan_url; build(); });
+  api('/api/status').then(data => {
+    const media = (data.instances || []).filter(i => i.type === 'media');
+    document.getElementById('gen-instance').innerHTML = media.length
+      ? '<option value="">— select instance —</option>' + options(media.map(i => i.name))
+      : '<option value="">No media instances configured</option>';
+    build();
+  });
+  api('/api/media').then(data => {
+    document.getElementById('gen-clip').innerHTML =
+      '<option value="">— select clip —</option>' + options(data.clips || []);
+    build();
+  });
+}
+
+function build() {
+  const instance = document.getElementById('gen-instance').value;
+  const clip = document.getElementById('gen-clip').value;
+  const output = document.getElementById('gen-output');
+  if (!instance || !clip) { output.style.display = 'none'; return; }
+
+  let url = _base + '/api/load?instance=' + encodeURIComponent(instance) + '&clip=' + encodeURIComponent(clip);
+  if (document.getElementById('gen-loop').value === 'false') url += '&loop=false';
+  const key = encodeURIComponent(_apiKey);
+  const shown = document.getElementById('show-key').checked ? key : '••••••••';
+
+  _copy.url = url + '&api_key=' + key;
+  _copy.curl = `curl -H "X-API-Key: ${_apiKey}" "${url}"`;
+  document.getElementById('gen-url').textContent = url + '&api_key=' + shown;
+  document.getElementById('gen-curl').textContent = `curl -H "X-API-Key: ${shown}" "${url}"`;
+  output.style.display = 'block';
+}
+
+function copy(which) {
+  const text = _copy[which];
+  const done = () => toast('Copied', 'success');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, cb) {  // plain HTTP from another PC: no clipboard API
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); cb(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+loadData();
+</script>
+</body>
+</html>

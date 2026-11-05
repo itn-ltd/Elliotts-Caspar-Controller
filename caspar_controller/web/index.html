@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="active">Dashboard</a><a href="/http-generator" class="">HTTP Generator</a><a href="/settings" class="">Settings</a></nav>
+<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="active">Dashboard</a><a href="/triggers" class="">Triggers</a><a href="/settings" class="">Settings</a></nav>
 <div id="toast-container"></div>
 <main class="main">
 <h1 style="margin-bottom:24px;color:#fff">Dashboard<span class="h1-server" data-server-name hidden></span></h1>
@@ -417,13 +417,13 @@ function updateRemotes() {
 
 function remoteServerAction(idx, action) {
   toast('Sending ' + action + ' to remote...', 'info');
-  api('/api/remote/' + idx + '/proxy', 'POST', { path: '/api/server/' + action })
+  api('/api/remote/' + idx + '/server/' + action, 'POST')
     .then(d => { toast(d.message || action + ' OK', 'success'); updateRemotes(); })
     .catch(() => toast('Remote action failed', 'error'));
 }
 
 function remoteInstanceAction(idx, instId, action) {
-  api('/api/remote/' + idx + '/proxy', 'POST', { path: '/api/instance/' + instId + '/' + action })
+  api('/api/remote/' + idx + '/instance/' + instId + '/' + action, 'POST')
     .then(() => { setTimeout(updateRemotes, 2000); updateRemotes(); })
     .catch(() => toast('Remote action failed', 'error'));
 }
@@ -468,7 +468,7 @@ function sendRemoteAmcp(idx, instId) {
   const input = document.getElementById('ramcp_' + idx + '_' + instId);
   const cmd = input?.value?.trim();
   if (!cmd) { toast('Enter an AMCP command first', 'warning'); return; }
-  api('/api/remote/' + idx + '/proxy', 'POST', { path: '/api/instance/' + instId + '/amcp', body: { command: cmd } })
+  api('/api/remote/' + idx + '/instance/' + instId + '/amcp', 'POST', { command: cmd })
     .then(d => toast('Remote: ' + (d.response || 'OK'), 'success'))
     .catch(() => toast('Remote AMCP failed', 'error'));
 }

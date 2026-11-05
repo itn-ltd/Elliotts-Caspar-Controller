@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/http-generator" class="">HTTP Generator</a><a href="/settings" class="active">Settings</a></nav>
+<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="">Triggers</a><a href="/settings" class="active">Settings</a></nav>
 <div id="toast-container"></div>
 <main class="main">
 <h1 style="margin-bottom:24px;color:#fff">Settings<span class="h1-server" data-server-name hidden></span></h1>
@@ -239,8 +239,13 @@ function testRemote(i) {
   const remote = formRemote(i);
   const url = remote.url;
   if (!url) { toast('Enter a URL first', 'warning'); return; }
+  // Test checks the saved remote (the server never contacts an unsaved URL).
+  if (url !== (_remotes[i] || {}).url || remote.api_key) {
+    toast('Save Remote Controllers first, then Test', 'warning');
+    return;
+  }
   toast('Testing connection...', 'info');
-  api('/api/remote/test', 'POST', remote).then(d => {
+  api('/api/remote/' + i + '/test', 'POST').then(d => {
     if (d.online && !d.authorised) {
       toast('Reached ' + url + ' but its API key was rejected', 'warning');
     } else if (d.online) {

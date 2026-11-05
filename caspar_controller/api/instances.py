@@ -106,7 +106,7 @@ class CommandRequest(BaseModel):
     command: str
 
 
-def _command(req: CommandRequest) -> str:
+def command_or_400(req: CommandRequest) -> str:
     command = req.command.strip()
     if not command or has_control_chars(command):  # CR/LF would smuggle in a second command
         raise HTTPException(status_code=400, detail="Enter one command, with no control characters")
@@ -117,7 +117,7 @@ def _command(req: CommandRequest) -> str:
 def api_instance_amcp(inst_id: int, req: CommandRequest):
     cfg = load_config()
     inst = instance_or_404(cfg, inst_id)
-    command = _command(req)
+    command = command_or_400(req)
     res = instances.manager.client(cfg, inst).send(command)
     log_event(f"Inst {inst_id} AMCP: {command[:60]} → {res[:60]}")
     return {"ok": True, "response": res}
@@ -127,7 +127,7 @@ def api_instance_amcp(inst_id: int, req: CommandRequest):
 def api_instance_console(inst_id: int, req: CommandRequest):
     """Type into CasparCG's own console. Signed-in operators only (see auth.py)."""
     instance_or_404(load_config(), inst_id)
-    command = _command(req)
+    command = command_or_400(req)
     try:
         instances.manager.send_console(inst_id, command)
     except OSError as e:

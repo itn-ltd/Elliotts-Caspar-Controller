@@ -50,6 +50,8 @@ class FakeRemote:
                 return False
 
             def do_GET(self):
+                if self.path == "/api/health":  # open, like the real one
+                    return self._json({"ok": True, "version": "1.1.1", "server_name": "Studio B"})
                 if not self._authorised():
                     return
                 if remote.redirect_to:
@@ -58,8 +60,6 @@ class FakeRemote:
                     self.end_headers()
                 elif self.path == "/api/status":
                     self._json(remote.status)
-                elif self.path == "/api/config":
-                    self._json({"server_name": "From Config"})
                 elif self.path == "/api/media":
                     self._json({"clips": ["AMB", "TEST_RED"]})
                 else:
@@ -139,16 +139,15 @@ def test_remote_with_wrong_key(client, write_config, remote):
     }
 
 
-def test_remote_name_falls_back_to_config_then_cache(client, write_config, remote):
-    remote.status = {**REMOTE_STATUS, "server_name": ""}
+def test_remote_name_is_cached_for_when_it_goes_offline(client, write_config, remote):
     write_config({"remote_controllers": [{"url": remote.url, "api_key": REMOTE_KEY}]})
-    assert client.get("/api/remotes").json()["remotes"][0]["display_name"] == "From Config"
+    assert client.get("/api/remotes").json()["remotes"][0]["display_name"] == "Studio B"
 
     remote.close()  # now offline: the cached name is still shown
     assert client.get("/api/remotes").json()["remotes"][0] == {
         "idx": 0,
         "url": remote.url,
-        "display_name": "From Config",
+        "display_name": "Studio B",
         "online": False,
         "status": None,
     }
@@ -168,31 +167,48 @@ def test_remote_media_proxy(client, remotes_config):
     assert client.get("/api/remote/5/media").status_code == 404
 
 
-def test_remote_action_proxy(client, remotes_config, remote):
-    r = client.post("/api/remote/0/proxy", json={"path": "/api/server/start"})
-    assert r.json() == {"ok": True, "message": "done"}
-    client.post(
-        "/api/remote/0/proxy", json={"path": "/api/instance/1/amcp", "body": {"command": "CLEAR 1"}}
-    )
+def test_remote_actions(client, remotes_config, remote):
+    assert client.post("/api/remote/0/server/start").json() == {"ok": True, "message": "done"}
+    client.post("/api/remote/0/server/stop")
+    client.post("/api/remote/0/instance/1/restart")
+    client.post("/api/remote/0/instance/1/stop")
+    client.post("/api/remote/0/instance/1/amcp", json={"command": "CLEAR 1"})
     assert remote.posts == [
         ("/api/server/start", None),
+        ("/api/server/stop", None),
+        ("/api/instance/1/restart", None),
+        ("/api/instance/1/stop", None),
         ("/api/instance/1/amcp", {"command": "CLEAR 1"}),
     ]
+    assert client.post("/api/remote/1/server/stop").status_code == 502  # offline
+    assert client.post("/api/remote/9/server/stop").status_code == 404
 
-    assert client.post("/api/remote/1/proxy", json={"path": "/api/server/stop"}).status_code == 502
-    assert client.post("/api/remote/9/proxy", json={"path": "/api/server/stop"}).status_code == 404
 
-
-@pytest.mark.parametrize("path", ["@evil.example/x", "//evil.example/x", "\\\\evil/x", "api/x"])
-def test_remote_proxy_rejects_paths_that_change_host(client, remotes_config, remote, path):
-    r = client.post("/api/remote/0/proxy", json={"path": path})
-    assert (r.status_code, r.json()["detail"]) == (400, "Invalid remote path")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/remote/0/server/restart-pc",  # only start and stop
+        "/api/remote/0/instance/1/delete",
+        "/api/remote/0/instance/x/stop",
+        "/api/remote/0/proxy",  # the old generic proxy is gone
+        "/api/remote/test",  # and the arbitrary-URL test
+    ],
+)
+def test_only_fixed_remote_actions_exist(client, remotes_config, remote, path):
+    body = {"path": "/api/config", "url": "http://elsewhere"}
+    assert client.post(path, json=body).status_code in (404, 422)
     assert remote.posts == []
 
 
-def test_remote_proxy_reports_rejected_key_as_502(client, write_config, remote):
+def test_remote_amcp_command_is_checked_here(client, remotes_config, remote):
+    r = client.post("/api/remote/0/instance/1/amcp", json={"command": "CLEAR 1\r\nKILL"})
+    assert r.status_code == 400
+    assert remote.posts == []
+
+
+def test_remote_rejected_key_is_502(client, write_config, remote):
     write_config({"remote_controllers": [{"url": remote.url, "api_key": "wrong"}]})
-    r = client.post("/api/remote/0/proxy", json={"path": "/api/server/start"})
+    r = client.post("/api/remote/0/server/start")
     assert (r.status_code, r.json()["detail"]) == (502, "Remote rejected its API key")
 
 
@@ -207,21 +223,22 @@ def test_remote_key_not_forwarded_on_redirect(client, write_config, remote):
         elsewhere.close()
 
 
-def test_remote_connection_test(client, remote, offline_url):
-    def test(url, key=REMOTE_KEY):
-        return client.post("/api/remote/test", json={"url": url, "api_key": key}).json()
-
-    assert test(remote.url) == {
+def test_saved_remote_test_uses_health_and_its_key(client, write_config, remote, offline_url):
+    write_config(
+        {
+            "remote_controllers": [
+                {"url": remote.url, "api_key": REMOTE_KEY},
+                {"url": remote.url, "api_key": "wrong"},
+                {"url": offline_url, "api_key": REMOTE_KEY},
+            ]
+        }
+    )
+    assert client.post("/api/remote/0/test").json() == {
         "online": True,
         "authorised": True,
         "server_name": "Studio B",
         "version": "1.1.1",
     }
-    assert test(remote.url, "wrong") == {"online": True, "authorised": False}
-    assert test(offline_url) == {"online": False}
-
-
-def test_remote_connection_test_uses_saved_key_when_blank(client, write_config, remote):
-    write_config({"remote_controllers": [{"url": remote.url + "/", "api_key": REMOTE_KEY}]})
-    r = client.post("/api/remote/test", json={"url": remote.url, "api_key": ""})
-    assert r.json()["authorised"] is True
+    assert client.post("/api/remote/1/test").json()["authorised"] is False
+    assert client.post("/api/remote/2/test").json() == {"online": False}
+    assert client.post("/api/remote/9/test").status_code == 404

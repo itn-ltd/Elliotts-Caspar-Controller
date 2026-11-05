@@ -3,13 +3,13 @@
 import os
 
 from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 PAGES = {
     "/": "index",
     "/settings": "settings",
-    "/http-generator": "http-generator",
+    "/triggers": "triggers",
     "/login": "login",
     "/change-password": "change-password",
 }
@@ -27,3 +27,8 @@ for _path, _name in PAGES.items():
     router.add_api_route(
         _path, lambda name=_name: web_page(name), methods=["GET"], include_in_schema=False
     )
+
+
+@router.get("/http-generator", include_in_schema=False)
+def old_http_generator():
+    return RedirectResponse(url="/triggers")  # the page's v1 name, in bookmarks

@@ -21,7 +21,7 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 - **Sequential start-up**, one output at a time with a 5 s gap, so receivers lock onto the right NDI source
 - **Web dashboard**: live status per output, start/stop, current clip with time remaining, clip picker, AMCP command box, event log
 - **NDI tally**: cards turn red when an output is on air and amber on preview (needs the NDI Runtime and `ndi-python`)
-- **HTTP clip triggering** for Companion, hardware panels and automation, plus an **HTTP Generator** page that builds the URLs
+- **HTTP clip triggering** for Companion, hardware panels and automation, plus a **Triggers** page that builds the URLs
 - **Remote Controllers**: monitor and control other controllers from one dashboard
 - **Settings page**: CasparCG path, video mode, ports, outputs (add, remove, reorder), media folder, server name, password, API key, config backup
 - **Test patterns**: colour and bars PNGs copied into the media folder on start if missing
@@ -164,7 +164,7 @@ GET http://<controller-ip>:5280/api/load?instance=<name>&clip=<clip>&loop=false&
 - **`instance`** is the output's name (not case-sensitive) and must be a `Media` output.
 - **Looping is the default;** add `loop=false` to play once.
 - **Clip names** can't contain quotes, backslashes or control characters (rejected with `400`), so a trigger can't smuggle in extra AMCP commands.
-- **Building URLs:** the **HTTP Generator** page builds them, key included, ready to copy.
+- **Building URLs:** the **Triggers** page builds them, ready to copy: the URL with `api_key=` first (what Automator uses), then the `curl` form with an `X-API-Key` header. The key is hidden on screen unless you choose to show it.
 
 ```bash
 curl -H "X-API-Key: <key>" "http://<controller-ip>:5280/api/load?instance=Clipplayer&clip=AMB"
@@ -192,7 +192,7 @@ All need the key or a signed-in session, except `/api/health`.
 | Page | Path |
 |---|---|
 | Dashboard | `/` |
-| HTTP Generator | `/http-generator` |
+| Triggers | `/triggers` (the old `/http-generator` redirects here) |
 | Settings | `/settings` |
 | Sign in | `/login` |
 
@@ -201,9 +201,10 @@ All need the key or a signed-in session, except `/api/health`.
 
 ### Remote Controllers
 
-- **Add other controllers** in **Settings → Remote Controllers**, with each one's URL and its API key. **Test** checks both.
+- **Add other controllers** in **Settings → Remote Controllers**, with each one's URL and its API key. Save, then **Test** checks the saved remote: that it answers (`/api/health`) and accepts its key.
 - **URLs** must be plain `http(s)://host:port`, for example `http://192.168.1.101:5280`, with no path or user name.
-- **On the dashboard,** each remote appears with its outputs, Start All / Stop All and clip controls. If its key is wrong, the dashboard says so.
+- **On the dashboard,** each remote appears with its outputs, clip and time remaining, Start All / Stop All and clip controls. If its key is wrong, the dashboard says so.
+- **Only fixed actions reach a remote:** status, media, Start/Stop All, start/stop one output and AMCP, each through its own route (`/api/remote/{n}/...`). No route takes a URL or path, so a remote's key can't be sent anywhere else.
 
 ---
 

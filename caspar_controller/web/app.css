@@ -257,3 +257,9 @@ body.console-pinned #console-panel { box-shadow: none; }
   font: 12px/1.4 Consolas, monospace; white-space: pre-wrap; word-break: break-all; border-radius: 6px;
 }
 .auto-restart-toggle { font-size: 10px; padding: 2px 6px; }
+
+.trigger-box {
+  background: var(--input-bg); border: 2px solid var(--border); border-radius: 10px; padding: 14px 18px;
+  font: 13px Consolas, monospace; color: var(--accent); cursor: pointer; word-break: break-all;
+}
+.trigger-box:hover { border-color: var(--accent); }

@@ -15,7 +15,7 @@ from caspar_controller import log
     [
         ("/", "Dashboard"),
         ("/settings", "Settings"),
-        ("/http-generator", "HTTP Generator"),
+        ("/triggers", "Triggers"),
         ("/login", "Password"),
     ],
 )
