@@ -11,7 +11,15 @@ import time
 from typing import Annotated, Literal, Optional
 from urllib.parse import urlsplit
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from caspar_controller.auth import hash_password, new_api_key, verify_password
 from caspar_controller.caspar.amcp import has_control_chars, is_amcp_safe
@@ -22,6 +30,7 @@ log = logging.getLogger(__name__)
 SECRET_KEYS = ("api_key", "web_password_hash")
 # Belong to this machine: config imports and profiles never change them.
 MACHINE_KEYS = (*SECRET_KEYS, "password_change_required")
+V1_PASSWORD_KEYS = ("web_password", "web_password_enabled")
 # Seeds the first web UI password (e.g. set by Intune); users must change it on first sign-in.
 INITIAL_PASSWORD_ENV = "CASPAR_CONTROLLER_INITIAL_PASSWORD"
 HOME_ENV = "CASPAR_CONTROLLER_HOME"  # overrides %ProgramData%\CasparController, for development
@@ -51,8 +60,11 @@ def _text(value: str) -> str:
 
 
 def _name(value: str) -> str:
-    if not re.fullmatch(r"[\w .()+&#'-]{1,64}", value):
-        raise ValueError("use up to 64 letters, numbers, spaces and - _ . ( ) + & # '")
+    # No + & #: names go unencoded into trigger URLs (/api/load?instance=...).
+    if not re.fullmatch(r"[\w.()'-]([\w .()'-]{0,62}[\w.()'-])?", value):
+        raise ValueError(
+            "use up to 64 letters, numbers, spaces and - _ . ( ) ', not starting or ending with a space"
+        )
     return value
 
 
@@ -100,7 +112,7 @@ class _Model(BaseModel):
 
 
 class Instance(_Model):
-    id: int = Field(ge=1)
+    id: int  # Settings makes it positive and unique
     name: Name
     ndi_name: Name
     type: Literal["html", "media"] = "html"
@@ -112,23 +124,6 @@ class Instance(_Model):
 class Remote(_Model):
     url: Annotated[str, AfterValidator(validate_remote_url)]
     api_key: Text = ""
-
-
-def _keep_ids_unique(insts: list) -> list:
-    """Keep each instance's id, so reordering never retargets a running process.
-
-    A clashing or non-positive id gets the next free number.
-    """
-    if not all(isinstance(i, dict) and type(i.get("id")) is int for i in insts):
-        return insts  # the model rejects these
-    insts = [dict(i) for i in insts]
-    next_id = max((i["id"] for i in insts), default=0) + 1
-    seen = set()
-    for inst in insts:
-        if inst["id"] < 1 or inst["id"] in seen:
-            inst["id"], next_id = next_id, next_id + 1
-        seen.add(inst["id"])
-    return insts
 
 
 class Settings(_Model):
@@ -144,12 +139,20 @@ class Settings(_Model):
     instances: list[Instance] = []
     remote_controllers: list[Remote] = []
 
-    @model_validator(mode="before")
+    @field_validator("instances")
     @classmethod
-    def _ids(cls, data):
-        if isinstance(data, dict) and isinstance(data.get("instances"), list):
-            data = {**data, "instances": _keep_ids_unique(data["instances"])}
-        return data
+    def _keep_ids_unique(cls, insts: list) -> list:
+        """Keep each instance's id, so reordering never retargets a running process.
+
+        A clashing or non-positive id gets the next free number.
+        """
+        next_id = max((i.id for i in insts), default=0) + 1
+        seen = set()
+        for inst in insts:
+            if inst.id < 1 or inst.id in seen:
+                inst.id, next_id = next_id, next_id + 1
+            seen.add(inst.id)
+        return insts
 
     @model_validator(mode="after")
     def _unique(self):
@@ -187,7 +190,10 @@ def validate_config(data: dict) -> dict:
 
 def foreign_config(data: dict, this_exe: str) -> dict:
     """Validate a config from elsewhere (an import or a profile) for use on this PC."""
-    data = {k: v for k, v in data.items() if k not in MACHINE_KEYS}
+    if not isinstance(data, dict):
+        raise ValueError("Config must be a JSON object")
+    # v1.x password keys too: load() would turn them into this machine's password.
+    data = {k: v for k, v in data.items() if k not in (*MACHINE_KEYS, *V1_PASSWORD_KEYS)}
     # Another PC's CasparCG path is meaningless here: keep this PC's.
     if "caspar_exe_path" in data and not os.path.isfile(data["caspar_exe_path"] or ""):
         data["caspar_exe_path"] = this_exe
@@ -228,17 +234,20 @@ def load() -> dict:
 
 def _first_run_config() -> dict:
     """A v1.x config copied from next to the exe, else a profile.json seed, else defaults."""
+    # A bad seed file is logged and skipped: it must never stop the app starting.
     for name in LEGACY_NAMES:
         legacy = os.path.join(LEGACY_DIR, name)
         if os.path.isfile(legacy):
-            log_event(f"Copied the config from {legacy}.")  # the original stays for v1.x
-            with open(legacy, encoding="utf-8") as f:
-                return json.load(f)
+            try:
+                stored = _read_object(legacy)
+                log_event(f"Copied the config from {legacy}.")  # the original stays for v1.x
+                return stored
+            except (OSError, ValueError) as e:
+                log_event(f"Ignored {legacy}: {e}")
     profile = os.path.join(home_dir(), "profile.json")
     if os.path.isfile(profile):
         try:
-            with open(profile, encoding="utf-8") as f:
-                seed = foreign_config(json.load(f), "")
+            seed = foreign_config(_read_object(profile), "")
             log_event(f"New install: settings taken from {profile}.")
             return seed
         except (OSError, ValueError) as e:
@@ -246,11 +255,18 @@ def _first_run_config() -> dict:
     return {}
 
 
+def _read_object(path: str) -> dict:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)  # JSONDecodeError is a ValueError
+    if not isinstance(data, dict):
+        raise ValueError("must be a JSON object")
+    return data
+
+
 def _read() -> dict:
     cfg_file = _config_file()
     if os.path.exists(cfg_file):
-        with open(cfg_file, encoding="utf-8") as f:
-            stored = json.load(f)
+        stored = _read_object(cfg_file)
         first_run = False
     else:
         stored = _first_run_config()
@@ -310,14 +326,14 @@ def save(config: dict) -> None:
             json.dump(config, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        for attempt in range(20):
+        for _ in range(19):
             try:
                 os.replace(tmp, path)
                 break
             except PermissionError:  # Windows: someone has the file open for a moment
-                if attempt == 19:
-                    raise
                 time.sleep(0.05)
+        else:
+            os.replace(tmp, path)  # last try: let the error out
         _cache = None
 
 

@@ -217,7 +217,7 @@ All need the key or a signed-in session, except `/api/health`.
 - **Saving:** atomic (a temp file, then a swap), so a crash mid-save can't leave half a file.
 - **Validation:** Save, Import and `profile.json` all go through the same checks:
   - ports in range, and no two instances on the same AMCP port (explicit or automatic)
-  - instance and NDI names unique, up to 64 letters, numbers, spaces and `- _ . ( ) + & # '`
+  - instance and NDI names unique, up to 64 letters, numbers, spaces and `- _ . ( ) '` (no spaces at either end)
   - the CasparCG path must be an existing `casparcg.exe`
 - **Secrets:** `api_key`, `web_password_hash` and the remote controllers' keys live here. Treat the file as sensitive.
 - **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys, and its CasparCG path if the imported one doesn't exist here.

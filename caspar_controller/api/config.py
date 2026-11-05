@@ -31,10 +31,11 @@ def api_config_get():
 @router.post("/api/config")
 def api_config_post(update: dict):
     cfg = load_config()
-    # Only the Settings fields come back, so secrets can't be set here. Ports are checked
-    # against the saved base port unless this save changes it.
+    # Only the Settings fields come back, so secrets can't be set here.
     data = {k: v for k, v in update.items() if v is not None}
-    data = or_400(validate_config, {"amcp_base_port": cfg["amcp_base_port"], **data})
+    if {"amcp_base_port", "instances"} & data.keys():  # ports depend on both: check together
+        data = {"amcp_base_port": cfg["amcp_base_port"], "instances": cfg["instances"], **data}
+    data = or_400(validate_config, data)
     if "remote_controllers" in data:
         data["remote_controllers"] = keep_remote_keys(
             data["remote_controllers"], cfg["remote_controllers"]

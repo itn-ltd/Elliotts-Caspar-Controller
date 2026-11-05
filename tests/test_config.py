@@ -305,6 +305,11 @@ def test_reads_never_see_a_half_written_file(config_dir):
         [instance(1, "A <b>")],
         [instance(1, "A", ndi_name='N "1"')],
         [instance(1, "x" * 65)],
+        [instance(1, "   ")],
+        [instance(1, "GFX1 ")],
+        [instance(1, "GFX+1")],  # these three break unencoded /api/load?instance= URLs
+        [instance(1, "A&B")],
+        [instance(1, "Clip#2")],
     ],
 )
 def test_duplicate_or_unsafe_instances_rejected(client, insts):
@@ -335,7 +340,7 @@ def test_save_cannot_set_secrets(client, write_config):
 
 
 def test_names_with_common_punctuation_allowed(client):
-    insts = [instance(1, "GFX 1 (Main) - L3rd's & Co.#2", ndi_name="PCR3 GFX_1+")]
+    insts = [instance(1, "GFX 1 (Main) - L3rd's Co.2", ndi_name="PCR3 GFX_1")]
     assert client.post("/api/config", json={"instances": insts}).status_code == 200
 
 
@@ -343,3 +348,41 @@ def test_problems_in_a_saved_config_dont_stop_it_loading(write_config):
     insts = [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]
     write_config({"instances": insts})
     assert len(settings.load()["instances"]) == 2
+
+
+def test_base_port_change_is_checked_against_saved_instances(client, write_config):
+    write_config(
+        {"instances": [instance(1, "A"), instance(2, "B"), instance(3, "C", amcp_port=6001)]}
+    )
+    assert client.post("/api/config", json={"amcp_base_port": 6000}).status_code == 400  # B: 6001
+    assert client.post("/api/config", json={"amcp_base_port": 65535}).status_code == 400
+    assert client.post("/api/config", json={"amcp_base_port": 7000}).status_code == 200
+
+
+def test_bad_saved_base_port_doesnt_block_unrelated_saves(client, write_config):
+    write_config({"amcp_base_port": "5250"})  # hand-edited
+    assert client.post("/api/config", json={"server_name": "S"}).status_code == 200
+
+
+@pytest.mark.parametrize("content", ["[1, 2]", "{not json", '"text"'])
+@pytest.mark.parametrize("name", ["profile.json", "legacy"])
+def test_bad_first_run_file_is_ignored(config_dir, tmp_path, content, name):
+    if name == "legacy":
+        (tmp_path / "legacy").mkdir()
+        path = tmp_path / "legacy" / settings.LEGACY_NAMES[0]
+    else:
+        path = config_dir / name
+    path.write_text(content)
+    assert settings.load()["instances"] == []
+    assert "Ignored" in log._log[-1]
+
+
+@pytest.mark.parametrize("route", ["import", "profile"])
+def test_v1_password_keys_from_elsewhere_are_dropped(client, config_dir, route):
+    v1 = {"web_password": "x", "web_password_enabled": True}
+    if route == "import":
+        client.post("/api/config/import", json=v1)
+    else:
+        (config_dir / "profile.json").write_text(json.dumps(v1))
+    settings._cache = None
+    assert settings.load()["web_password_hash"] == ""
