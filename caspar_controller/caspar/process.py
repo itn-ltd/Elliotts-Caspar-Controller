@@ -1,13 +1,17 @@
 """Launch, monitor, and stop the CasparCG server process."""
 
 import os
+import re
 import subprocess
+import threading
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import psutil
 
 from caspar_controller.caspar.amcp import AMCPClient
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")  # colour codes in CasparCG's console output
 
 
 class _AdoptedProcess:
@@ -39,10 +43,12 @@ class CasparProcessManager:
         exe_path: str,
         amcp_port: int = 5250,
         config_filename: str = "casparcg.config",
+        on_output: Optional[Callable[[str], None]] = None,
     ):
         self.exe_path = exe_path
         self.amcp_port = amcp_port
         self.config_filename = config_filename
+        self.on_output = on_output or (lambda line: None)  # each line CasparCG prints
         self._process: Optional[subprocess.Popen] = None
         self._client = AMCPClient(port=amcp_port)
 
@@ -56,7 +62,13 @@ class CasparProcessManager:
             [os.path.abspath(self.exe_path), self.config_filename],
             cwd=self._exe_dir(),
             creationflags=subprocess.CREATE_NO_WINDOW,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
+        threading.Thread(
+            target=self._read_output, args=(self._process.stdout,), daemon=True
+        ).start()
         # 90 s covers slow cold starts; galleries take under 60 s.
         deadline = time.time() + 90
         while time.time() < deadline:
@@ -83,6 +95,22 @@ class CasparProcessManager:
         if self._process and self._process.poll() is None:
             self._kill_tree(self._process.pid)
         self._process = None
+
+    def _read_output(self, pipe) -> None:
+        # Always drained, even with nobody watching: a full pipe would stall CasparCG.
+        for raw in iter(pipe.readline, b""):
+            self.on_output(_ANSI.sub("", raw.decode(errors="replace")).rstrip())
+
+    def send_console(self, command: str) -> None:
+        """Type a command into CasparCG's console. Raises OSError if this app didn't start it."""
+        stdin = getattr(self._process, "stdin", None)
+        if not stdin:
+            raise OSError("No console: this CasparCG was already running when the app started")
+        stdin.write((command + "\r\n").encode())
+        stdin.flush()
+
+    def exit_code(self) -> Optional[int]:
+        return self._process.poll() if self._process else None
 
     def alive(self) -> bool:
         """True while OUR process hasn't exited, whether or not AMCP answers."""

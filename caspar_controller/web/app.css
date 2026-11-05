@@ -226,3 +226,34 @@ label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px
 }
 .h1-server { color: var(--accent); font-weight: 600; }
 .h1-server::before { content: " — "; }
+
+/* Console side panel (console.js) */
+#console-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 50; }
+#console-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 60;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--card); border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0,0,0,.4);
+}
+#console-panel[hidden] { display: none; }
+body.console-pinned { padding-right: min(560px, 100vw); }
+body.console-pinned #console-panel { box-shadow: none; }
+.console-bar { display: flex; gap: 6px; align-items: center; }
+.console-bar input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; }
+#console-tabs { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.console-tab {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  background: var(--input-bg); color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
+}
+.console-tab.active { color: var(--text); border-color: var(--accent); }
+.console-tab small { color: var(--warning); }
+.console-unread { background: var(--accent); color: #000; border-radius: 10px; padding: 0 6px; font-size: 10px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-live { background: var(--success); }
+.dot-starting { background: var(--warning); }
+.dot-stopped { background: var(--muted); }
+.dot-failed { background: var(--error); }
+#console-lines {
+  flex: 1; overflow: auto; margin: 0; padding: 8px; background: #000; color: #d0d0d0;
+  font: 12px/1.4 Consolas, monospace; white-space: pre-wrap; word-break: break-all; border-radius: 6px;
+}
+.auto-restart-toggle { font-size: 10px; padding: 2px 6px; }

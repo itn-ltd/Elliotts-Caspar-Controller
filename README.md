@@ -76,6 +76,16 @@ Releases include two files:
 
 It never stops a running output, and never touches a CasparCG on a port the app doesn't use. Start, stop and restart run one at a time in the background: the API answers `202` at once, and progress and failures go to the event log and the tray. Stop All also cancels a Start All that's still going.
 
+### Auto-restart
+
+On by default (Settings → **Auto-restart instances that crash or hang**). Each instance can override it, in Settings or with the **↻ Auto** toggle on its card.
+
+- **Crash:** CasparCG exits unexpectedly. **Hang:** it's running but hasn't answered AMCP for the hang timeout (30 s by default).
+- **Restart:** the instance starts again and gets its startup command (HTML URL or media command) re-sent.
+- **Back-off:** waits of 2, 5, 15, 30, then 60 s between attempts. After 5 restarts in 10 minutes it stops trying: the card shows **failed**, the dashboard and tray say so, and starting it again resets the count.
+- **Stops are never undone:** an operator's Stop or Stop All keeps auto-restart off for that instance until it's started again.
+- **The console panel** marks each crash or hang, with the lines CasparCG printed before it.
+
 ### Output types
 
 | Type | On start |
@@ -202,7 +212,7 @@ All need the key or a signed-in session, except `/api/health`.
 - **On launch** the app starts the web server, opens the web UI and sits in the system tray. If the web port is already in use, the tray says so.
 - **The tray menu has:** Open Caspar Controller (also a click on the icon), how many instances are live, Restart all instances and Quit. Quitting stops the web server but leaves CasparCG running.
 - **CasparCG left running** (for example after the app restarted) is reconnected rather than restarted. **Auto-start** then starts only the instances that aren't running, without touching the live ones.
-- **CasparCG runs without a console window.** Its output will be viewable in the web UI's console panel (#8).
+- **CasparCG runs without a console window.** Its output is in the web UI's **Console** panel (bottom right of every page). Instances that were already running when the app started have no console output.
 
 ---
 

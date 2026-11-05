@@ -2,12 +2,16 @@
 
 import asyncio
 import json
+from typing import Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from caspar_controller import log, tally
+from caspar_controller import instances, log, tally
+from caspar_controller.api import instance_or_404
 from caspar_controller.api.instances import status_payload
+from caspar_controller.log import Console
+from caspar_controller.settings import load as load_config
 
 router = APIRouter()
 
@@ -28,21 +32,39 @@ def api_tally():
     }
 
 
-async def event_stream(request: Request):
-    """Server-sent events: "status" and "log", each sent when it changes."""
+def _event(name: str, data: dict) -> str:
+    return f"event: {name}\ndata: {json.dumps(data)}\n\n"
+
+
+async def event_stream(request: Request, console: Optional[Console] = None):
+    """Server-sent events: "status" and "log" when they change, plus "console" lines.
+
+    The first "console" event holds every line still kept, later ones only new lines.
+    """
     last: dict = {}
+    seen = 0
     for _ in range(int(LIFETIME / TICK)):
         if await request.is_disconnected():
             return
         for name, data in (("status", status_payload()), ("log", {"log": log.entries()})):
             if last.get(name) != data:
                 last[name] = data
-                yield f"event: {name}\ndata: {json.dumps(data)}\n\n"
+                yield _event(name, data)
+        if console and (lines := console.since(seen)):
+            seen = console.count
+            yield _event("console", {"lines": lines})
         await asyncio.sleep(TICK)
 
 
 @router.get("/api/events")
-def api_events(request: Request):
+def api_events(request: Request, console: Optional[int] = None):
+    """?console=<instance id> adds that instance's CasparCG output."""
+    output = None
+    if console is not None:
+        instance_or_404(load_config(), console)
+        output = instances.manager.console(console)
     return StreamingResponse(
-        event_stream(request), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+        event_stream(request, output),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
     )

@@ -114,6 +114,17 @@
         Auto-start CasparCG when the app launches
       </label>
     </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
+      <input type="checkbox" id="auto_restart"
+             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);cursor:pointer">
+      <label for="auto_restart" style="margin:0;color:var(--text);cursor:pointer">
+        Auto-restart instances that crash or hang
+      </label>
+    </div>
+    <div class="form-group">
+      <label>Hang timeout <span style="color:var(--muted);font-size:11px">(seconds without an AMCP reply before restarting, 5-600)</span></label>
+      <input type="number" id="hang_timeout" value="30" min="5" max="600">
+    </div>
     <div class="form-group" style="grid-column:1/-1">
       <label>Media Folder Path <span style="color:var(--muted);font-size:11px">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
       <input type="text" id="media_path" placeholder="e.g. D:\Media or leave blank for default">
@@ -173,6 +184,7 @@
 
 </main>
 <script src="/web/app.js"></script>
+<script src="/web/console.js" defer></script>
 <script>
 let currentInstances = [];
 let _passwordSet = false;
@@ -256,6 +268,8 @@ function loadSettings() {
     document.getElementById('amcp_base_port').value = cfg.amcp_base_port || 5250;
     document.getElementById('web_port').value = cfg.web_port || 5280;
     document.getElementById('autostart_caspar').checked = !!cfg.autostart_caspar;
+    document.getElementById('auto_restart').checked = cfg.auto_restart !== false;
+    document.getElementById('hang_timeout').value = cfg.hang_timeout || 30;
     document.getElementById('media_path').value = cfg.media_path || '';
     document.getElementById('server_name').value = cfg.server_name || '';
     document.getElementById('password-warning').style.display = cfg.password_set ? 'none' : 'block';
@@ -306,6 +320,10 @@ function renderInstanceTable(insts) {
           <option value="html" ${isHtml?'selected':''}>HTML5</option>
           <option value="media" ${!isHtml?'selected':''}>Media</option>
         </select>
+        <select id="inst_restart_${i}" title="Auto-restart for this instance" style="flex-shrink:0;width:118px">
+          ${[['inherit', 'Auto-restart: global'], ['on', 'Auto-restart: on'], ['off', 'Auto-restart: off']]
+            .map(([v, label]) => `<option value="${v}" ${(inst.auto_restart || 'inherit') === v ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
         <input type="text" id="inst_name_${i}" value="${nameVal}" placeholder="Name"
                style="flex:0 0 110px;min-width:0">
         <input type="text" id="inst_ndi_${i}" value="${ndiVal}" placeholder="NDI Name"
@@ -345,6 +363,7 @@ function getFormInstances() {
       name:            document.getElementById('inst_name_' + i)?.value ?? inst.name,
       ndi_name:        document.getElementById('inst_ndi_' + i)?.value ?? inst.ndi_name,
       type:            document.getElementById('inst_type_' + i)?.value ?? inst.type,
+      auto_restart:    document.getElementById('inst_restart_' + i)?.value ?? inst.auto_restart ?? 'inherit',
       url:             document.getElementById('inst_url_' + i)?.value ?? inst.url,
       startup_command: document.getElementById('inst_cmd_' + i)?.value ?? inst.startup_command,
       // Only save explicit port if it differs from auto-computed; 0 means "auto"
@@ -406,6 +425,8 @@ function saveSettings() {
     amcp_base_port:   parseInt(document.getElementById('amcp_base_port').value),
     web_port:         parseInt(document.getElementById('web_port').value),
     autostart_caspar: document.getElementById('autostart_caspar').checked,
+    auto_restart:     document.getElementById('auto_restart').checked,
+    hang_timeout:     parseInt(document.getElementById('hang_timeout').value) || 30,
     media_path:       document.getElementById('media_path').value.trim(),
     instances,
   };

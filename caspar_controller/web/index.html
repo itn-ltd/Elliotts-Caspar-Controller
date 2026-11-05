@@ -47,6 +47,7 @@
 
 </main>
 <script src="/web/app.js"></script>
+<script src="/web/console.js" defer></script>
 <script>
 let lastRunning = null;
 let _mediaClips = [];
@@ -79,6 +80,7 @@ function onMediaSelect(id) {
 let _instanceNames = {};
 let _cardsKey = '';
 const _shown = {};  // element id -> HTML last written, so unchanged parts aren't touched
+const _lastStatus = {};  // inst id -> status, to alert once when one fails
 const _waitingLive = new Set();  // started from this page: say so when they go live
 
 function fmtTime(s) {
@@ -113,9 +115,22 @@ function tallyBadge(inst) {
 
 function stateHtml(inst) {
   const live = inst.status === 'live';
-  return `<span class="badge ${live ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>` + (live
+  const badge = live ? 'badge-success' : inst.status.startsWith('restarting') ? 'badge-warning' : 'badge-error';
+  const auto = inst.auto_restart;
+  return `<div style="display:flex;gap:4px;align-items:center">
+      <span class="badge ${badge}">${escapeHtml(inst.status)}</span>
+      <button class="btn btn-secondary btn-sm auto-restart-toggle" style="margin-left:auto"
+              title="Restart this instance if it crashes or hangs" onclick="setAutoRestart(${inst.id}, ${!auto})">↻ Auto ${auto ? 'on' : 'off'}</button>
+      <button class="btn btn-secondary btn-sm auto-restart-toggle" onclick="Console.open(${inst.id})">Console</button>
+    </div>` + (live
     ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`
     : `<button class="btn btn-success btn-sm" style="width:100%" onclick="startInstance(${inst.id})">▶ Start</button>`);
+}
+
+function setAutoRestart(id, on) {
+  api('/api/instance/' + id + '/auto-restart', 'POST', {auto_restart: on ? 'on' : 'off'})
+    .then(() => toast(_instanceNames[id] + ': auto-restart ' + (on ? 'on' : 'off'), 'info'))
+    .catch(e => toast(e.message, 'error'));
 }
 
 function setHtml(id, html) {
@@ -178,6 +193,9 @@ function renderInstances(instances) {
     setHtml('layer_' + inst.id, layerHtml(inst));
     setHtml('state_' + inst.id, stateHtml(inst));
     if (inst.status === 'live' && _waitingLive.delete(inst.id)) toast(inst.name + ' is live', 'success');
+    if (inst.status === 'failed' && _lastStatus[inst.id] && _lastStatus[inst.id] !== 'failed')
+      toast(inst.name + ' failed: auto-restart gave up. Start it to try again.', 'error');
+    _lastStatus[inst.id] = inst.status;
   });
 }
 

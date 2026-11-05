@@ -119,6 +119,7 @@ class Instance(_Model):
     url: Annotated[str, AfterValidator(_amcp_safe)] = ""
     startup_command: Text = ""
     amcp_port: int = Field(0, ge=0, le=65535)  # 0: base port + id - 1
+    auto_restart: Literal["on", "off", "inherit"] = "inherit"  # inherit: the global setting
 
 
 class Remote(_Model):
@@ -134,6 +135,8 @@ class Settings(_Model):
     web_port: Port = 5280
     video_mode: Text = "1080p2500"
     autostart_caspar: bool = False
+    auto_restart: bool = True  # restart crashed or hung instances
+    hang_timeout: int = Field(30, ge=5, le=600)  # seconds without an AMCP reply = hung
     media_path: Text = ""
     server_name: Text = ""
     instances: list[Instance] = []
@@ -206,6 +209,12 @@ DEFAULT_CONFIG = {
     "password_change_required": False,
     "api_key": "",
 }
+
+
+def auto_restart_on(cfg: dict, inst: dict) -> bool:
+    """The instance's own on/off, or the global setting if it inherits."""
+    choice = inst.get("auto_restart", "inherit")
+    return choice == "on" or (choice == "inherit" and cfg.get("auto_restart", True))
 
 
 def instance_amcp_port(cfg: dict, inst: dict) -> int:

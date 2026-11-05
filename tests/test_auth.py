@@ -13,7 +13,7 @@ from caspar_controller.api.app import ROUTERS, app
 from caspar_controller.auth import hash_password, key_matches, verify_password
 
 OPEN_ROUTES = {"/api/health"}
-SESSION_ONLY_ROUTES = {"/api/password", "/api/key", "/api/key/rotate"}
+SESSION_ONLY_ROUTES = {"/api/password", "/api/key", "/api/key/rotate", "/api/instance/1/console"}
 API_ROUTES = [
     (method, route.path.replace("{inst_id}", "1").replace("{idx}", "0"))
     for route in [*app.routes, *(r for router in ROUTERS for r in router.routes)]

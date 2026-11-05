@@ -96,6 +96,8 @@ def test_status_shape_before_first_poll(client, write_config):
         "status": "stopped",
         "layer": {},
         "caspar_version": "",
+        "auto_restart": True,
+        "console_lines": 0,
         "on_program": False,
         "on_preview": False,
     }
