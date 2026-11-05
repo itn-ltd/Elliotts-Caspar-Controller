@@ -1,5 +1,6 @@
 """CasparCG AMCP TCP client: one open connection, replies read to their end."""
 
+import select
 import socket
 import threading
 import xml.etree.ElementTree as ET
@@ -29,7 +30,7 @@ class AMCPClient:
         self.timeout = timeout
         self._lock = threading.Lock()
         self._sock = None
-        self._file = None
+        self._buf = b""
 
     def send(self, command: str) -> str:
         """Send one command and return its whole reply, or ``ERROR: ...``."""
@@ -37,38 +38,45 @@ class AMCPClient:
         if has_control_chars(command):
             return "ERROR: AMCP commands can't contain control characters"
         with self._lock:
+            reused = self._sock is not None
             try:
-                return self._exchange(command)
+                try:
+                    return self._send_and_read(command)
+                except ConnectionError:
+                    if not reused:
+                        raise
+                    # CasparCG restarted since the last command: the old connection is dead.
+                    self.close()
+                    return self._send_and_read(command)
             except OSError as e:
                 self.close()
                 return f"ERROR: {e}"
 
-    def _exchange(self, command: str) -> str:
-        reused = self._sock is not None
-        try:
-            return self._send_and_read(command)
-        except ConnectionError:
-            if not reused:
-                raise
-            # CasparCG restarted since the last command: the old connection is dead.
-            self.close()
-            return self._send_and_read(command)
-
     def _send_and_read(self, command: str) -> str:
         if self._sock is None:
             self._sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
-            self._file = self._sock.makefile("rb")
+        self._drain()
         self._sock.sendall((command + "\r\n").encode())
         if command.strip().upper() == "BYE":  # CasparCG closes without replying
             self.close()
             return ""
         return "\r\n".join(self._read_reply())
 
+    def _drain(self) -> None:
+        """Drop anything left from earlier replies (e.g. the command a 400 echoes back)."""
+        self._buf = b""
+        while select.select([self._sock], [], [], 0)[0]:
+            if not self._sock.recv(65536):
+                raise ConnectionError("CasparCG closed the connection")
+
     def _read_line(self) -> str:
-        line = self._file.readline()
-        if not line:
-            raise ConnectionError("CasparCG closed the connection")
-        return line.decode(errors="replace").rstrip("\r\n")
+        while b"\n" not in self._buf:
+            chunk = self._sock.recv(65536)
+            if not chunk:
+                raise ConnectionError("CasparCG closed the connection")
+            self._buf += chunk
+        line, self._buf = self._buf.split(b"\n", 1)
+        return line.decode(errors="replace").rstrip("\r")
 
     def _read_reply(self) -> list:
         lines = [self._read_line()]
@@ -86,7 +94,7 @@ class AMCPClient:
     def close(self) -> None:
         if self._sock:
             self._sock.close()
-        self._sock = self._file = None
+        self._sock = None
 
     def ping(self) -> bool:
         return self.send("VERSION").startswith("201")

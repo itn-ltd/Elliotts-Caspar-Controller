@@ -84,13 +84,13 @@ class CasparProcessManager:
             self._kill_tree(self._process.pid)
         self._process = None
 
+    def alive(self) -> bool:
+        """True while OUR process hasn't exited, whether or not AMCP answers."""
+        return bool(self._process) and self._process.poll() is None
+
     def is_running(self) -> bool:
-        """Check if OUR process is still alive and AMCP responds."""
-        if self._process and self._process.poll() is None:
-            return self._client.ping()
-        # Don't fall back to scanning all processes — that would detect
-        # other CasparCG instances that we don't own.
-        return False
+        """True if OUR process is alive and AMCP answers (never another CasparCG's)."""
+        return self.alive() and self._client.ping()
 
     @property
     def pid(self) -> Optional[int]:

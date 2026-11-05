@@ -1343,9 +1343,9 @@ function renderInstanceTable(insts) {
         <input type="text" id="inst_ndi_${i}" value="${ndiVal}" placeholder="NDI Name"
                style="flex:0 0 160px;min-width:0">
         <input type="number" id="inst_port_${i}" value="${inst.amcp_port || port}"
-               placeholder="${port}"
+               placeholder="${port}" data-auto="${port}"
                style="flex-shrink:0;width:90px;font-size:11px;padding:5px 8px;text-align:right;margin-left:auto"
-               title="Leave blank or set to 0 to auto-assign (base + position)">
+               title="Leave blank or set to 0 to auto-assign (base port + instance number - 1)">
         <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:0 10px"
                 onclick="deleteInstance(${i})" title="Remove this instance">×</button>
       </div>
@@ -1368,8 +1368,10 @@ function toggleType(i) {
 
 function getFormInstances() {
   return currentInstances.map((inst, i) => {
-    const portVal = parseInt(document.getElementById('inst_port_' + i)?.value) || 0;
-    const autoPort = computedPort(inst);
+    const box = document.getElementById('inst_port_' + i);
+    const portVal = parseInt(box?.value) || 0;
+    // The auto port the box was drawn with: after a base-port change it still shows the old one.
+    const autoPort = Number(box?.dataset.auto) || computedPort(inst);
     return {
       ...inst,
       name:            document.getElementById('inst_name_' + i)?.value ?? inst.name,

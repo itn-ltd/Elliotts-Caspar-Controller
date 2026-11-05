@@ -256,3 +256,25 @@ def test_reordering_while_live_still_stops_the_right_process(
 
     assert AMCPClient(port=gfx1["amcp_port"], timeout=0.5).ping() is False
     assert AMCPClient(port=media1["amcp_port"]).ping() is True
+
+
+def test_slow_but_running_instance_is_not_restarted(three_instances, start_order, monkeypatch):
+    # Alive but missing a ping (busy): restarting it would take an output off air.
+    busy = instances.manager._new_process(three_instances, three_instances["instances"][0])
+    monkeypatch.setattr(busy, "alive", lambda: True)
+    instances.manager._procs[1] = busy
+    monkeypatch.setattr(
+        CasparProcessManager, "start", lambda self: start_order.append(self.amcp_port)
+    )
+    instances.manager.start_all()
+    instances.manager.wait()
+    instances.manager._procs.pop(1)
+    assert three_instances["instances"][0]["amcp_port"] not in start_order
+
+
+def test_stop_all_cuts_the_start_gap_short():
+    manager = instances.InstanceManager()
+    manager._cancel.set()
+    t0 = time.perf_counter()
+    manager._gap()
+    assert time.perf_counter() - t0 < 0.5

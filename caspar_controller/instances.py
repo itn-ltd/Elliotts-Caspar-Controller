@@ -3,7 +3,6 @@
 import logging
 import queue
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
@@ -44,11 +43,10 @@ class InstanceManager:
     def __init__(self):
         self._procs: dict[int, CasparProcessManager] = {}  # inst id -> process
         self._clients: dict[int, AMCPClient] = {}  # port -> open AMCP connection
-        self._clients_lock = threading.Lock()
         self._jobs: queue.Queue = queue.Queue()
         self._worker: Optional[threading.Thread] = None
         self._cancel = threading.Event()  # Stop All interrupts a running start sequence
-        self._status = {"live": {}, "layer_info": {}, "ts": 0.0}
+        self._status: dict[int, tuple[bool, dict]] = {}  # inst id -> (live, layer info)
         self._status_stop = threading.Event()
         self.notify: Optional[Callable[[str], None]] = None  # the tray's notification
 
@@ -56,7 +54,7 @@ class InstanceManager:
 
     def _submit(self, label: str, fn: Callable, *args) -> None:
         self._jobs.put((label, fn, args))
-        if not self._worker or not self._worker.is_alive():
+        if not self._worker:
             self._worker = threading.Thread(target=self._run_jobs, daemon=True, name="instances")
             self._worker.start()
 
@@ -115,8 +113,7 @@ class InstanceManager:
         return self._client(self.port(cfg, inst))
 
     def _client(self, port: int) -> AMCPClient:
-        with self._clients_lock:
-            return self._clients.setdefault(port, AMCPClient(port=port))
+        return self._clients.setdefault(port, AMCPClient(port=port))
 
     def _new_process(self, cfg: dict, inst: dict) -> CasparProcessManager:
         return CasparProcessManager(
@@ -136,10 +133,9 @@ class InstanceManager:
     def _is_up(self, cfg: dict, inst: dict) -> bool:
         """True if the instance is running, adopting it if something answers on its port."""
         m = self._procs.get(inst["id"])
-        if m and m.is_running():
+        if m and m.alive():  # even if slow to answer: never restart an output that's on air
             return True
-        if m:  # ours but dead or hung: clear it so a fresh start doesn't clash
-            self._procs.pop(inst["id"]).stop()
+        self._procs.pop(inst["id"], None)  # exited
         return self._adopt(cfg, inst) is not None
 
     def _launch(self, cfg: dict, inst: dict, verb: str = "started") -> bool:
@@ -177,7 +173,7 @@ class InstanceManager:
             if self._launch(cfg, inst):
                 started.append(inst["id"])
                 if n < len(todo) - 1:
-                    time.sleep(5)
+                    self._gap()
             else:
                 failed.append(inst["id"])
         message = f"Started {len(started)}/{len(todo)} instances"
@@ -185,6 +181,9 @@ class InstanceManager:
             self._report(f"{message} (failed: {failed})")
         else:
             log_event(message)
+
+    def _gap(self) -> None:
+        self._cancel.wait(5)  # Stop All ends the wait at once
 
     def _stop_all(self) -> None:
         self._cancel.clear()
@@ -242,12 +241,7 @@ class InstanceManager:
         with ThreadPoolExecutor(max_workers=max(len(insts), 1)) as ex:
             results = list(ex.map(self._probe, [self.port(cfg, i) for i in insts]))
         # A new dict, swapped in whole: readers never see a half-built poll.
-        by_id = {i["id"]: r for i, r in zip(insts, results, strict=True)}
-        self._status = {
-            "live": {k: live for k, (live, _) in by_id.items()},
-            "layer_info": {k: layer for k, (_, layer) in by_id.items()},
-            "ts": time.time(),
-        }
+        self._status = {i["id"]: r for i, r in zip(insts, results, strict=True)}
 
     def _status_loop(self) -> None:
         while not self._status_stop.is_set():
@@ -267,7 +261,7 @@ class InstanceManager:
     def cached_status(self) -> tuple[dict, dict]:
         """(live, layer_info) by instance id, from the last poll."""
         status = self._status
-        return dict(status["live"]), dict(status["layer_info"])
+        return {k: live for k, (live, _) in status.items()}, {k: v for k, (_, v) in status.items()}
 
 
 manager = InstanceManager()

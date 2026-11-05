@@ -9,8 +9,6 @@ import json
 import os
 import socket
 import sys
-import time
-import types
 from pathlib import Path
 
 import psutil
@@ -123,10 +121,9 @@ def local_anon():
 
 @pytest.fixture
 def recorded_sleeps(monkeypatch):
-    """Replace the instances module's time so start-sequence gaps are recorded, not slept."""
+    """Record the 5 s gaps between instance starts instead of waiting them out."""
     sleeps = []
-    fake_time = types.SimpleNamespace(sleep=sleeps.append, time=time.time, strftime=time.strftime)
-    monkeypatch.setattr(instances, "time", fake_time)
+    monkeypatch.setattr(instances.InstanceManager, "_gap", lambda self: sleeps.append(5))
     return sleeps
 
 

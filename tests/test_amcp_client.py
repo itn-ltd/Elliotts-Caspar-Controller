@@ -96,3 +96,13 @@ def test_local_call_is_fast(server):
     for _ in range(10):
         assert client.ping()
     assert (time.perf_counter() - t0) / 10 < 0.05
+
+
+def test_leftover_lines_dont_shift_later_replies():
+    # CasparCG echoes a bad command after 400, and pretty XML can leave a blank line behind.
+    xml = "<layer/>\r\n"
+    with FakeAMCPServer(info_xml=xml, replies={"PLAY": "400 ERROR\r\nPLAY 1-1 TYPO"}) as s:
+        client = AMCPClient(port=s.port)
+        assert client.send("PLAY 1-1 TYPO") == "400 ERROR"
+        assert client.info_layer() == "201 INFO OK\r\n<layer/>"
+        assert client.send("VERSION") == "201 VERSION OK\r\n2.3.3 Stable"
