@@ -32,12 +32,12 @@ Use the `code-quality` skill (`.claude/skills/code-quality/`) when writing or re
 - `tests/` pins today's behaviour. If a change breaks a characterisation test, either the change is wrong or the test must be updated on purpose in the same PR.
 - `tests/test_known_issues.py` holds strict `xfail` tests for known bugs, each tagged with its issue. When you fix one, remove its marker.
 - Use the existing fakes (`fake_amcp.py`, `fake_caspar.py`) and `conftest.py` fixtures; don't write new ad hoc ones.
-- Never call the real "kill every CasparCG" helpers outside the stubs in `conftest.py`.
+- Tests may only kill processes they launched: `conftest.py` guards `_kill_tree`. Use free ports (`free_port()`), never 5250, so nothing reaches a real CasparCG.
 - Claude's shell sets `NoDefaultCurrentDirectoryInExePath=1`, which stops today's launcher finding `casparcg.exe` (#3). The `caspar_dir` fixture clears it.
 
 ## Gotchas
 
-- Start/stop/restart lives in `instances.py`; the API routes and the tray call it. Don't add another copy (#5 turns it into one `InstanceManager`).
+- `instances.manager` (`InstanceManager`) is the only thing that creates or controls CasparCG processes. Start/stop/restart are jobs on its one worker thread; tests call `instances.manager.wait()` after submitting one.
 - `noqa` comments in the app code mark known bugs and name the ticket that fixes them. Fix the bug in that ticket; don't just delete the `noqa`.
 - The package is `caspar_controller`; user-facing names change to "Caspar Controller" in #13.
 - The repo is public until it's moved to a private one. Don't commit secrets, real URLs or gallery configs.

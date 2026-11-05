@@ -5,6 +5,7 @@ Records every command it receives and answers with CasparCG-style replies:
 Replies can be overridden per verb with ``replies={"INFO": "404 INFO FAILED"}``.
 """
 
+import socket
 import socketserver
 import sys
 import threading
@@ -31,6 +32,8 @@ class FakeAMCPServer:
         self.info_xml = info_xml
         self.replies = dict(replies or {})
         self.commands = []
+        self.connections = []  # every connection accepted, open or closed
+        self._dropped = set()
         self.log_path = log_path
         self._lock = threading.Lock()
         self.bye = threading.Event()
@@ -39,13 +42,18 @@ class FakeAMCPServer:
 
         class Handler(socketserver.StreamRequestHandler):
             def handle(self):
-                # The app opens one connection per command, so reply and close.
-                line = self.rfile.readline().decode(errors="replace").rstrip("\r\n")
-                if not line:
-                    return
-                server._record(line)
-                reply = server.reply_for(line)
-                if reply:
+                server.connections.append(self.connection)
+                # Like CasparCG: many commands per connection, closed on BYE.
+                for raw in self.rfile:
+                    line = raw.decode(errors="replace").rstrip("\r\n")
+                    if self.connection in server._dropped:
+                        return
+                    if not line:
+                        continue
+                    server._record(line)
+                    reply = server.reply_for(line)
+                    if line.upper() == "BYE":
+                        return
                     self.wfile.write(reply.encode())
 
         self._server = _TCPServer(("127.0.0.1", port), Handler)
@@ -73,9 +81,19 @@ class FakeAMCPServer:
             return ""
         return f"202 {verb} OK\r\n"
 
+    def drop_connections(self) -> None:
+        """Close every open connection, as a CasparCG restart would."""
+        for conn in self.connections:
+            self._dropped.add(conn)
+            try:
+                conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
     def close(self):
         self._server.shutdown()
         self._server.server_close()
+        self.drop_connections()
 
     def __enter__(self):
         return self

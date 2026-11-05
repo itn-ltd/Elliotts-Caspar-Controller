@@ -1306,8 +1306,8 @@ function loadSettings() {
   });
 }
 
-function computedPort(i) {
-  return (parseInt(document.getElementById('amcp_base_port').value) || 5250) + i;
+function computedPort(inst) {  // matches settings.instance_amcp_port: by id, not position
+  return (parseInt(document.getElementById('amcp_base_port').value) || 5250) + inst.id - 1;
 }
 
 function onBasePortChange() {
@@ -1324,7 +1324,7 @@ function renderInstanceTable(insts) {
     const cmdVal = escapeHtml(inst.startup_command);
     const nameVal = escapeHtml(inst.name);
     const ndiVal  = escapeHtml(inst.ndi_name);
-    const port = computedPort(i);
+    const port = computedPort(inst);
     return `
     <div class="ch-edit-card">
       <div class="ch-edit-top">
@@ -1343,9 +1343,9 @@ function renderInstanceTable(insts) {
         <input type="text" id="inst_ndi_${i}" value="${ndiVal}" placeholder="NDI Name"
                style="flex:0 0 160px;min-width:0">
         <input type="number" id="inst_port_${i}" value="${inst.amcp_port || port}"
-               placeholder="${port}"
+               placeholder="${port}" data-auto="${port}"
                style="flex-shrink:0;width:90px;font-size:11px;padding:5px 8px;text-align:right;margin-left:auto"
-               title="Leave blank or set to 0 to auto-assign (base + position)">
+               title="Leave blank or set to 0 to auto-assign (base port + instance number - 1)">
         <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:0 10px"
                 onclick="deleteInstance(${i})" title="Remove this instance">×</button>
       </div>
@@ -1367,10 +1367,11 @@ function toggleType(i) {
 }
 
 function getFormInstances() {
-  const base = parseInt(document.getElementById('amcp_base_port').value) || 5250;
   return currentInstances.map((inst, i) => {
-    const portVal = parseInt(document.getElementById('inst_port_' + i)?.value) || 0;
-    const autoPort = base + i;
+    const box = document.getElementById('inst_port_' + i);
+    const portVal = parseInt(box?.value) || 0;
+    // The auto port the box was drawn with: after a base-port change it still shows the old one.
+    const autoPort = Number(box?.dataset.auto) || computedPort(inst);
     return {
       ...inst,
       name:            document.getElementById('inst_name_' + i)?.value ?? inst.name,
@@ -1402,7 +1403,8 @@ function moveDown(i) {
 function addInstance() {
   currentInstances = getFormInstances();
   const n = currentInstances.length + 1;
-  currentInstances.push({ id: n, name: 'INST' + n, ndi_name: 'PCR3 INST' + n,
+  const id = Math.max(0, ...currentInstances.map(i => i.id)) + 1;  // ids are never reused
+  currentInstances.push({ id, name: 'INST' + n, ndi_name: 'PCR3 INST' + n,
                            type: 'html', url: '', startup_command: '', amcp_port: 0 });
   renderInstanceTable(currentInstances);
 

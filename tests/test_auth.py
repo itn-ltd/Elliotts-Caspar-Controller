@@ -47,13 +47,13 @@ def test_every_api_route_needs_credentials(anon, password_on, method, path):
 
 
 @pytest.mark.parametrize(("method", "path"), API_ROUTES)
-def test_every_api_route_accepts_a_session(anon, password_on, inline_threads, method, path):
+def test_every_api_route_accepts_a_session(anon, password_on, method, path):
     login(anon)
     assert anon.request(method, path).status_code not in (401, 403)
 
 
 @pytest.mark.parametrize(("method", "path"), API_ROUTES)
-def test_api_key_works_except_on_account_routes(anon, password_on, inline_threads, method, path):
+def test_api_key_works_except_on_account_routes(anon, password_on, method, path):
     r = anon.request(method, path, headers={"X-API-Key": API_KEY})
     assert (r.status_code == 401) == (path in SESSION_ONLY_ROUTES)
 

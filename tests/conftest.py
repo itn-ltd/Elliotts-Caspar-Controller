@@ -1,17 +1,14 @@
 """Shared fixtures for the characterisation suite.
 
-Every test runs against an isolated config directory, and the "kill every
-CasparCG on this machine" helpers are replaced with recorders so the suite can
-never take down a real CasparCG running on a developer or gallery machine.
+Every test runs against an isolated config directory, and may only kill
+processes it launched itself, so the suite can never take down a real CasparCG
+running on a developer or gallery machine.
 """
 
 import json
 import os
 import socket
 import sys
-import threading
-import time
-import types
 from pathlib import Path
 
 import psutil
@@ -19,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from caspar_controller import instances, log, remotes, settings, tally
-from caspar_controller.api import auth as api_auth, instances as instances_api
+from caspar_controller.api import auth as api_auth
 from caspar_controller.api.app import app
 from caspar_controller.caspar.process import CasparProcessManager
 
@@ -40,20 +37,19 @@ def free_port() -> int:
 
 
 @pytest.fixture(autouse=True)
-def no_global_kills(monkeypatch):
-    """Record calls to the machine-wide kill helpers instead of running them."""
-    calls = []
-    monkeypatch.setattr(
-        CasparProcessManager,
-        "_kill_all_caspar_instances",
-        staticmethod(lambda: calls.append("kill_all")),
-    )
-    monkeypatch.setattr(
-        CasparProcessManager,
-        "_kill_caspar_on_port",
-        staticmethod(lambda port: calls.append(("kill_port", port))),
-    )
-    return calls
+def refused_kills(monkeypatch):
+    """Only kill processes this test run launched; record any other PID instead."""
+    refused = []
+    real_kill = CasparProcessManager._kill_tree
+
+    def guarded(pid: int) -> None:
+        if pid in {p.pid for p in psutil.Process().children(recursive=True)}:
+            real_kill(pid)
+        else:
+            refused.append(pid)
+
+    monkeypatch.setattr(CasparProcessManager, "_kill_tree", staticmethod(guarded))
+    return refused
 
 
 @pytest.fixture(autouse=True)
@@ -65,12 +61,14 @@ def no_ndi(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def fresh_core_state(monkeypatch):
-    """Reset module-level state between tests."""
-    monkeypatch.setattr(instances, "_managers", {})
+    """Reset module-level state between tests; finish any instance jobs before the next."""
+    manager = instances.InstanceManager()
+    monkeypatch.setattr(instances, "manager", manager)
     monkeypatch.setattr(log, "_log", [])
     monkeypatch.setattr(api_auth, "_sessions", set())
     monkeypatch.setattr(remotes, "_remote_name_cache", {})
-    monkeypatch.setattr(instances, "_status_cache", {"live": {}, "ts": 0.0})
+    yield
+    manager.wait()
 
 
 @pytest.fixture(autouse=True)
@@ -122,32 +120,10 @@ def local_anon():
 
 
 @pytest.fixture
-def inline_threads(monkeypatch):
-    """Run routes' background threads inline, so none outlive the kill-helper stubs."""
-
-    class InlineThread:
-        def __init__(self, target, args=(), **_):
-            self._run = lambda: target(*args)
-
-        def start(self):
-            self._run()
-
-        def join(self, timeout=None):
-            pass
-
-    namespace = types.SimpleNamespace(
-        Thread=InlineThread, Lock=threading.Lock, Event=threading.Event
-    )
-    monkeypatch.setattr(instances_api, "threading", namespace)
-    monkeypatch.setattr(instances, "threading", namespace)
-
-
-@pytest.fixture
 def recorded_sleeps(monkeypatch):
-    """Replace the instances module's time so start-sequence gaps are recorded, not slept."""
+    """Record the 5 s gaps between instance starts instead of waiting them out."""
     sleeps = []
-    fake_time = types.SimpleNamespace(sleep=sleeps.append, time=time.time, strftime=time.strftime)
-    monkeypatch.setattr(instances, "time", fake_time)
+    monkeypatch.setattr(instances.InstanceManager, "_gap", lambda self: sleeps.append(5))
     return sleeps
 
 
@@ -161,6 +137,7 @@ def caspar_dir(tmp_path):
     d.mkdir()
     (d / "casparcg.cmd").write_text(f'@"{sys.executable}" "{FAKE_CASPAR}" %*\r\n', encoding="utf-8")
     yield d
+    instances.manager.wait()  # a job still starting would launch more after the sweep
     target = os.path.normcase(str(d))
     for proc in psutil.process_iter(["pid"]):
         try:
@@ -174,18 +151,6 @@ def amcp_log(caspar_dir: Path, port: int) -> list:
     """Commands received by the fake CasparCG listening on ``port``."""
     path = caspar_dir / f"amcp_{port}.log"
     return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-
-
-def run_status_worker_once() -> None:
-    """Run the background status worker until it has published one snapshot."""
-    instances._status_refresh_stop.clear()
-    t = threading.Thread(target=instances._background_status_worker, daemon=True)
-    t.start()
-    deadline = time.time() + 10
-    while instances._status_cache["ts"] == 0.0 and time.time() < deadline:
-        time.sleep(0.05)
-    instances._status_refresh_stop.set()
-    t.join(timeout=5)
 
 
 def instance(

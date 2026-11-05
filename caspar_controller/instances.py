@@ -1,34 +1,27 @@
-"""The CasparCG instances this PC runs: start, stop, restart and live status."""
+"""The CasparCG instances this PC runs: the one place that starts, stops and polls them."""
 
+import logging
+import queue
 import threading
-import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Optional
 
 from caspar_controller.caspar.amcp import AMCPClient
 from caspar_controller.caspar.config_xml import (
     ensure_test_pattern_images,
-    regenerate_all_instance_configs,
     regenerate_instance_config,
+    reset_html_cache,
 )
 from caspar_controller.caspar.info import EMPTY_LAYER, parse_layer_info
 from caspar_controller.caspar.process import CasparProcessManager
 from caspar_controller.log import log_event
 from caspar_controller.settings import instance_amcp_port, load as load_config
 
-_managers: dict = {}  # inst_id -> CasparProcessManager
-
-# Background status cache — refreshed every 2s so /api/status returns instantly
-_status_cache: dict = {"live": {}, "ts": 0.0}
-_status_lock = threading.Lock()
-_status_refresh_stop = threading.Event()
+log = logging.getLogger(__name__)
 
 
-def _make_manager(inst: dict, cfg: dict) -> CasparProcessManager:
-    port = instance_amcp_port(cfg, inst)
-    return CasparProcessManager(
-        exe_path=cfg["caspar_exe_path"],
-        amcp_port=port,
-        config_filename=f"casparcg_inst_{inst['id']}.config",
-    )
+def _label(inst: dict) -> str:
+    return f"Inst {inst['id']} ({inst['name']})"
 
 
 def _load_instance(inst: dict, client: AMCPClient) -> str:
@@ -40,154 +33,235 @@ def _load_instance(inst: dict, client: AMCPClient) -> str:
     return client.send(cmd) if cmd else client.send("CLEAR 1")
 
 
-def _background_status_worker():
-    """Refresh AMCP state in background so /api/status returns from cache."""
-    while not _status_refresh_stop.is_set():
-        try:
-            cfg = load_config()
-            instances = cfg.get("instances", [])
-            live: dict = {}
-            layer_info: dict = {}
+class InstanceManager:
+    """Owns every CasparCG process the app runs.
 
-            # Known race (#5): threads still running after join() write into the
-            # *next* poll's dicts, because these names are rebound each loop.
-            def _fetch(inst):
-                client = AMCPClient(port=instance_amcp_port(cfg, inst), timeout=1.0)  # noqa: B023
-                raw = client.info_layer()
-                is_live = raw.startswith("201")
-                live[inst["id"]] = is_live  # noqa: B023
-                layer_info[inst["id"]] = parse_layer_info(raw) if is_live else dict(EMPTY_LAYER)  # noqa: B023
+    Start, stop and restart are jobs run one at a time on one worker thread, so two
+    Start Alls never overlap. Only processes this app launched or adopted are touched.
+    """
 
-            threads = [
-                threading.Thread(target=_fetch, args=(inst,), daemon=True) for inst in instances
-            ]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(timeout=1.5)
+    def __init__(self):
+        self._procs: dict[int, CasparProcessManager] = {}  # inst id -> process
+        self._clients: dict[int, AMCPClient] = {}  # port -> open AMCP connection
+        self._jobs: queue.Queue = queue.Queue()
+        self._worker: Optional[threading.Thread] = None
+        self._cancel = threading.Event()  # Stop All interrupts a running start sequence
+        self._status: dict[int, tuple[bool, dict]] = {}  # inst id -> (live, layer info)
+        self._status_stop = threading.Event()
+        self.notify: Optional[Callable[[str], None]] = None  # the tray's notification
 
-            with _status_lock:
-                _status_cache["live"] = live
-                _status_cache["layer_info"] = layer_info
-                _status_cache["ts"] = time.time()
-        except Exception:
-            pass
-        _status_refresh_stop.wait(2)
+    # ------------------------------------------------------------ jobs
 
+    def _submit(self, label: str, fn: Callable, *args) -> None:
+        self._jobs.put((label, fn, args))
+        if not self._worker:
+            self._worker = threading.Thread(target=self._run_jobs, daemon=True, name="instances")
+            self._worker.start()
 
-def start_status_worker() -> None:
-    _status_refresh_stop.clear()
-    threading.Thread(target=_background_status_worker, daemon=True, name="status-refresh").start()
+    def _run_jobs(self) -> None:
+        while True:
+            label, fn, args = self._jobs.get()
+            try:
+                fn(*args)
+            except Exception as e:  # nobody is waiting on a job, so report it
+                log.exception("%s failed", label)
+                self._report(f"{label} failed: {e}")
+            finally:
+                self._jobs.task_done()
 
+    def wait(self) -> None:
+        """Block until every submitted job has finished."""
+        self._jobs.join()
 
-def stop_status_worker() -> None:
-    _status_refresh_stop.set()
+    def _report(self, message: str) -> None:
+        """Tell the operator: the event log, plus a tray notification."""
+        log_event(message)
+        if self.notify:
+            try:
+                self.notify(message)
+            except Exception:
+                log.exception("Tray notification failed")
 
+    def start_all(self) -> None:
+        self._submit("Start All", self._start_all)
 
-def cached_status() -> tuple[dict, dict]:
-    """(live, layer_info) by instance id, from the background cache."""
-    with _status_lock:
-        return dict(_status_cache["live"]), dict(_status_cache.get("layer_info", {}))
+    def stop_all(self) -> None:
+        self._cancel.set()
+        self._submit("Stop All", self._stop_all)
 
+    def restart_all(self) -> None:
+        self._submit("Restart All", self._restart_all)
 
-def _start_sequence(cfg: dict, insts: list) -> tuple[list, list]:
-    """Start insts one at a time. Returns (started ids, failed ids)."""
-    started, errors = [], []
-    # One at a time, 5s apart: receivers lock onto the wrong NDI source if outputs start together.
-    for i, inst in enumerate(insts):
-        m = _make_manager(inst, cfg)
-        _managers[inst["id"]] = m
-        if m.start():
-            res = _load_instance(inst, AMCPClient(port=instance_amcp_port(cfg, inst)))
-            log_event(f"Inst {inst['id']} ({inst['name']}) started → {res[:60]}")
-            started.append(inst["id"])
-            if i < len(insts) - 1:
-                time.sleep(5)
-        else:
-            log_event(f"Inst {inst['id']} ({inst['name']}) FAILED to start")
-            errors.append(inst["id"])
-    return started, errors
+    def restart(self, inst_id: int) -> None:
+        self._submit(f"Restart of instance {inst_id}", self._restart, inst_id)
 
+    def stop(self, inst_id: int) -> None:
+        self._submit(f"Stop of instance {inst_id}", self._stop, inst_id)
 
-def start_all(cfg: dict) -> tuple[list, list]:
-    """Kill every CasparCG, then start every instance in order. Returns (started, failed)."""
-    regenerate_all_instance_configs(cfg)
-    ensure_test_pattern_images(cfg)
-    # Kill by name, not by AMCP reply: stale ports would otherwise pile up processes.
-    CasparProcessManager._kill_all_caspar_instances()
-    return _start_sequence(cfg, cfg.get("instances", []))
+    def adopt_running(self) -> None:
+        self._submit("Reconnect", self._adopt_running)
 
+    # ------------------------------------------------------------ processes
 
-def start_missing(cfg: dict) -> tuple[list, list]:
-    """Start only the instances this app isn't already running, killing nothing."""
-    missing = [i for i in cfg.get("instances", []) if i["id"] not in _managers]
-    ensure_test_pattern_images(cfg)
-    for inst in missing:
+    def port(self, cfg: dict, inst: dict) -> int:
+        """The port a running instance actually uses, else the configured one."""
+        m = self._procs.get(inst["id"])
+        return m.amcp_port if m else instance_amcp_port(cfg, inst)
+
+    def client(self, cfg: dict, inst: dict) -> AMCPClient:
+        """The shared AMCP connection to an instance."""
+        return self._client(self.port(cfg, inst))
+
+    def _client(self, port: int) -> AMCPClient:
+        return self._clients.setdefault(port, AMCPClient(port=port))
+
+    def _new_process(self, cfg: dict, inst: dict) -> CasparProcessManager:
+        return CasparProcessManager(
+            exe_path=cfg["caspar_exe_path"],
+            amcp_port=instance_amcp_port(cfg, inst),
+            config_filename=f"casparcg_inst_{inst['id']}.config",
+        )
+
+    def _adopt(self, cfg: dict, inst: dict) -> Optional[CasparProcessManager]:
+        """Take over a CasparCG already answering on this instance's port, if there is one."""
+        m = self._new_process(cfg, inst)
+        if not m.adopt_existing():
+            return None
+        self._procs[inst["id"]] = m
+        return m
+
+    def _is_up(self, cfg: dict, inst: dict) -> bool:
+        """True if the instance is running, adopting it if something answers on its port."""
+        m = self._procs.get(inst["id"])
+        if m and m.alive():  # even if slow to answer: never restart an output that's on air
+            return True
+        self._procs.pop(inst["id"], None)  # exited
+        return self._adopt(cfg, inst) is not None
+
+    def _launch(self, cfg: dict, inst: dict, verb: str = "started") -> bool:
         regenerate_instance_config(cfg, inst)
-    return _start_sequence(cfg, missing)
+        reset_html_cache(cfg, inst)
+        m = self._procs[inst["id"]] = self._new_process(cfg, inst)
+        try:
+            ok = m.start()
+            error = ""
+        except OSError as e:
+            ok, error = False, f": {e}"
+        if ok:
+            res = _load_instance(inst, self._client(m.amcp_port))
+            log_event(f"{_label(inst)} {verb} → {res[:60]}")
+            return True
+        log_event(f"{_label(inst)} FAILED to start{error}")
+        self._procs.pop(inst["id"])
+        if m.pid:
+            m.stop()  # don't leave a half-started process behind
+        return False
+
+    def _start_all(self) -> None:
+        cfg = load_config()
+        ensure_test_pattern_images(cfg)
+        todo = [i for i in cfg.get("instances", []) if not self._is_up(cfg, i)]
+        if not todo:
+            log_event("All instances already running.")
+            return
+        started, failed = [], []
+        # One at a time, 5s apart: receivers lock onto the wrong NDI source if outputs start together.
+        for n, inst in enumerate(todo):
+            if self._cancel.is_set():
+                log_event("Start All cancelled by Stop All.")
+                return
+            if self._launch(cfg, inst):
+                started.append(inst["id"])
+                if n < len(todo) - 1:
+                    self._gap()
+            else:
+                failed.append(inst["id"])
+        message = f"Started {len(started)}/{len(todo)} instances"
+        if failed:
+            self._report(f"{message} (failed: {failed})")
+        else:
+            log_event(message)
+
+    def _gap(self) -> None:
+        self._cancel.wait(5)  # Stop All ends the wait at once
+
+    def _stop_all(self) -> None:
+        self._cancel.clear()
+        cfg = load_config()
+        for inst in cfg.get("instances", []):
+            if inst["id"] not in self._procs:
+                self._adopt(cfg, inst)
+        procs, self._procs = list(self._procs.values()), {}
+        with ThreadPoolExecutor(max_workers=max(len(procs), 1)) as ex:
+            list(ex.map(CasparProcessManager.stop, procs))
+        log_event("All CasparCG instances stopped.")
+
+    def _restart_all(self) -> None:
+        self._stop_all()
+        self._start_all()
+
+    def _find(self, inst_id: int) -> tuple[dict, Optional[dict]]:
+        cfg = load_config()
+        return cfg, next((i for i in cfg.get("instances", []) if i["id"] == inst_id), None)
+
+    def _stop_one(self, cfg: dict, inst: dict) -> None:
+        if self._procs.get(inst["id"]) or self._adopt(cfg, inst):
+            self._procs.pop(inst["id"]).stop()
+
+    def _restart(self, inst_id: int) -> None:
+        cfg, inst = self._find(inst_id)
+        if inst:
+            self._stop_one(cfg, inst)
+            self._launch(cfg, inst, "restarted")
+
+    def _stop(self, inst_id: int) -> None:
+        cfg, inst = self._find(inst_id)
+        if inst:
+            self._stop_one(cfg, inst)
+            log_event(f"{_label(inst)} stopped.")
+
+    def _adopt_running(self) -> None:
+        cfg = load_config()
+        adopted = [i for i in cfg.get("instances", []) if self._adopt(cfg, i)]
+        if adopted:
+            log_event(f"Reconnected to {len(adopted)} running CasparCG instance(s).")
+
+    # ------------------------------------------------------------ status
+
+    def _probe(self, port: int) -> tuple[bool, dict]:
+        client = self._client(port)
+        if not client.ping():  # VERSION: INFO can fail on a live server
+            return False, dict(EMPTY_LAYER)
+        return True, parse_layer_info(client.info_layer())
+
+    def poll_status(self) -> None:
+        """Ask every instance whether it's live and what's playing, then publish one snapshot."""
+        cfg = load_config()
+        insts = cfg.get("instances", [])
+        with ThreadPoolExecutor(max_workers=max(len(insts), 1)) as ex:
+            results = list(ex.map(self._probe, [self.port(cfg, i) for i in insts]))
+        # A new dict, swapped in whole: readers never see a half-built poll.
+        self._status = {i["id"]: r for i, r in zip(insts, results, strict=True)}
+
+    def _status_loop(self) -> None:
+        while not self._status_stop.is_set():
+            try:
+                self.poll_status()
+            except Exception:
+                log.exception("Status poll failed")
+            self._status_stop.wait(2)
+
+    def start_status_worker(self) -> None:
+        self._status_stop.clear()
+        threading.Thread(target=self._status_loop, daemon=True, name="status").start()
+
+    def stop_status_worker(self) -> None:
+        self._status_stop.set()
+
+    def cached_status(self) -> tuple[dict, dict]:
+        """(live, layer_info) by instance id, from the last poll."""
+        status = self._status
+        return {k: live for k, (live, _) in status.items()}, {k: v for k, (_, v) in status.items()}
 
 
-def stop_all() -> None:
-    global _managers
-    threads = [threading.Thread(target=m.stop, daemon=True) for m in list(_managers.values())]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=3)
-    _managers = {}
-    # Also catches CasparCG this app doesn't manage (stale ports, v1.x installs).
-    CasparProcessManager._kill_all_caspar_instances()
-    log_event("All CasparCG instances stopped.")
-
-
-def restart_all(cfg: dict) -> None:
-    """Stop everything, then start each instance in order. Runs in a thread."""
-    stop_all()
-    start_all(cfg)
-
-
-def _stop_one(inst_id: int, port: int) -> None:
-    # Unmanaged (e.g. adoption failed): kill whatever listens on its port.
-    if inst_id in _managers:
-        _managers.pop(inst_id).stop()
-    else:
-        CasparProcessManager._kill_caspar_on_port(port)
-
-
-def restart(inst_id: int) -> None:
-    """Stop the CasparCG process for one instance and relaunch it. Runs in a thread."""
-    cfg = load_config()
-    inst = next((i for i in cfg.get("instances", []) if i["id"] == inst_id), None)
-    if not inst:
-        return
-    port = instance_amcp_port(cfg, inst)
-    _stop_one(inst_id, port)
-    regenerate_instance_config(cfg, inst)
-    m = _make_manager(inst, cfg)
-    _managers[inst_id] = m
-    if m.start():
-        res = _load_instance(inst, AMCPClient(port=port))
-        log_event(f"Inst {inst_id} ({inst['name']}) restarted → {res[:60]}")
-    else:
-        log_event(f"Inst {inst_id} ({inst['name']}) failed to restart")
-        _managers.pop(inst_id, None)
-
-
-def adopt_running() -> int:
-    """Take over instances already answering AMCP (e.g. after the app restarted). Returns count."""
-    cfg = load_config()
-    adopted = 0
-    for inst in cfg.get("instances", []):
-        if inst["id"] in _managers:
-            continue
-        m = _make_manager(inst, cfg)
-        if m.adopt_existing():
-            _managers[inst["id"]] = m
-            adopted += 1
-    return adopted
-
-
-def stop(inst: dict, port: int) -> None:
-    """Stop one instance. Runs in a thread."""
-    _stop_one(inst["id"], port)
-    log_event(f"Inst {inst['id']} ({inst['name']}) stopped.")
+manager = InstanceManager()

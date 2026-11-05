@@ -85,16 +85,26 @@ def test_instance_amcp_port(override, position, expected):
     assert settings.instance_amcp_port(cfg, insts[position]) == expected
 
 
-def test_port_follows_list_position_after_reorder():
+def test_port_follows_id_not_list_position():
+    # Changed in #5: by position, reordering moved a live instance onto another's port.
     a, b = instance(1, "A"), instance(2, "B")
     cfg = {"amcp_base_port": 5250, "instances": [b, a]}
-    assert settings.instance_amcp_port(cfg, a) == 5251
-    assert settings.instance_amcp_port(cfg, b) == 5250
+    assert settings.instance_amcp_port(cfg, a) == 5250
+    assert settings.instance_amcp_port(cfg, b) == 5251
+    assert settings.instance_amcp_port({"amcp_base_port": 7000}, instance(9, "X")) == 7008
 
 
-def test_unknown_instance_gets_base_port():
-    cfg = {"amcp_base_port": 7000, "instances": []}
-    assert settings.instance_amcp_port(cfg, instance(9, "X")) == 7000
+def test_instance_ids_survive_reorder(client, write_config):
+    write_config({"instances": [instance(1, "A"), instance(2, "B")]})
+    client.post("/api/config", json={"instances": [instance(2, "B"), instance(1, "A")]})
+    assert [i["id"] for i in client.get("/api/config").json()["instances"]] == [2, 1]
+
+
+def test_clashing_instance_ids_get_the_next_free_one(client, write_config):
+    write_config({"instances": [instance(1, "A"), instance(3, "C")]})
+    insts = [instance(1, "A"), instance(3, "C"), instance(3, "D"), instance(0, "E")]
+    client.post("/api/config", json={"instances": insts})
+    assert [i["id"] for i in client.get("/api/config").json()["instances"]] == [1, 3, 4, 5]
 
 
 # ---------------------------------------------------------------- casparcg.config
@@ -127,19 +137,23 @@ def test_custom_media_path_is_written(tmp_path):
     assert "<media-path>D:\\Media\\</media-path>" in Path(path).read_text(encoding="utf-8")
 
 
-def test_regenerate_creates_dirs_and_wipes_html_cache(tmp_path):
+def test_regenerate_creates_dirs_and_keeps_html_cache(tmp_path):
+    # Changed in #5: saving settings used to wipe the cache of instances that were live.
     caspar = tmp_path / "caspar"
-    stale = caspar / "html_cache" / "inst_1" / "stale.txt"
-    stale.parent.mkdir(parents=True)
-    stale.write_text("x")
+    cached = caspar / "html_cache" / "inst_1" / "cached.txt"
+    cached.parent.mkdir(parents=True)
+    cached.write_text("x")
     cfg = _gen_config(tmp_path)
 
     config_xml.regenerate_instance_config(cfg, cfg["instances"][0])
 
     assert (caspar / "log" / "inst_1").is_dir()
     assert (caspar / "data" / "inst_1").is_dir()
+    assert cached.exists()
+
+    config_xml.reset_html_cache(cfg, cfg["instances"][0])  # what a start does
     assert (caspar / "html_cache" / "inst_1").is_dir()
-    assert not stale.exists()
+    assert not cached.exists()
 
 
 def test_relative_exe_path_writes_config_to_cwd(tmp_path, monkeypatch):
