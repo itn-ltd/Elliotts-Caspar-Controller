@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from caspar_controller import instances, log, remotes, settings, tally
-from caspar_controller.api import auth as api_auth
+from caspar_controller.api import auth as api_auth, events
 from caspar_controller.api.app import app
 from caspar_controller.caspar.process import CasparProcessManager
 
@@ -50,6 +50,12 @@ def refused_kills(monkeypatch):
 
     monkeypatch.setattr(CasparProcessManager, "_kill_tree", staticmethod(guarded))
     return refused
+
+
+@pytest.fixture(autouse=True)
+def short_event_stream(monkeypatch):
+    """/api/events ends after half a second, so a test reading it gets the whole body."""
+    monkeypatch.setattr(events, "LIFETIME", 0.5)
 
 
 @pytest.fixture(autouse=True)

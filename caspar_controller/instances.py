@@ -4,7 +4,7 @@ import logging
 import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional
 
 from caspar_controller.caspar.amcp import AMCPClient
 from caspar_controller.caspar.config_xml import (
@@ -18,6 +18,15 @@ from caspar_controller.log import log_event
 from caspar_controller.settings import instance_amcp_port, load as load_config
 
 log = logging.getLogger(__name__)
+
+
+class Probe(NamedTuple):
+    live: bool
+    layer: dict
+    version: str  # CasparCG's VERSION reply, e.g. "2.3.3 Stable"
+
+
+OFF = Probe(False, dict(EMPTY_LAYER), "")
 
 
 def _label(inst: dict) -> str:
@@ -46,7 +55,7 @@ class InstanceManager:
         self._jobs: queue.Queue = queue.Queue()
         self._worker: Optional[threading.Thread] = None
         self._cancel = threading.Event()  # Stop All interrupts a running start sequence
-        self._status: dict[int, tuple[bool, dict]] = {}  # inst id -> (live, layer info)
+        self._status: dict[int, Probe] = {}  # inst id -> last poll
         self._status_stop = threading.Event()
         self.notify: Optional[Callable[[str], None]] = None  # the tray's notification
 
@@ -228,11 +237,13 @@ class InstanceManager:
 
     # ------------------------------------------------------------ status
 
-    def _probe(self, port: int) -> tuple[bool, dict]:
+    def _probe(self, port: int) -> Probe:
         client = self._client(port)
-        if not client.ping():  # VERSION: INFO can fail on a live server
-            return False, dict(EMPTY_LAYER)
-        return True, parse_layer_info(client.info_layer())
+        reply = client.send("VERSION")  # liveness: INFO can fail on a live server
+        if not reply.startswith("201"):
+            return OFF
+        version = reply.partition("\n")[2].strip()
+        return Probe(True, parse_layer_info(client.info_layer()), version)
 
     def poll_status(self) -> None:
         """Ask every instance whether it's live and what's playing, then publish one snapshot."""
@@ -249,7 +260,7 @@ class InstanceManager:
                 self.poll_status()
             except Exception:
                 log.exception("Status poll failed")
-            self._status_stop.wait(2)
+            self._status_stop.wait(0.5)  # browsers see changes within a second
 
     def start_status_worker(self) -> None:
         self._status_stop.clear()
@@ -258,10 +269,9 @@ class InstanceManager:
     def stop_status_worker(self) -> None:
         self._status_stop.set()
 
-    def cached_status(self) -> tuple[dict, dict]:
-        """(live, layer_info) by instance id, from the last poll."""
-        status = self._status
-        return {k: live for k, (live, _) in status.items()}, {k: v for k, (_, v) in status.items()}
+    def cached_status(self) -> dict[int, Probe]:
+        """The last poll, by instance id."""
+        return dict(self._status)
 
 
 manager = InstanceManager()

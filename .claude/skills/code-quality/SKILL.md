@@ -58,7 +58,7 @@ time.sleep(5)  # receivers latch onto the wrong NDI source if outputs start toge
 ## 4. Structure and naming
 
 - Functions do one thing. Split anything you can't describe in one short sentence.
-- Modules stay under about 400 lines. No new HTML/CSS/JS inside Python strings: `api/pages.py` is the only exception until #7 moves it to `web/`.
+- Modules stay under about 400 lines. No HTML/CSS/JS inside Python strings: pages live in `caspar_controller/web/` and get their data from the API.
 - Descriptive names. No abbreviations beyond the domain terms: AMCP, NDI, inst, cfg.
 - Type hints on new or changed function signatures.
 - No dead code: unused parameters, flags nobody sets, unreachable branches.

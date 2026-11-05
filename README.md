@@ -166,8 +166,9 @@ All need the key or a signed-in session, except `/api/health`.
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/health` | Version and up/down, no auth |
+| GET | `/api/health` | Version, server name and up/down, no auth |
 | GET | `/api/status` | All outputs: status, tally, current clip |
+| GET | `/api/events` | The same status plus the event log, pushed as server-sent events when they change |
 | POST | `/api/server/start`, `/api/server/stop` | Start All / Stop All (`202`, runs in the background) |
 | POST | `/api/instance/{id}/restart`, `/stop` | One output (`202`) |
 | POST | `/api/instance/{id}/amcp` | Send a raw AMCP command: `{"command": "..."}` |
@@ -275,8 +276,10 @@ caspar_controller/
 ├── log.py                 Event log shown on the dashboard
 ├── caspar/                AMCP client, INFO parsing, casparcg.config, process, test patterns
 ├── static/                Fonts and icons
+├── web/                   The web UI: plain HTML, app.css and app.js, no build step
 └── api/                   FastAPI app and one router per area   → http://0.0.0.0:<web-port>
-    └── pages.py           HTML pages (moving to static files in #7)
+    ├── events.py          /api/events: live status and event log (server-sent events)
+    └── pages.py           Serves web/*.html behind sign-in
 ```
 
 ---

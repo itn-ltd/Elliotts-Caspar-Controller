@@ -19,8 +19,8 @@ TITLE = "Elliott's Caspar Controller"
 
 
 def _status_text(_item=None) -> str:
-    live, _ = instances.manager.cached_status()
-    return f"{sum(live.values())}/{len(load_config()['instances'])} instances live"
+    live = sum(p.live for p in instances.manager.cached_status().values())
+    return f"{live}/{len(load_config()['instances'])} instances live"
 
 
 def _restart_all() -> None:

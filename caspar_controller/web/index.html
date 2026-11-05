@@ -77,43 +77,64 @@ function onMediaSelect(id) {
 }
 
 let _instanceNames = {};
+let _cardsKey = '';
+const _shown = {};  // element id -> HTML last written, so unchanged parts aren't touched
+const _waitingLive = new Set();  // started from this page: say so when they go live
 
-function renderInstances(instances) {
-  _instanceNames = Object.fromEntries(instances.map(i => [i.id, i.name]));
-  const g = document.getElementById('instance-grid');
-  g.innerHTML = instances.map(inst => {
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(Number(s) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// The clip line on a card: name, time and progress. Remote cards use it too.
+function layerHtml(inst) {
+  const li = inst.layer || {};
+  if (inst.status !== 'live' || !li.clip) return '';
+  const time = Number(li.time) || 0, duration = Number(li.duration) || 0;
+  const timeLabel = li.loop
+    ? `<span title="Looping">↻ ${fmtTime(time)}</span>`
+    : duration > 0
+      ? `${fmtTime(time)} / ${fmtTime(duration)} &nbsp;<span style="color:var(--error)">-${fmtTime(duration - time)}</span>`
+      : fmtTime(time);
+  const bar = duration > 0 && !li.loop
+    ? `<div class="clip-progress"><div class="clip-progress-bar" style="width:${Math.min(100, time / duration * 100).toFixed(1)}%"></div></div>`
+    : '';
+  return `<div class="clip-info"><span class="clip-name">${escapeHtml(li.clip)}</span> &nbsp;${timeLabel}</div>${bar}`;
+}
+
+function tallyClass(inst) {
+  return inst.on_program ? 'tally-program' : inst.on_preview ? 'tally-preview' : '';
+}
+
+function tallyBadge(inst) {
+  return inst.on_program ? '<span class="tally-badge-program">● LIVE</span>'
+    : inst.on_preview ? '<span class="tally-badge-preview">◐ PVW</span>' : '';
+}
+
+function stateHtml(inst) {
+  const live = inst.status === 'live';
+  return `<span class="badge ${live ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>` + (live
+    ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`
+    : `<button class="btn btn-success btn-sm" style="width:100%" onclick="startInstance(${inst.id})">▶ Start</button>`);
+}
+
+function setHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el && _shown[id] !== html) {
+    el.innerHTML = html;
+    _shown[id] = html;
+  }
+}
+
+// Cards are built once per set of instances. Updates only touch their live parts, so an
+// open clip dropdown or a half-typed AMCP command is never reset.
+function buildCards(instances) {
+  Object.keys(_shown).forEach(k => delete _shown[k]);
+  document.getElementById('instance-grid').innerHTML = instances.map(inst => {
     const isHtml = inst.type === 'html' || !inst.type;
     const typeBadge = isHtml
       ? '<span class="badge badge-neutral" style="font-size:10px">HTML5</span>'
       : '<span class="badge badge-warning" style="font-size:10px">Media</span>';
-
-    const tallyClass = inst.on_program ? 'tally-program' : inst.on_preview ? 'tally-preview' : '';
-    const tallyBadge = inst.on_program
-      ? '<span class="tally-badge-program">● LIVE</span>'
-      : inst.on_preview
-        ? '<span class="tally-badge-preview">◐ PVW</span>'
-        : '';
-
-    const li = inst.layer || {};
-    const layerHtml = (() => {
-      if (inst.status !== 'live' || !li.clip) return '';
-      const fmtTime = s => {
-        s = Math.max(0, Math.floor(s));
-        const m = Math.floor(s / 60), sec = s % 60;
-        return `${m}:${String(sec).padStart(2,'0')}`;
-      };
-      const pct = li.duration > 0 ? Math.min(100, (li.time / li.duration) * 100) : 0;
-      const remaining = li.duration > 0 ? li.duration - li.time : 0;
-      const timeLabel = li.loop
-        ? `<span title="Looping">↻ ${fmtTime(li.time)}</span>`
-        : li.duration > 0
-          ? `${fmtTime(li.time)} / ${fmtTime(li.duration)} &nbsp;<span style="color:var(--error)">-${fmtTime(remaining)}</span>`
-          : `${fmtTime(li.time)}`;
-      const bar = li.duration > 0 && !li.loop
-        ? `<div class="clip-progress"><div class="clip-progress-bar" style="width:${pct.toFixed(1)}%"></div></div>`
-        : '';
-      return `<div class="clip-info"><span class="clip-name">${escapeHtml(li.clip)}</span> &nbsp;${timeLabel}</div>${bar}`;
-    })();
     const amcpRow = !isHtml ? `
       <div style="display:flex;gap:4px;margin-top:4px">
         <select id="media_${inst.id}"
@@ -129,122 +150,91 @@ function renderInstances(instances) {
                 onclick="sendAmcp(${inst.id})">Send</button>
       </div>` : '';
     return `
-    <div class="channel-card ${tallyClass}">
+    <div class="channel-card" id="card_${inst.id}">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
-        <div style="display:flex;gap:4px;align-items:center">${tallyBadge}${typeBadge}</div>
+        <div style="display:flex;gap:4px;align-items:center"><span id="tally_${inst.id}"></span>${typeBadge}</div>
       </div>
       <div class="ch-name">${escapeHtml(inst.name)}</div>
       <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
-      ${layerHtml}
-      <span class="badge ${inst.status === 'live' ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
-      ${inst.status === 'live'
-        ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`
-        : `<button class="btn btn-success btn-sm" style="width:100%" onclick="startInstance(${inst.id})">▶ Start</button>`
-      }
+      <div id="layer_${inst.id}"></div>
+      <div id="state_${inst.id}" style="display:contents"></div>
       ${amcpRow}
     </div>`;
   }).join('');
+  loadMediaClips();
 }
 
-// Track whether a media select dropdown is currently open
-let _dropdownOpen = false;
-document.addEventListener('mousedown', e => { if (e.target.tagName === 'SELECT') _dropdownOpen = true; });
-document.addEventListener('change',    e => { if (e.target.tagName === 'SELECT') _dropdownOpen = false; });
-document.addEventListener('focusout',  e => { if (e.target.tagName === 'SELECT') _dropdownOpen = false; });
-
-function updateStatus() {
-  api('/api/status').then(data => {
-    // Check HERE, just before touching the DOM — not before the async fetch
-    const skipRender = _dropdownOpen;
-
-    const running = data.running;
-    document.getElementById('setup-banner').style.display = data.needs_setup ? 'block' : 'none';
-    document.getElementById('pulse').className = 'pulse ' + (running ? 'pulse-green' : 'pulse-red');
-    const liveCount = data.instances.filter(i => i.status === 'live').length;
-    const total = data.instances.length;
-    document.getElementById('server-status-label').textContent = running
-      ? `CasparCG Running — ${liveCount}/${total} instances`
-      : 'CasparCG Stopped';
-
-    const btnStart = document.getElementById('btn-start');
-    if (btnStart) {
-      const allRunning = total > 0 && liveCount === total;
-      btnStart.disabled = allRunning;
-      btnStart.style.opacity = allRunning ? '0.4' : '';
-      btnStart.style.cursor  = allRunning ? 'not-allowed' : '';
-      btnStart.textContent = allRunning
-        ? `All Running (${total}/${total})`
-        : liveCount > 0
-          ? `Start Remaining (${total - liveCount})`
-          : 'Start All';
-    }
-
-    if (!skipRender) {
-      // Preserve user input across re-renders
-      const saved = {};
-      document.querySelectorAll('[id^="amcp_"], [id^="media_"]').forEach(el => {
-        if (el.value) saved[el.id] = el.value;
-      });
-      renderInstances(data.instances);
-      loadMediaClips();
-      Object.entries(saved).forEach(([id, val]) => {
-        const el = document.getElementById(id);
-        if (el) el.value = val;
-      });
-    }
-
-    if (lastRunning !== null && lastRunning !== running)
-      toast(running ? 'CasparCG is now running' : 'CasparCG stopped', running ? 'success' : 'warning');
-    lastRunning = running;
+function renderInstances(instances) {
+  _instanceNames = Object.fromEntries(instances.map(i => [i.id, i.name]));
+  const key = JSON.stringify(instances.map(i => [i.id, i.name, i.ndi_name, i.type, i.amcp_port]));
+  if (key !== _cardsKey) {
+    buildCards(instances);
+    _cardsKey = key;
+  }
+  instances.forEach(inst => {
+    document.getElementById('card_' + inst.id).className = 'channel-card ' + tallyClass(inst);
+    setHtml('tally_' + inst.id, tallyBadge(inst));
+    setHtml('layer_' + inst.id, layerHtml(inst));
+    setHtml('state_' + inst.id, stateHtml(inst));
+    if (inst.status === 'live' && _waitingLive.delete(inst.id)) toast(inst.name + ' is live', 'success');
   });
-  api('/api/log').then(data => {
-    document.getElementById('log-box').innerHTML = data.log.slice().reverse().map(l => `<p>${escapeHtml(l)}</p>`).join('');
-  });
+}
+
+function showStatus(data) {
+  const running = data.running;
+  document.getElementById('setup-banner').style.display = data.needs_setup ? 'block' : 'none';
+  document.getElementById('pulse').className = 'pulse ' + (running ? 'pulse-green' : 'pulse-red');
+  const liveCount = data.instances.filter(i => i.status === 'live').length;
+  const total = data.instances.length;
+  const versions = [...new Set(data.instances.map(i => i.caspar_version).filter(Boolean))];
+  document.getElementById('server-status-label').textContent = running
+    ? `CasparCG Running — ${liveCount}/${total} instances` + (versions.length ? ` · ${versions.join(', ')}` : '')
+    : 'CasparCG Stopped';
+
+  const btnStart = document.getElementById('btn-start');
+  const allRunning = total > 0 && liveCount === total;
+  btnStart.disabled = allRunning;
+  btnStart.style.opacity = allRunning ? '0.4' : '';
+  btnStart.style.cursor  = allRunning ? 'not-allowed' : '';
+  btnStart.textContent = allRunning
+    ? `All Running (${total}/${total})`
+    : liveCount > 0
+      ? `Start Remaining (${total - liveCount})`
+      : 'Start All';
+
+  renderInstances(data.instances);
+
+  if (lastRunning !== null && lastRunning !== running)
+    toast(running ? 'CasparCG is now running' : 'CasparCG stopped', running ? 'success' : 'warning');
+  lastRunning = running;
+}
+
+function showLog(lines) {
+  document.getElementById('log-box').innerHTML = lines.slice().reverse().map(l => `<p>${escapeHtml(l)}</p>`).join('');
 }
 
 function serverAction(action) {
-  if (action === 'start') {
-    const btn = document.getElementById('btn-start');
-    if (btn && btn.disabled) return;
-  }
+  if (action === 'start' && document.getElementById('btn-start').disabled) return;
   toast('Sending ' + action + '...', 'info');
-  api('/api/server/' + action, 'POST').then(d => {
-    toast(d.message || (action + ' OK'), 'success');
-    updateStatus();
-  }).catch(() => toast('Failed to ' + action, 'error'));
+  api('/api/server/' + action, 'POST')
+    .then(d => toast(d.message || (action + ' OK'), 'success'))
+    .catch(() => toast('Failed to ' + action, 'error'));
 }
 
 function startInstance(id) {
   const name = _instanceNames[id];
-  toast('Starting ' + name + '...', 'info');
-  api('/api/instance/' + id + '/restart', 'POST').then(d => {
-    toast(d.message || (name + ' starting...'), 'info');
-    let attempts = 0;
-    const poll = setInterval(() => {
-      attempts++;
-      updateStatus();
-      api('/api/status').then(data => {
-        const inst = data.instances.find(i => i.id === id);
-        if (inst && inst.status === 'live') {
-          clearInterval(poll);
-          toast(name + ' is live', 'success');
-        } else if (attempts > 90) {
-          clearInterval(poll);
-          toast(name + ' took too long — check logs', 'warning');
-        }
-      });
-    }, 2000);
-  }).catch(() => toast('Failed to start ' + name, 'error'));
+  _waitingLive.add(id);
+  api('/api/instance/' + id + '/restart', 'POST')
+    .then(d => toast(d.message || (name + ' starting...'), 'info'))
+    .catch(() => { _waitingLive.delete(id); toast('Failed to start ' + name, 'error'); });
 }
 
 function stopInstance(id) {
   const name = _instanceNames[id];
-  toast('Stopping ' + name + '...', 'warning');
-  api('/api/instance/' + id + '/stop', 'POST').then(() => {
-    toast(name + ' stopped', 'success');
-    updateStatus();
-  }).catch(() => toast('Failed to stop ' + name, 'error'));
+  api('/api/instance/' + id + '/stop', 'POST')
+    .then(d => toast(d.message || ('Stopping ' + name + '...'), 'warning'))
+    .catch(() => toast('Failed to stop ' + name, 'error'));
 }
 
 function sendAmcp(id) {
@@ -287,10 +277,6 @@ function remoteInstanceCard(rem, remoteInst) {
   const inst = {...remoteInst, id: Number(remoteInst.id) || 0, amcp_port: Number(remoteInst.amcp_port) || 0};
   const isLive = inst.status === 'live';
   const isMedia = inst.type === 'media';
-  const tallyClass = inst.on_program ? 'tally-program' : inst.on_preview ? 'tally-preview' : '';
-  const tallyBadge = inst.on_program
-    ? '<span class="tally-badge-program">● LIVE</span>'
-    : inst.on_preview ? '<span class="tally-badge-preview">◐ PVW</span>' : '';
   const actionBtn = isLive
     ? `<button class="btn btn-danger btn-sm" style="width:100%"
          onclick="remoteInstanceAction(${rem.idx}, ${inst.id}, 'stop')">■ Stop</button>`
@@ -311,13 +297,14 @@ function remoteInstanceCard(rem, remoteInst) {
               onclick="sendRemoteAmcp(${rem.idx},${inst.id})">Send</button>
     </div>` : '';
   return `
-  <div class="channel-card ${tallyClass}">
+  <div class="channel-card ${tallyClass(inst)}">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
-      ${tallyBadge}
+      ${tallyBadge(inst)}
     </div>
     <div class="ch-name">${escapeHtml(inst.name)}</div>
     <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
+    ${layerHtml(inst)}
     <span class="badge ${isLive ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
     ${actionBtn}
     ${mediaRow}
@@ -468,10 +455,13 @@ function sendRemoteAmcp(idx, instId) {
     .catch(() => toast('Remote AMCP failed', 'error'));
 }
 
-updateStatus();
+const events = new EventSource('/api/events');
+events.addEventListener('status', e => showStatus(JSON.parse(e.data)));
+events.addEventListener('log', e => showLog(JSON.parse(e.data).log));
+// A stream that can't connect may mean the session ended: api() goes to the sign-in page.
+events.onerror = () => api('/api/log').catch(() => {});
 updateRemotes();
-setInterval(updateStatus, 2000);
-setInterval(updateRemotes, 3000);
+setInterval(updateRemotes, 3000);  // other controllers are still polled (#9 gives them an explicit API)
 </script>
 </body>
 </html>

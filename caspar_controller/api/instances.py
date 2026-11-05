@@ -14,16 +14,20 @@ router = APIRouter()
 
 @router.get("/api/status")
 def api_status():
+    return status_payload()
+
+
+def status_payload() -> dict:
+    """Every instance's state, from the background poll (no AMCP calls here)."""
     cfg = load_config()
     insts = cfg.get("instances", [])
-
-    # Read from background cache — returns in <1ms rather than blocking on AMCP pings
-    live, layer_info = instances.manager.cached_status()
+    probes = instances.manager.cached_status()
     tally_state = tally.get_tally()
 
     instances_out = []
     for inst in insts:
         on_air = tally_state.get(inst["ndi_name"], {})
+        probe = probes.get(inst["id"])
         instances_out.append(
             {
                 "id": inst["id"],
@@ -33,8 +37,9 @@ def api_status():
                 "url": inst.get("url", ""),
                 "startup_command": inst.get("startup_command", ""),
                 "amcp_port": instances.manager.port(cfg, inst),
-                "status": "live" if live.get(inst["id"], False) else "stopped",
-                "layer": layer_info.get(inst["id"], {}),
+                "status": "live" if probe and probe.live else "stopped",
+                "layer": probe.layer if probe else {},
+                "caspar_version": probe.version if probe else "",
                 "on_program": on_air.get("program", False),
                 "on_preview": on_air.get("preview", False),
             }

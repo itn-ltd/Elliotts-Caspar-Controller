@@ -17,6 +17,7 @@ Silently no-ops if ndi-python is not installed or the NDI Runtime is missing.
 """
 
 import os
+import socket
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -71,6 +72,11 @@ def get_tally() -> dict:
 # ---------------------------------------------------------------------------
 
 
+def is_our_source(source_name: str, ndi_name: str) -> bool:
+    """NDI names sources "HOST (name)": match this PC's exact name, so GFX1 isn't GFX10."""
+    return source_name.lower() == f"{socket.gethostname()} ({ndi_name})".lower()
+
+
 def _find_source(ndi_name: str, stop: threading.Event):
     """Search for an NDI source matching ndi_name. Returns source or None."""
     find_create = ndi.FindCreate()
@@ -84,7 +90,7 @@ def _find_source(ndi_name: str, stop: threading.Event):
         if sources:
             for s in sources:
                 src_name = getattr(s, "ndi_name", "") or ""
-                if ndi_name.lower() in src_name.lower():
+                if is_our_source(src_name, ndi_name):
                     source = s
                     break
         if source:

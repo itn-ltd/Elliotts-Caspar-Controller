@@ -5,6 +5,9 @@ been captured from a real CasparCG yet: replace it with captures from the
 galleries' build when they are available (see #7).
 """
 
+import json
+import threading
+
 import pytest
 from conftest import free_port, instance
 from fake_amcp import EMPTY_LAYER_XML, FakeAMCPServer
@@ -92,6 +95,7 @@ def test_status_shape_before_first_poll(client, write_config):
         "amcp_port": 6100,
         "status": "stopped",
         "layer": {},
+        "caspar_version": "",
         "on_program": False,
         "on_preview": False,
     }
@@ -162,3 +166,107 @@ def test_log_keeps_last_200():
         log.log_event(f"e{i}")
     assert len(log._log) == 200
     assert log._log[0].endswith("e5")
+
+
+# ---------------------------------------------------------------- INFO layouts (#7)
+# Synthetic until captures from the galleries' CasparCG arrive; both known layouts are covered.
+
+CASPAR_23_XML = (
+    "<layer><background><producer>empty</producer></background><foreground>"
+    "<file><clip>0 60</clip><name>AMB</name><path>media/AMB.mp4</path><time>12.5 60</time></file>"
+    "<loop>false</loop><paused>false</paused><producer>ffmpeg</producer></foreground></layer>"
+)
+
+
+def test_parse_caspar_23_layout():
+    assert parse_layer_info("201 INFO OK\r\n" + CASPAR_23_XML) == {
+        "clip": "AMB",
+        "time": 12.5,
+        "duration": 60.0,
+        "loop": False,
+        "producer": "ffmpeg",
+    }
+
+
+def test_parse_caspar_23_empty_layer():
+    xml = "<layer><foreground><producer>empty</producer></foreground></layer>"
+    assert parse_layer_info("201 INFO OK\r\n" + xml) == EMPTY
+
+
+def test_parse_caspar_21_frames():
+    xml = (
+        "<layer><foreground><producer><type>ffmpeg-producer</type>"
+        "<filename>media/PROMO.mov</filename><fps>25</fps><file-frame-number>250</file-frame-number>"
+        "<file-nb-frames>1500</file-nb-frames><loop>true</loop></producer></foreground></layer>"
+    )
+    info = parse_layer_info("201 INFO OK\r\n" + xml)
+    assert (info["clip"], info["time"], info["duration"], info["loop"]) == (
+        "PROMO.mov",
+        10.0,
+        60.0,
+        True,
+    )
+
+
+def test_clip_names_with_numeric_suffix_kept():
+    xml = (
+        '<layer><foreground><producer type="ffmpeg-producer">'
+        "<filename>PROMO_2024</filename></producer></foreground></layer>"
+    )
+    assert parse_layer_info("201 INFO OK\n" + xml)["clip"] == "PROMO_2024"
+
+
+# ---------------------------------------------------------------- tally (#7)
+
+
+@pytest.mark.parametrize(
+    ("source", "matches"),
+    [
+        ("PLAYOUT-PC (PCR3 GFX1)", True),
+        ("playout-pc (pcr3 gfx1)", True),
+        ("PLAYOUT-PC (PCR3 GFX10)", False),  # used to match by substring
+        ("OTHER-PC (PCR3 GFX1)", False),  # same name on another machine
+    ],
+)
+def test_tally_matches_exact_local_source(monkeypatch, source, matches):
+    monkeypatch.setattr(tally.socket, "gethostname", lambda: "PLAYOUT-PC")
+    assert tally.is_our_source(source, "PCR3 GFX1") is matches
+
+
+# ---------------------------------------------------------------- live events (#7)
+
+
+def events_of(body: str) -> list:
+    """(event name, data) for each server-sent event in a response body."""
+    out = []
+    for block in body.strip().split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in block.splitlines())
+        out.append((fields["event"], json.loads(fields["data"])))
+    return out
+
+
+def test_events_stream_sends_status_and_log_once_each(client, write_config):
+    write_config({"instances": [instance(1, "GFX1")]})
+    log.log_event("hello")
+    r = client.get("/api/events")
+    assert r.headers["content-type"].startswith("text/event-stream")
+    names = [name for name, _ in events_of(r.text)]
+    assert names == ["status", "log"]  # nothing changed, so nothing sent again
+    status, logged = (data for _, data in events_of(r.text))
+    assert status == client.get("/api/status").json()
+    assert logged["log"][-1].endswith("hello")
+
+
+def test_events_stream_sends_changes_within_a_second(client, write_config):
+    write_config({"instances": []})
+    threading.Timer(0.2, log.log_event, args=("later",)).start()
+    events = events_of(client.get("/api/events").text)
+    assert [name for name, _ in events] == ["status", "log", "log"]
+    assert events[-1][1]["log"][-1].endswith("later")
+
+
+def test_worker_records_caspar_version(client, write_config):
+    with FakeAMCPServer(version="2.3.3 Stable") as s:
+        write_config({"instances": [instance(1, "GFX1", amcp_port=s.port)]})
+        instances.manager.poll_status()
+        assert client.get("/api/status").json()["instances"][0]["caspar_version"] == "2.3.3 Stable"
