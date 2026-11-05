@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, HTTPException
 
+from caspar_controller.api import instance_or_404
 from caspar_controller.caspar.amcp import AMCPClient, is_amcp_safe
 from caspar_controller.log import log_event
 from caspar_controller.settings import instance_amcp_port, load as load_config
@@ -55,10 +56,7 @@ def api_instance_load_clip(inst_id: int, clip: str, loop: bool = True):
     Usage: GET /api/instance/6/load?clip=MYCLIP
     """
     cfg = load_config()
-    inst_map = {i["id"]: i for i in cfg.get("instances", [])}
-    if inst_id not in inst_map:
-        raise HTTPException(status_code=404, detail=f"Instance {inst_id} not found")
-    inst = inst_map[inst_id]
+    inst = instance_or_404(cfg, inst_id)
     if inst.get("type", "html") != "media":
         raise HTTPException(status_code=400, detail=f"Instance {inst_id} is not a media type")
     cmd, res = _play_clip(cfg, inst, clip, loop)

@@ -9,7 +9,7 @@ from caspar_controller.caspar.config_xml import (
     regenerate_all_instance_configs,
     regenerate_instance_config,
 )
-from caspar_controller.caspar.info import parse_layer_info
+from caspar_controller.caspar.info import EMPTY_LAYER, parse_layer_info
 from caspar_controller.caspar.process import CasparProcessManager
 from caspar_controller.log import log_event
 from caspar_controller.settings import instance_amcp_port, load as load_config
@@ -27,8 +27,6 @@ def _make_manager(inst: dict, cfg: dict) -> CasparProcessManager:
     return CasparProcessManager(
         exe_path=cfg["caspar_exe_path"],
         amcp_port=port,
-        startup_delay=cfg["startup_delay"],
-        window_title=f"PCR3 CasparCG — {inst['name']}",
         config_filename=f"casparcg_inst_{inst['id']}.config",
     )
 
@@ -58,17 +56,7 @@ def _background_status_worker():
                 raw = client.info_layer()
                 is_live = raw.startswith("201")
                 live[inst["id"]] = is_live  # noqa: B023
-                layer_info[inst["id"]] = (  # noqa: B023
-                    parse_layer_info(raw)
-                    if is_live
-                    else {
-                        "clip": None,
-                        "time": 0.0,
-                        "duration": 0.0,
-                        "loop": False,
-                        "producer": "empty",
-                    }
-                )
+                layer_info[inst["id"]] = parse_layer_info(raw) if is_live else dict(EMPTY_LAYER)  # noqa: B023
 
             threads = [
                 threading.Thread(target=_fetch, args=(inst,), daemon=True) for inst in instances

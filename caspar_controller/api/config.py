@@ -28,7 +28,6 @@ class ConfigUpdate(BaseModel):
     caspar_exe_path: Optional[str] = None
     amcp_base_port: Optional[int] = None
     web_port: Optional[int] = None
-    startup_delay: Optional[int] = None
     video_mode: Optional[str] = None
     autostart_caspar: Optional[bool] = None
     media_path: Optional[str] = None

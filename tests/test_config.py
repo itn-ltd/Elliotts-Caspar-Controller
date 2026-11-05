@@ -27,7 +27,7 @@ def test_v1_channels_file_loads_other_settings(config_dir):
     shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "elliotts_caspar_config.json")
     cfg = settings.load()
     assert cfg["autostart_caspar"] is True
-    assert cfg["startup_delay"] == 60  # 8 is coerced up to 60
+    assert "startup_delay" not in cfg  # never used, dropped on load
     assert cfg["video_mode"] == "1080p2500"
     assert "amcp_port" not in cfg
 
@@ -37,12 +37,6 @@ def test_misspelled_filename_is_renamed(config_dir):
     assert settings.load()["server_name"] == "Old"
     assert (config_dir / "elliotts_caspar_config.json").exists()
     assert not (config_dir / "elliotts_casper_config.json").exists()
-
-
-@pytest.mark.parametrize(("stored", "expected"), [(15, 60), (16, 16), (90, 90)])
-def test_short_startup_delay_is_coerced(write_config, stored, expected):
-    write_config({"startup_delay": stored})
-    assert settings.load()["startup_delay"] == expected
 
 
 def test_instance_fields_are_backfilled(write_config):

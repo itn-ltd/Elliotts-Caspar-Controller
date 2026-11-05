@@ -98,10 +98,8 @@ h3 { font-size: 15px; font-weight: 500; }
 
 /* GRID */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 @media (max-width: 700px) {
-  .grid-2, .grid-3, .grid-5 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
 }
 
 /* INPUTS */
@@ -186,14 +184,6 @@ label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px
   100% { box-shadow: 0 0 0 0 rgba(34,197,94,0);   }
 }
 
-/* MULTIVIEWER */
-.mv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 800px) { .mv-grid { grid-template-columns: 1fr 1fr; } }
-.mv-frame { background: #111; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-.mv-frame iframe { display: block; width: 100%; height: 180px; border: none; background: #000; }
-.mv-label { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
-.mv-label span { font-size: 13px; font-weight: 600; }
-
 /* TALLY */
 .tally-program {
   border-color: var(--error) !important;
@@ -246,13 +236,6 @@ label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 13px
   grid-column: 1 / -1; color: var(--muted); font-size: 13px; padding: 8px 0;
 }
 
-/* TABLE */
-table { width: 100%; border-collapse: collapse; }
-thead { background: var(--accent); }
-thead th { color: #fff; padding: 10px 14px; text-align: left; font-weight: 600; }
-tbody tr { border-bottom: 1px solid var(--border); }
-tbody tr:hover { background: rgba(255,255,255,0.03); }
-tbody td { padding: 10px 14px; }
 """
 )
 
@@ -531,8 +514,6 @@ function renderInstances(instances) {
         : '';
       return `<div class="clip-info"><span class="clip-name">${escapeHtml(li.clip)}</span> &nbsp;${timeLabel}</div>${bar}`;
     })();
-    const sourceInfo = layerHtml;
-    const loadUrl = '';
     const amcpRow = !isHtml ? `
       <div style="display:flex;gap:4px;margin-top:4px">
         <select id="media_${inst.id}"
@@ -555,8 +536,7 @@ function renderInstances(instances) {
       </div>
       <div class="ch-name">${escapeHtml(inst.name)}</div>
       <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
-      ${sourceInfo}
-      ${loadUrl}
+      ${layerHtml}
       <span class="badge ${inst.status === 'live' ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
       ${inst.status === 'live'
         ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`

@@ -24,7 +24,6 @@ def manager(caspar_dir):
     m = CasparProcessManager(
         exe_path=cfg["caspar_exe_path"],
         amcp_port=port,
-        window_title="PCR3 CasparCG - GFX1",
         config_filename="casparcg_inst_1.config",
     )
     yield m

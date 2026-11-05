@@ -153,6 +153,16 @@ def test_restart_endpoint_returns_immediately(client, three_instances, monkeypat
     assert client.post("/api/instance/99/restart").status_code == 404
 
 
+def test_restart_all_endpoint_reaches_restart_all(client, three_instances, monkeypatch):
+    # Used to 422: the /{inst_id}/restart route captured "all".
+    calls = []
+    monkeypatch.setattr(instances, "restart_all", lambda cfg: calls.append(len(cfg["instances"])))
+    r = client.post("/api/instance/all/restart")
+    assert r.json() == {"ok": True, "message": "Restarting all instances..."}
+    time.sleep(0.2)
+    assert calls == [3]
+
+
 def test_stop_one_instance(client, three_instances, recorded_sleeps):
     client.post("/api/server/start")
     port = three_instances["instances"][0]["amcp_port"]

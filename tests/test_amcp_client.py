@@ -43,11 +43,4 @@ def test_command_helpers(server):
     client = AMCPClient(port=server.port)
     client.play_html(1, "https://example.com/gfx?a=1")
     client.info_layer()
-    client.stop_channel(3)
-    client.info_channel(2)
-    assert server.commands == [
-        'PLAY 1-1 [HTML] "https://example.com/gfx?a=1"',
-        "INFO 1-1",
-        "STOP 3-1",
-        "INFO 2",
-    ]
+    assert server.commands == ['PLAY 1-1 [HTML] "https://example.com/gfx?a=1"', "INFO 1-1"]

@@ -28,7 +28,6 @@ DEFAULT_CONFIG = {
     "caspar_exe_path": "",
     "amcp_base_port": 5250,
     "web_port": 5280,
-    "startup_delay": 60,
     "video_mode": "1080p2500",
     "autostart_caspar": False,
     "media_path": "",
@@ -102,8 +101,7 @@ def load() -> dict:
     config.setdefault("autostart_caspar", False)
     config.setdefault("instances", [])
     config.setdefault("remote_controllers", [])
-    if config.get("startup_delay", 60) <= 15:
-        config["startup_delay"] = 60
+    config.pop("startup_delay", None)  # v1.x setting that was never used
 
     # Backfill per-instance fields
     for inst in config.get("instances", []):
@@ -220,8 +218,6 @@ def validate_config(data: dict) -> None:
     for field in ("web_port", "amcp_base_port"):
         if field in data:
             _check_port(field, data[field])
-    if not _is_int(data.get("startup_delay", 60)):
-        raise ValueError("startup_delay must be a whole number of seconds")
     if not isinstance(data.get("autostart_caspar", False), bool):
         raise ValueError("autostart_caspar must be true or false")
     for inst in _check_list("instances", data):

@@ -1,14 +1,9 @@
-"""The FastAPI app: routers, auth middleware, static files and the server thread."""
+"""The FastAPI app: routers, auth middleware and static files."""
 
 import os
 import sys
-import threading
-import time
-import webbrowser
 from contextlib import asynccontextmanager
-from typing import Optional
 
-import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
@@ -53,32 +48,3 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/api/health")
 def api_health():
     return {"ok": True, "version": __version__}
-
-
-# ---------------------------------------------------------------------------
-# Server entry point
-# ---------------------------------------------------------------------------
-
-_server_thread: Optional[threading.Thread] = None
-_uvicorn_server: Optional[uvicorn.Server] = None
-
-
-def start_server(port: int = 5280, open_browser: bool = True) -> None:
-    global _server_thread, _uvicorn_server
-    cfg_obj = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning", access_log=False)
-    _uvicorn_server = uvicorn.Server(cfg_obj)
-
-    def run():
-        _uvicorn_server.run()
-
-    _server_thread = threading.Thread(target=run, daemon=True)
-    _server_thread.start()
-
-    if open_browser:
-        time.sleep(1.5)
-        webbrowser.open(f"http://127.0.0.1:{port}")
-
-
-def stop_server() -> None:
-    if _uvicorn_server:
-        _uvicorn_server.should_exit = True

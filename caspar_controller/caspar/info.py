@@ -3,10 +3,12 @@
 import os
 import xml.etree.ElementTree as ET
 
+EMPTY_LAYER = {"clip": None, "time": 0.0, "duration": 0.0, "loop": False, "producer": "empty"}
+
 
 def parse_layer_info(raw: str) -> dict:
     """Parse the raw AMCP INFO 1-1 response into a layer info dict."""
-    empty: dict = {"clip": None, "time": 0.0, "duration": 0.0, "loop": False, "producer": "empty"}
+    empty = dict(EMPTY_LAYER)
     try:
         nl = raw.find("\n")
         if nl < 0 or not raw.startswith("201"):

@@ -52,9 +52,3 @@ class AMCPClient:
         if not is_amcp_safe(url):
             return "ERROR: URL can't contain quotes, backslashes or control characters"
         return self.send(f'PLAY {channel}-1 [HTML] "{url}"')
-
-    def stop_channel(self, channel: int) -> str:
-        return self.send(f"STOP {channel}-1")
-
-    def info_channel(self, channel: int) -> str:
-        return self.send(f"INFO {channel}")

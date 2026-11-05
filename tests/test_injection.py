@@ -26,9 +26,7 @@ def test_caspar_launched_directly_without_a_shell(monkeypatch, tmp_path):
 
     monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
     exe = str(tmp_path / "casparcg.exe")
-    m = CasparProcessManager(
-        exe_path=exe, amcp_port=free_port(), window_title=NASTY_NAME, config_filename="c.config"
-    )
+    m = CasparProcessManager(exe_path=exe, amcp_port=free_port(), config_filename="c.config")
     m.start()
     # A list (no shell parses the name) starting with the full exe path.
     assert captured["args"] == [exe, "c.config"]
@@ -47,7 +45,6 @@ def test_odd_name_starts_where_current_dir_search_is_off(caspar_dir, monkeypatch
     m = CasparProcessManager(
         exe_path=cfg["caspar_exe_path"],
         amcp_port=port,
-        window_title=NASTY_NAME,
         config_filename="casparcg_inst_1.config",
     )
     try:
@@ -177,9 +174,7 @@ def test_unsafe_config_rejected_by_save_and_import(client, bad):
 
 
 # Save's pydantic model already coerces or drops these; import takes raw JSON.
-@pytest.mark.parametrize(
-    "bad", [{"instances": None}, {"startup_delay": "60"}, {"autostart_caspar": "yes"}]
-)
+@pytest.mark.parametrize("bad", [{"instances": None}, {"autostart_caspar": "yes"}])
 def test_malformed_import_rejected(client, bad):
     assert client.post("/api/config/import", json=bad).status_code == 400
 
