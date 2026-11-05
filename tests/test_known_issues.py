@@ -10,7 +10,7 @@ import shutil
 import types
 
 import pytest
-from conftest import FIXTURES, instance
+from conftest import FIXTURES
 
 from caspar_controller import settings, tally
 from caspar_controller.caspar.info import parse_layer_info
@@ -19,18 +19,6 @@ from caspar_controller.caspar.info import parse_layer_info
 def issue(number: int, why: str, raises: type | tuple = AssertionError) -> pytest.MarkDecorator:
     # `raises` stops an unrelated error (e.g. from a partial fix) passing as "still broken".
     return pytest.mark.xfail(reason=f"#{number}: {why}", raises=raises)
-
-
-# ---------------------------------------------------------------- #6 settings validation
-
-
-@issue(6, "duplicate AMCP ports are accepted")
-def test_duplicate_ports_rejected(client):
-    r = client.post(
-        "/api/config",
-        json={"instances": [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]},
-    )
-    assert r.status_code in (400, 422)
 
 
 # ---------------------------------------------------------------- #7 display
@@ -83,7 +71,7 @@ def test_tally_matches_exact_ndi_name(monkeypatch):
 
 @issue(12, "v1 'channels' migration never runs: DEFAULT_CONFIG already has 'instances'")
 def test_v1_channels_format_is_migrated(config_dir):
-    shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "elliotts_caspar_config.json")
+    shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "config.json")
     cfg = settings.load()
     assert "channels" not in cfg
     assert [i["name"] for i in cfg["instances"]] == [

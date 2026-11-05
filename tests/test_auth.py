@@ -213,7 +213,7 @@ def test_logout_revokes_session(anon, password_on):
 def test_password_saved_as_hash_only(local_anon, write_config, config_dir):
     write_config({})  # first run: this PC sets the first password
     assert local_anon.post("/api/password", json={"password": "s3cret!"}).json() == {"ok": True}
-    raw = (config_dir / "elliotts_caspar_config.json").read_text()
+    raw = (config_dir / "config.json").read_text()
     assert "s3cret!" not in raw
     assert verify_password("s3cret!", json.loads(raw)["web_password_hash"])
 
@@ -247,7 +247,7 @@ def test_changing_password_signs_out_other_sessions(password_on):
 
 def test_config_api_no_longer_sets_password(client, password_on, config_dir):
     client.post("/api/config", json={"web_password": "ignored"})
-    raw = json.loads((config_dir / "elliotts_caspar_config.json").read_text())
+    raw = json.loads((config_dir / "config.json").read_text())
     assert verify_password("hunter2", raw["web_password_hash"])
 
 
@@ -329,7 +329,7 @@ def test_blank_remote_key_keeps_the_saved_one(client, write_config, config_dir):
         "/api/config", json={"remote_controllers": [{"url": "http://r:5280", "api_key": ""}]}
     )
     client.post("/api/config/import", json={"remote_controllers": [{"url": "http://r:5280"}]})
-    saved = json.loads((config_dir / "elliotts_caspar_config.json").read_text())
+    saved = json.loads((config_dir / "config.json").read_text())
     assert saved["remote_controllers"] == [{"url": "http://r:5280", "api_key": "remote-secret"}]
 
 
@@ -345,7 +345,7 @@ def test_load_survives_a_read_only_config_dir(monkeypatch):
 def test_v1_plaintext_password_is_hashed_on_load(write_config, config_dir, enabled, hashed):
     write_config({"web_password": "old-pw", "web_password_enabled": enabled})
     cfg = settings.load()
-    raw = (config_dir / "elliotts_caspar_config.json").read_text()
+    raw = (config_dir / "config.json").read_text()
     assert "old-pw" not in raw
     assert "web_password" not in cfg and "web_password_enabled" not in cfg
     assert verify_password("old-pw", cfg["web_password_hash"]) is hashed

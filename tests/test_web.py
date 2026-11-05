@@ -68,7 +68,7 @@ def test_post_config_merges_saves_and_regenerates(client, write_config, config_d
     r = client.post("/api/config", json={"server_name": "New"})
 
     assert r.json() == {"ok": True}
-    saved = json.loads((config_dir / "elliotts_caspar_config.json").read_text())
+    saved = json.loads((config_dir / "config.json").read_text())
     assert saved["server_name"] == "New"
     assert saved["web_port"] == 6000  # untouched fields kept
     assert (exe.parent / "casparcg_inst_1.config").exists()
@@ -76,7 +76,9 @@ def test_post_config_merges_saves_and_regenerates(client, write_config, config_d
 
 
 def test_post_config_rejects_wrong_types(client):
-    assert client.post("/api/config", json={"web_port": "abc"}).status_code == 422
+    # 400 from the Settings model since #6 (was FastAPI's 422); "6000" isn't coerced either.
+    for value in ("abc", "6000", True):
+        assert client.post("/api/config", json={"web_port": value}).status_code == 400
 
 
 def test_export_config(client, write_config):
@@ -93,7 +95,7 @@ def test_import_replaces_everything_except_secrets(client, write_config, config_
         json={"server_name": "Imported", "instances": [], "api_key": "x", "web_password_hash": "y"},
     )
     assert r.json() == {"ok": True}
-    saved = json.loads((config_dir / "elliotts_caspar_config.json").read_text())
+    saved = json.loads((config_dir / "config.json").read_text())
     assert saved == {
         "server_name": "Imported",
         "instances": [],

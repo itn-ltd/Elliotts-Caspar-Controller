@@ -2,12 +2,13 @@
 
 import json
 import shutil
+import threading
 from pathlib import Path
 
 import pytest
-from conftest import FIXTURES, TESTS_DIR, instance
+from conftest import API_KEY, FIXTURES, TESTS_DIR, instance
 
-from caspar_controller import settings
+from caspar_controller import log, settings
 from caspar_controller.caspar import config_xml
 
 GOLDEN = TESTS_DIR / "golden"
@@ -24,7 +25,7 @@ def test_missing_file_gives_defaults_plus_api_key():
 
 def test_v1_channels_file_loads_other_settings(config_dir):
     # The channels/amcp_port migrations themselves never run: see test_known_issues.py.
-    shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "elliotts_caspar_config.json")
+    shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "config.json")
     cfg = settings.load()
     assert cfg["autostart_caspar"] is True
     assert "startup_delay" not in cfg  # never used, dropped on load
@@ -32,11 +33,20 @@ def test_v1_channels_file_loads_other_settings(config_dir):
     assert "amcp_port" not in cfg
 
 
-def test_misspelled_filename_is_renamed(config_dir):
-    (config_dir / "elliotts_casper_config.json").write_text(json.dumps({"server_name": "Old"}))
+@pytest.mark.parametrize("name", settings.LEGACY_NAMES)
+def test_v1_config_beside_the_app_is_copied_on_first_run(config_dir, tmp_path, name):
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    (legacy / name).write_text(json.dumps({"server_name": "Old"}))
     assert settings.load()["server_name"] == "Old"
-    assert (config_dir / "elliotts_caspar_config.json").exists()
-    assert not (config_dir / "elliotts_casper_config.json").exists()
+    assert json.loads((config_dir / "config.json").read_text())["server_name"] == "Old"
+    assert (legacy / name).exists()  # kept for v1.x until it's uninstalled (#12)
+
+
+def test_config_lives_in_programdata_by_default(monkeypatch):
+    monkeypatch.delenv(settings.HOME_ENV)
+    monkeypatch.setenv("PROGRAMDATA", r"D:\PD")
+    assert settings.home_dir() == r"D:\PD\CasparController"
 
 
 def test_instance_fields_are_backfilled(write_config):
@@ -209,3 +219,170 @@ def test_test_patterns_skipped_without_absolute_exe(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config_xml.ensure_test_pattern_images({"caspar_exe_path": "casparcg.exe", "media_path": ""})
     assert not (tmp_path / "media").exists()
+
+
+# ---------------------------------------------------------------- storage
+
+
+def test_profile_seeds_a_new_install(config_dir):
+    profile = {
+        "server_name": "PCR3",
+        "instances": [instance(1, "GFX1")],
+        "api_key": "from-the-profile",  # machine keys are never taken from a profile
+        "caspar_exe_path": r"Z:\Elsewhere\casparcg.exe",
+    }
+    (config_dir / "profile.json").write_text(json.dumps(profile))
+    cfg = settings.load()
+    assert cfg["server_name"] == "PCR3"
+    assert [i["name"] for i in cfg["instances"]] == ["GFX1"]
+    assert cfg["api_key"] != "from-the-profile"
+    assert cfg["caspar_exe_path"] == ""
+    assert (config_dir / "config.json").exists()
+
+
+def test_profile_is_ignored_once_configured(write_config, config_dir):
+    write_config({"server_name": "Mine"})
+    (config_dir / "profile.json").write_text(json.dumps({"server_name": "Profile"}))
+    assert settings.load()["server_name"] == "Mine"
+
+
+def test_invalid_profile_is_ignored(config_dir):
+    bad = {"instances": [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]}
+    (config_dir / "profile.json").write_text(json.dumps(bad))
+    assert settings.load()["instances"] == []
+    assert "Ignored" in log._log[-1]
+
+
+def test_config_is_cached_until_saved(write_config, config_dir):
+    write_config({"server_name": "A"})
+    assert settings.load()["server_name"] == "A"
+    (config_dir / "config.json").write_text(json.dumps({"server_name": "edited by hand"}))
+    assert settings.load()["server_name"] == "A"
+    cfg = settings.load()
+    cfg["server_name"] = "B"
+    assert settings.load()["server_name"] == "A"  # callers get a copy
+    settings.save(cfg)
+    assert settings.load()["server_name"] == "B"
+
+
+def test_reads_never_see_a_half_written_file(config_dir):
+    big = {"instances": [instance(i, f"I{i}") for i in range(1, 300)]}
+    path = config_dir / "config.json"
+    settings.save(big)
+    errors, done = [], threading.Event()
+
+    def writer():
+        try:
+            for n in range(100):
+                settings.save({**big, "server_name": f"S{n}"})
+        except Exception as e:
+            errors.append(e)
+        finally:
+            done.set()
+
+    threading.Thread(target=writer).start()
+    reads = 0
+    while not done.is_set():
+        try:
+            json.loads(path.read_text(encoding="utf-8"))
+            reads += 1
+        except PermissionError:  # Windows: opened just as it was replaced; the next read works
+            continue
+    assert errors == []
+    assert reads > 0
+
+
+# ---------------------------------------------------------------- validation
+
+
+@pytest.mark.parametrize(
+    "insts",
+    [
+        [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)],
+        [instance(1, "A"), instance(2, "B", amcp_port=5250)],  # clashes with A's default
+        [instance(1, "A"), instance(2, "a")],
+        [instance(1, "A", ndi_name="N"), instance(2, "B", ndi_name="n")],
+        [instance(1, "A <b>")],
+        [instance(1, "A", ndi_name='N "1"')],
+        [instance(1, "x" * 65)],
+        [instance(1, "   ")],
+        [instance(1, "GFX1 ")],
+        [instance(1, "GFX+1")],  # these three break unencoded /api/load?instance= URLs
+        [instance(1, "A&B")],
+        [instance(1, "Clip#2")],
+    ],
+)
+def test_duplicate_or_unsafe_instances_rejected(client, insts):
+    r = client.post("/api/config", json={"instances": insts})
+    assert r.status_code == 400
+    assert client.post("/api/config/import", json={"instances": insts}).status_code == 400
+
+
+def test_ports_checked_against_the_saved_base_port(client, write_config):
+    write_config({"amcp_base_port": 6000})
+    insts = [instance(1, "A"), instance(2, "B", amcp_port=6000)]
+    assert client.post("/api/config", json={"instances": insts}).status_code == 400
+
+
+def test_validation_error_says_what_is_wrong(client):
+    insts = [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]
+    detail = client.post("/api/config", json={"instances": insts}).json()["detail"]
+    assert detail == "config: Each instance needs its own AMCP port: 6000 used twice"
+
+
+def test_save_cannot_set_secrets(client, write_config):
+    write_config({})
+    client.post(
+        "/api/config", json={"api_key": "mine", "web_password_hash": "x", "server_name": "S"}
+    )
+    cfg = settings.load()
+    assert (cfg["api_key"], cfg["web_password_hash"], cfg["server_name"]) == (API_KEY, "", "S")
+
+
+def test_names_with_common_punctuation_allowed(client):
+    insts = [instance(1, "GFX 1 (Main) - L3rd's Co.2", ndi_name="PCR3 GFX_1")]
+    assert client.post("/api/config", json={"instances": insts}).status_code == 200
+
+
+def test_problems_in_a_saved_config_dont_stop_it_loading(write_config):
+    insts = [instance(1, "A", amcp_port=6000), instance(2, "B", amcp_port=6000)]
+    write_config({"instances": insts})
+    assert len(settings.load()["instances"]) == 2
+
+
+def test_base_port_change_is_checked_against_saved_instances(client, write_config):
+    write_config(
+        {"instances": [instance(1, "A"), instance(2, "B"), instance(3, "C", amcp_port=6001)]}
+    )
+    assert client.post("/api/config", json={"amcp_base_port": 6000}).status_code == 400  # B: 6001
+    assert client.post("/api/config", json={"amcp_base_port": 65535}).status_code == 400
+    assert client.post("/api/config", json={"amcp_base_port": 7000}).status_code == 200
+
+
+def test_bad_saved_base_port_doesnt_block_unrelated_saves(client, write_config):
+    write_config({"amcp_base_port": "5250"})  # hand-edited
+    assert client.post("/api/config", json={"server_name": "S"}).status_code == 200
+
+
+@pytest.mark.parametrize("content", ["[1, 2]", "{not json", '"text"'])
+@pytest.mark.parametrize("name", ["profile.json", "legacy"])
+def test_bad_first_run_file_is_ignored(config_dir, tmp_path, content, name):
+    if name == "legacy":
+        (tmp_path / "legacy").mkdir()
+        path = tmp_path / "legacy" / settings.LEGACY_NAMES[0]
+    else:
+        path = config_dir / name
+    path.write_text(content)
+    assert settings.load()["instances"] == []
+    assert "Ignored" in log._log[-1]
+
+
+@pytest.mark.parametrize("route", ["import", "profile"])
+def test_v1_password_keys_from_elsewhere_are_dropped(client, config_dir, route):
+    v1 = {"web_password": "x", "web_password_enabled": True}
+    if route == "import":
+        client.post("/api/config/import", json=v1)
+    else:
+        (config_dir / "profile.json").write_text(json.dumps(v1))
+    settings._cache = None
+    assert settings.load()["web_password_hash"] == ""
