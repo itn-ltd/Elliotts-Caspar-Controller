@@ -44,18 +44,28 @@
   <p style="color:var(--muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
 </div>
 
-<!-- API Key -->
+<!-- API Keys -->
 <div class="card" style="margin-bottom:16px">
-  <h2 style="margin-bottom:4px">API Key</h2>
+  <h2 style="margin-bottom:4px">API Keys</h2>
   <p style="color:var(--muted);font-size:13px;margin-bottom:12px">
-    Companion, panels and other controllers send this as an <code>X-API-Key</code> header or <code>?api_key=</code>.
-    Rotating it breaks every device using the old key.
+    Devices send a key as an <code>X-API-Key</code> header or <code>?api_key=</code>.
+    Rotating a key breaks every device using the old one.
   </p>
-  <div style="display:flex;gap:10px">
-    <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
-    <button class="btn btn-secondary" onclick="copyApiKey()" style="flex-shrink:0">Copy</button>
-    <button class="btn btn-danger" onclick="rotateApiKey()" style="flex-shrink:0">Rotate</button>
+  <label>Trigger key <span style="color:var(--muted);font-size:11px">(fires clips and nothing else: give this one to Automator and panels)</span></label>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <input type="text" id="trigger_key" readonly style="flex:1;font-family:Consolas,monospace">
+    <button class="btn btn-secondary" onclick="copyKey('trigger')" style="flex-shrink:0">Copy</button>
+    <button class="btn btn-danger" onclick="rotateKey('trigger')" style="flex-shrink:0">Rotate</button>
   </div>
+  <label>Full API key <span style="color:var(--muted);font-size:11px">(everything: for Companion setups and other controllers)</span></label>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
+    <button class="btn btn-secondary" onclick="copyKey('api')" style="flex-shrink:0">Copy</button>
+    <button class="btn btn-danger" onclick="rotateKey('api')" style="flex-shrink:0">Rotate</button>
+  </div>
+  <label>Allowed addresses <span style="color:var(--muted);font-size:11px">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
+  <textarea id="api_clients" rows="3" style="width:100%;font-family:Consolas,monospace" placeholder="e.g. the Automator PC"></textarea>
+  <button class="btn btn-primary btn-sm" onclick="saveApiClients()" style="margin-top:8px">Save addresses</button>
 </div>
 
 <!-- CasparCG Executable -->
@@ -273,6 +283,7 @@ function loadSettings() {
     document.getElementById('amcp_base_port').value = cfg.amcp_base_port || 5250;
     document.getElementById('web_port').value = cfg.web_port || 5280;
     document.getElementById('autostart_caspar').checked = !!cfg.autostart_caspar;
+    document.getElementById('api_clients').value = (cfg.api_clients || []).join('\n');
     document.getElementById('auto_restart').checked = cfg.auto_restart !== false;
     document.getElementById('hang_timeout').value = cfg.hang_timeout || 30;
     document.getElementById('media_path').value = cfg.media_path || '';
@@ -464,21 +475,34 @@ function savePassword() {
 }
 
 function loadApiKey() {
-  api('/api/key').then(d => { document.getElementById('api_key').value = d.api_key; });
+  api('/api/key').then(d => {
+    document.getElementById('api_key').value = d.api_key;
+    document.getElementById('trigger_key').value = d.trigger_key;
+  });
 }
 
-function copyApiKey() {
-  navigator.clipboard.writeText(document.getElementById('api_key').value)
-    .then(() => toast('API key copied', 'success'))
+const KEY_NAMES = {api: 'API key', trigger: 'Trigger key'};
+
+function copyKey(which) {
+  navigator.clipboard.writeText(document.getElementById(which + '_key').value)
+    .then(() => toast(KEY_NAMES[which] + ' copied', 'success'))
     .catch(() => toast('Copy failed, select the key and copy it manually', 'warning'));
 }
 
-function rotateApiKey() {
-  if (!confirm('Rotate the API key? Every Companion button, panel and remote using the old key stops working.')) return;
-  api('/api/key/rotate', 'POST').then(d => {
-    document.getElementById('api_key').value = d.api_key;
-    toast('API key rotated', 'success');
+function rotateKey(which) {
+  const users = which === 'trigger' ? 'Automator, panel and trigger URL' : 'Companion button, panel and remote';
+  if (!confirm('Rotate the ' + KEY_NAMES[which].toLowerCase() + '? Every ' + users + ' using the old key stops working.')) return;
+  api('/api/key/rotate?key=' + which, 'POST').then(d => {
+    document.getElementById(which + '_key').value = d[which + '_key'];
+    toast(KEY_NAMES[which] + ' rotated', 'success');
   }).catch(() => toast('Failed to rotate', 'error'));
+}
+
+function saveApiClients() {
+  const entries = document.getElementById('api_clients').value.split('\n').map(s => s.trim()).filter(Boolean);
+  api('/api/config', 'POST', {api_clients: entries})
+    .then(() => toast(entries.length ? 'Allowed addresses saved' : 'Any address may use the keys', 'success'))
+    .catch(e => toast(e.message, 'error'));
 }
 
 function exportConfig() {

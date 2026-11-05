@@ -137,12 +137,15 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
 2. In the config file (see [Configuration file](#configuration-file)), set `"web_password_hash": ""` and `"password_change_required": false`.
 3. Start the controller. It's back in first-run mode: set a new password from the controller PC. If `CASPAR_CONTROLLER_INITIAL_PASSWORD` is set, that default applies again, with a forced change.
 
-### API key
+### API keys
 
-- **Find it in Settings → API Key** (Copy and Rotate). It's created automatically on first start.
-- **Send it either way:**
-  - Header (preferred, keeps the key out of URLs and logs): `X-API-Key: <key>`
-  - Query string, for devices that can only send a plain URL: `?api_key=<key>`
+- **Two keys, in Settings → API Keys** (Copy and Rotate each). Both are created on first start.
+  - **Trigger key:** fires clips (`/api/load`, `/api/instance/{id}/load`) and nothing else; anything else gets `403`. Give this one to Automator and panels.
+  - **Full API key:** everything except account settings. For Companion setups that start and stop outputs, and for other controllers.
+- **Send a key either way:**
+  - Header (keeps the key out of URLs and logs): `X-API-Key: <key>`
+  - Query string, for devices that can only call a URL, such as Automator: `?api_key=<key>`
+- **Allowed addresses** (optional): list IPs, subnets or host names, and a key only works from those, so a key copied from a URL is useless elsewhere. Signed-in browsers aren't affected. Host names are looked up when the list changes and every 5 minutes. Refused calls are logged with the caller's address, never the key.
 - **Rotating** creates a new key straight away. Every device using the old one stops working until it's updated.
 - **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**. Saved remote keys are never shown again; leave the field blank to keep the saved one.
 

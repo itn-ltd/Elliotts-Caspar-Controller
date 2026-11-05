@@ -19,8 +19,8 @@ GOLDEN = TESTS_DIR / "golden"
 
 def test_missing_file_gives_defaults_plus_api_key():
     cfg = settings.load()
-    assert {**cfg, "api_key": ""} == settings.DEFAULT_CONFIG
-    assert len(cfg["api_key"]) >= 40
+    assert {**cfg, "api_key": "", "trigger_key": ""} == settings.DEFAULT_CONFIG
+    assert len(cfg["api_key"]) >= 40 and len(cfg["trigger_key"]) >= 40
 
 
 def test_v1_channels_file_loads_other_settings(config_dir):

@@ -95,6 +95,7 @@ def test_export_config(client, write_config):
 
 def test_import_replaces_everything_except_secrets(client, write_config, config_dir):
     write_config({"server_name": "Old", "web_port": 6000, "web_password_hash": "scrypt$aa$bb"})
+    trigger_key = client.get("/api/key").json()["trigger_key"]
     r = client.post(
         "/api/config/import",
         json={"server_name": "Imported", "instances": [], "api_key": "x", "web_password_hash": "y"},
@@ -106,6 +107,7 @@ def test_import_replaces_everything_except_secrets(client, write_config, config_
         "instances": [],
         "remote_controllers": [],
         "api_key": API_KEY,
+        "trigger_key": trigger_key,  # this machine's, like the API key (#25)
         "web_password_hash": "scrypt$aa$bb",
         "password_change_required": False,
     }

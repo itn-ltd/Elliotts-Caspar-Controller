@@ -44,7 +44,7 @@
     </div>
     <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer">
       <input type="checkbox" id="show-key" onchange="build()" style="accent-color:var(--accent)">
-      Show the API key
+      Show the trigger key
     </label>
   </div>
 
@@ -60,9 +60,10 @@
   <h3 style="margin-bottom:12px">How it works</h3>
   <p style="color:var(--muted);font-size:13px;line-height:1.7">
     The trigger is an HTTP GET to this controller, which plays the clip on that output at once.
-    Every trigger needs this controller's API key (Settings → API Key): in the URL as <code>api_key=</code>,
-    or in an <code>X-API-Key</code> header, which keeps it out of URLs and logs.
-    Rotating the key in Settings stops every trigger until it's updated.
+    Triggers use this controller's <strong>trigger key</strong> (Settings → API Keys), which can fire clips
+    and nothing else: in the URL as <code>api_key=</code>, or in an <code>X-API-Key</code> header, which keeps
+    it out of URLs and logs. Settings can also limit which addresses may use the keys.
+    Rotating the trigger key stops every trigger until it's updated.
   </p>
 </div>
 
@@ -75,7 +76,7 @@ let _base = location.origin;
 const _copy = {};  // what each box copies: always the real key, even when hidden
 
 function loadData() {
-  api('/api/key').then(data => { _apiKey = data.api_key; build(); });
+  api('/api/key').then(data => { _apiKey = data.trigger_key; build(); });  // fires clips only
   // The address other machines use, even when this page is open on localhost.
   api('/api/config').then(cfg => { _base = cfg.lan_url; build(); });
   api('/api/status').then(data => {

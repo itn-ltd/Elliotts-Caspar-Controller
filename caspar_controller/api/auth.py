@@ -1,6 +1,12 @@
-"""Sign-in, sessions, the web UI password and the API key."""
+"""Sign-in, sessions, the web UI password, the API keys and who may use them."""
 
+import ipaddress
+import logging
+import re
 import secrets
+import socket
+import time
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -12,6 +18,8 @@ from caspar_controller.api.pages import web_page
 from caspar_controller.auth import key_matches, new_api_key, verify_password
 from caspar_controller.log import log_event
 from caspar_controller.settings import load as load_config, save as save_config, set_password
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -46,6 +54,48 @@ def _session_only(path: str) -> bool:
     )
 
 
+# All the trigger key may do: fire clips, as Automator and panels do.
+_TRIGGER_PATH = re.compile(r"/api/(load|instance/\d+/load)")
+_RESOLVE_EVERY = 300  # seconds between host-name lookups for api_clients
+_resolved: dict = {"entries": None, "at": 0.0, "networks": []}
+
+
+def _networks(entries: list) -> list:
+    """api_clients as networks. Host names are looked up when the list changes, then every 5 min."""
+    now = time.time()
+    if _resolved["entries"] == entries and now - _resolved["at"] < _RESOLVE_EVERY:
+        return _resolved["networks"]
+    networks = []
+    for entry in entries:
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            try:
+                infos = socket.getaddrinfo(entry, None)
+            except OSError as e:
+                log.warning("Couldn't look up %s (api_clients): %s", entry, e)
+                continue
+            networks += [ipaddress.ip_network(i[4][0].split("%")[0]) for i in infos]
+    _resolved.update(entries=list(entries), at=now, networks=networks)
+    return networks
+
+
+def _client_allowed(request: Request, entries: list) -> bool:
+    if not entries:
+        return True
+    try:
+        ip = ipaddress.ip_address(request.client.host)
+    except (AttributeError, ValueError):
+        return False
+    return any(ip in network for network in _networks(entries))
+
+
+def _refuse(request: Request, reason: str) -> JSONResponse:
+    host = request.client.host if request.client else "?"
+    log_event(f"Refused {request.url.path} from {host}: {reason}")  # never the key itself
+    return JSONResponse({"detail": reason[0].upper() + reason[1:]}, status_code=403)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """API needs a key or session; pages need a session (or this PC, until a password is set)."""
 
@@ -65,9 +115,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if path.startswith("/api/"):
             supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
-            if not _session_only(path) and key_matches(supplied, cfg["api_key"]):
-                return await call_next(request)
-            return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
+            full = key_matches(supplied, cfg["api_key"])
+            if _session_only(path) or not (full or key_matches(supplied, cfg["trigger_key"])):
+                return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
+            if not _client_allowed(request, cfg["api_clients"]):
+                return _refuse(request, "this address isn't allowed to use the API keys")
+            if not full and not _TRIGGER_PATH.fullmatch(path):
+                return _refuse(request, "the trigger key can only fire triggers")
+            return await call_next(request)
         if first_run:
             return web_page("setup", status_code=403)
         return RedirectResponse(url="/login")
@@ -84,16 +139,19 @@ class _PasswordChange(BaseModel):
 
 @router.get("/api/key")
 def api_key_get():
-    return {"api_key": load_config()["api_key"]}
+    cfg = load_config()
+    return {"api_key": cfg["api_key"], "trigger_key": cfg["trigger_key"]}
 
 
 @router.post("/api/key/rotate")
-def api_key_rotate():
+def api_key_rotate(key: Literal["api", "trigger"] = "api"):
+    """?key=trigger rotates the trigger key; otherwise the full API key."""
+    name = f"{key}_key"
     cfg = load_config()
-    cfg["api_key"] = new_api_key()
+    cfg[name] = new_api_key()
     save_config(cfg)
-    log_event("API key rotated.")
-    return {"api_key": cfg["api_key"]}
+    log_event(f"{'Trigger' if key == 'trigger' else 'API'} key rotated.")
+    return {name: cfg[name]}
 
 
 @router.post("/api/password")

@@ -110,7 +110,9 @@ def test_rotated_key_replaces_old(anon, password_on):
 
 def test_key_endpoint(client, write_config):
     write_config({})
-    assert client.get("/api/key").json() == {"api_key": API_KEY}
+    keys = client.get("/api/key").json()
+    assert keys["api_key"] == API_KEY
+    assert len(keys["trigger_key"]) >= 40 and keys["trigger_key"] != API_KEY  # made on first load
 
 
 # ---------------------------------------------------------------- pages

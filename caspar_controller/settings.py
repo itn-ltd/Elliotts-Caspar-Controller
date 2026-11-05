@@ -1,6 +1,7 @@
 """Read, validate and save the app config."""
 
 import copy
+import ipaddress
 import json
 import logging
 import os
@@ -27,7 +28,7 @@ from caspar_controller.log import log_event
 
 log = logging.getLogger(__name__)
 
-SECRET_KEYS = ("api_key", "web_password_hash")
+SECRET_KEYS = ("api_key", "trigger_key", "web_password_hash")
 # Belong to this machine: config imports and profiles never change them.
 MACHINE_KEYS = (*SECRET_KEYS, "password_change_required")
 V1_PASSWORD_KEYS = ("web_password", "web_password_enabled")
@@ -51,6 +52,17 @@ def _config_file() -> str:
 
 
 # ---------------------------------------------------------------- validation
+
+
+def _client_address(value: str) -> str:
+    """An IP address, a subnet (10.0.0.0/24) or a host name."""
+    value = value.strip()
+    try:
+        ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        if not re.fullmatch(r"(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?", value):
+            raise ValueError(f"{value!r} isn't an IP address, subnet or host name") from None
+    return value
 
 
 def _text(value: str) -> str:
@@ -141,6 +153,8 @@ class Settings(_Model):
     server_name: Text = ""
     instances: list[Instance] = []
     remote_controllers: list[Remote] = []
+    # Addresses allowed to use either API key; empty: any. Signed-in browsers aren't affected.
+    api_clients: list[Annotated[str, AfterValidator(_client_address)]] = []
 
     @field_validator("instances")
     @classmethod
@@ -208,6 +222,7 @@ DEFAULT_CONFIG = {
     "web_password_hash": "",
     "password_change_required": False,
     "api_key": "",
+    "trigger_key": "",  # fires triggers only: for Automator and panels
 }
 
 
@@ -373,9 +388,10 @@ def _secure_secrets(config: dict) -> bool:
     if initial.strip() and not config["web_password_hash"]:
         set_password(config, initial, must_change=True)
         changed = True
-    if not config["api_key"]:
-        config["api_key"] = new_api_key()
-        changed = True
+    for key in ("api_key", "trigger_key"):
+        if not config[key]:
+            config[key] = new_api_key()
+            changed = True
     return changed
 
 
