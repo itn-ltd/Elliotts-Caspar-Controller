@@ -37,7 +37,7 @@ Use the `code-quality` skill (`.claude/skills/code-quality/`) when writing or re
 
 ## Gotchas
 
-- `core.py` and `gui_launcher.py` are being split up (#4). Until then, the GUI and web server each have their own start/stop code: change both or neither.
+- Start/stop/restart lives in `instances.py`; the API routes and the tray call it. Don't add another copy (#5 turns it into one `InstanceManager`).
 - `noqa` comments in the app code mark known bugs and name the ticket that fixes them. Fix the bug in that ticket; don't just delete the `noqa`.
 - The package is `caspar_controller`; user-facing names change to "Caspar Controller" in #13.
 - The repo is public until it's moved to a private one. Don't commit secrets, real URLs or gallery configs.

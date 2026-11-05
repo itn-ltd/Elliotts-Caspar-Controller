@@ -11,19 +11,14 @@ Apply these to every change. Check your diff against the checklist at the end be
 
 - **Search before you write.** `grep` for an existing function, constant or fixture that already does it. Reuse or extend it.
 - **One implementation per behaviour.** If logic appears twice, extract it into a shared function in the module that owns the concept. Don't copy it with small changes.
-- **One source of truth for values.** Ports, paths, default config, version numbers and the empty-layer dict live in one place and are imported.
+- **One source of truth for values.** Ports, paths, default config, version numbers and the empty-layer dict (`caspar.info.EMPTY_LAYER`) live in one place and are imported.
 - **Same in tests:** use `conftest.py` fixtures, `instance()`, `fake_amcp.py` and `fake_caspar.py`. Add a fixture instead of repeating setup.
 
 Known duplicates to remove when you touch them (don't add more):
 
 | Duplicate | Keep one |
 |---|---|
-| Start/stop/restart sequence in `core.py` (×3) and `gui_launcher.py` (×4) | One `InstanceManager` (#5) |
-| `_load_instance` / `_send_instance_load` | One function |
-| `CasparProcessManager(...)` built in 6 places | One factory |
-| `_get_local_ip` / `_get_network_ip` | One helper |
-| `/api/load` and `/api/instance/{id}/load` bodies | One `_play_clip()` |
-| Empty layer-info dict | One constant |
+| Start/stop/restart sequences in `instances.py` (×3) | One `InstanceManager` (#5) |
 
 ## 2. Where shared code goes
 
@@ -67,7 +62,7 @@ time.sleep(5)  # receivers latch onto the wrong NDI source if outputs start toge
 ## 4. Structure and naming
 
 - Functions do one thing. Split anything you can't describe in one short sentence.
-- Modules stay under about 400 lines. No HTML/CSS/JS inside Python strings (they go in `web/`).
+- Modules stay under about 400 lines. No new HTML/CSS/JS inside Python strings: `api/pages.py` is the only exception until #7 moves it to `web/`.
 - Descriptive names. No abbreviations beyond the domain terms: AMCP, NDI, inst, cfg.
 - Type hints on new or changed function signatures.
 - No dead code: unused parameters, flags nobody sets, unreachable branches.
