@@ -36,6 +36,19 @@ class ConfigUpdate(BaseModel):
     remote_controllers: Optional[list] = None
 
 
+def _keep_ids_unique(insts: list) -> None:
+    """Keep each instance's id, so reordering never retargets a running process.
+
+    A clashing or non-positive id gets the next free number.
+    """
+    next_id = max((i["id"] for i in insts), default=0) + 1
+    seen = set()
+    for inst in insts:
+        if inst["id"] < 1 or inst["id"] in seen:
+            inst["id"], next_id = next_id, next_id + 1
+        seen.add(inst["id"])
+
+
 @router.get("/api/config")
 def api_config_get():
     cfg = load_config()
@@ -51,10 +64,8 @@ def api_config_post(update: ConfigUpdate):
         data["remote_controllers"] = keep_remote_keys(
             data["remote_controllers"], cfg["remote_controllers"]
         )
-    # Renumber instances by array order so the web UI can reorder freely
     if "instances" in data:
-        for i, inst in enumerate(data["instances"], start=1):
-            inst["id"] = i
+        _keep_ids_unique(data["instances"])
     cfg.update(data)
     save_config(cfg)
     regenerate_all_instance_configs(cfg)

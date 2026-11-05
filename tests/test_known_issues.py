@@ -10,53 +10,15 @@ import shutil
 import types
 
 import pytest
-from conftest import FIXTURES, free_port, instance, run_status_worker_once
-from fake_amcp import FakeAMCPServer
+from conftest import FIXTURES, instance
 
 from caspar_controller import settings, tally
 from caspar_controller.caspar.info import parse_layer_info
-from caspar_controller.caspar.process import CasparProcessManager
 
 
 def issue(number: int, why: str, raises: type | tuple = AssertionError) -> pytest.MarkDecorator:
     # `raises` stops an unrelated error (e.g. from a partial fix) passing as "still broken".
     return pytest.mark.xfail(reason=f"#{number}: {why}", raises=raises)
-
-
-# ---------------------------------------------------------------- #5 process ownership, liveness
-
-
-@issue(5, "Start All kills every casparcg.exe on the machine, managed or not")
-def test_start_all_kills_only_owned_processes(
-    client, write_config, recorded_sleeps, no_global_kills, monkeypatch
-):
-    monkeypatch.setattr(CasparProcessManager, "start", lambda self: True)
-    write_config(
-        {
-            "caspar_exe_path": "casparcg.exe",
-            "instances": [instance(1, "GFX1", amcp_port=free_port())],
-        }
-    )
-    client.post("/api/server/start")
-    assert no_global_kills == []
-
-
-@issue(5, "liveness uses INFO 1-1, so a server that rejects INFO shows as stopped")
-def test_liveness_uses_version(client, write_config):
-    with FakeAMCPServer(replies={"INFO": "404 INFO FAILED"}) as s:
-        write_config({"instances": [instance(1, "GFX1", amcp_port=s.port)]})
-        run_status_worker_once()
-        assert client.get("/api/status").json()["instances"][0]["status"] == "live"
-
-
-@issue(
-    5,
-    "saving re-numbers instance IDs by list order, so running managers point at the wrong instance",
-)
-def test_instance_ids_survive_reorder(client, write_config):
-    write_config({"instances": [instance(1, "A"), instance(2, "B")]})
-    client.post("/api/config", json={"instances": [instance(2, "B"), instance(1, "A")]})
-    assert [i["id"] for i in client.get("/api/config").json()["instances"]] == [2, 1]
 
 
 # ---------------------------------------------------------------- #6 settings validation

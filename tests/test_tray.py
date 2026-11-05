@@ -1,17 +1,26 @@
 """What the tray does at launch: reconnect to running CasparCG, then maybe auto-start."""
 
 import pytest
-from conftest import instance
+from conftest import free_port, instance
 
 from caspar_controller import instances, log, tray
 from caspar_controller.caspar.process import CasparProcessManager
 
 
 @pytest.fixture
-def start_calls(monkeypatch):
-    calls = []
-    monkeypatch.setattr(instances, "start_all", lambda cfg: calls.append(cfg) or ([1], []))
-    return calls
+def started(monkeypatch):
+    """Ports the app launched CasparCG on (nothing really starts)."""
+    ports = []
+    monkeypatch.setattr(
+        CasparProcessManager, "start", lambda self: ports.append(self.amcp_port) or True
+    )
+    return ports
+
+
+@pytest.fixture
+def base():
+    """A free base port, so nothing reaches a real CasparCG on 5250."""
+    return free_port()
 
 
 @pytest.fixture
@@ -21,44 +30,72 @@ def exe(tmp_path):
     return str(path)
 
 
-def test_no_autostart_by_default(write_config, exe, start_calls):
-    write_config({"caspar_exe_path": exe, "instances": [instance(1, "GFX1")]})
+def launch() -> None:
     tray.start_caspar()
-    assert start_calls == []
+    instances.manager.wait()
 
 
-def test_autostart_starts_everything(write_config, exe, start_calls):
+def test_no_autostart_by_default(write_config, exe, started, base):
     write_config(
-        {"caspar_exe_path": exe, "autostart_caspar": True, "instances": [instance(1, "GFX1")]}
+        {"caspar_exe_path": exe, "amcp_base_port": base, "instances": [instance(1, "GFX1")]}
     )
-    tray.start_caspar()
-    assert len(start_calls) == 1
-    assert log._log[-1].endswith("Auto-started 1/1 instances")
+    launch()
+    assert started == []
 
 
-def test_autostart_skipped_without_exe(write_config, start_calls):
-    write_config({"autostart_caspar": True, "instances": [instance(1, "GFX1")]})
-    tray.start_caspar()
-    assert start_calls == []
+def test_autostart_starts_everything(write_config, exe, started, base):
+    insts = [instance(1, "GFX1")]
+    write_config(
+        {
+            "caspar_exe_path": exe,
+            "amcp_base_port": base,
+            "autostart_caspar": True,
+            "instances": insts,
+        }
+    )
+    launch()
+    assert started == [base]
+    assert log._log[-1].endswith("Started 1/1 instances")
+
+
+def test_autostart_skipped_without_exe(write_config, started, base):
+    write_config(
+        {"amcp_base_port": base, "autostart_caspar": True, "instances": [instance(1, "GFX1")]}
+    )
+    launch()
+    assert started == []
     assert "set the CasparCG path" in log._log[-1]
 
 
-def test_only_missing_instances_are_auto_started(write_config, exe, start_calls, monkeypatch):
-    monkeypatch.setattr(CasparProcessManager, "adopt_existing", lambda self: self.amcp_port == 5250)
-    missing = []
-    monkeypatch.setattr(instances, "start_missing", lambda cfg: missing.append(cfg) or ([2], []))
+def test_only_missing_instances_are_auto_started(write_config, exe, started, base, monkeypatch):
+    monkeypatch.setattr(CasparProcessManager, "adopt_existing", lambda self: self.amcp_port == base)
     insts = [instance(1, "GFX1"), instance(2, "GFX2")]
-    write_config({"caspar_exe_path": exe, "autostart_caspar": True, "instances": insts})
-    tray.start_caspar()
-    assert list(instances._managers) == [1]
-    assert (len(missing), start_calls) == (1, [])  # start_all would kill instance 1
-    assert log._log[-1].endswith("Auto-started 1/1 instances")
+    write_config(
+        {
+            "caspar_exe_path": exe,
+            "amcp_base_port": base,
+            "autostart_caspar": True,
+            "instances": insts,
+        }
+    )
+    launch()
+    assert started == [base + 1]  # instance 1 is on air: never restarted
+    assert sorted(instances.manager._procs) == [1, 2]
+    assert any("Reconnected to 1 running" in line for line in log._log)
 
 
-def test_running_instances_are_adopted_not_restarted(write_config, exe, start_calls, monkeypatch):
+def test_running_instances_are_adopted_not_restarted(write_config, exe, started, base, monkeypatch):
     monkeypatch.setattr(CasparProcessManager, "adopt_existing", lambda self: True)
+    monkeypatch.setattr(CasparProcessManager, "is_running", lambda self: True)
     insts = [instance(1, "GFX1"), instance(2, "GFX2")]
-    write_config({"caspar_exe_path": exe, "autostart_caspar": True, "instances": insts})
-    tray.start_caspar()
-    assert sorted(instances._managers) == [1, 2]
-    assert start_calls == []  # auto-start would kill the live outputs
+    write_config(
+        {
+            "caspar_exe_path": exe,
+            "amcp_base_port": base,
+            "autostart_caspar": True,
+            "instances": insts,
+        }
+    )
+    launch()
+    assert sorted(instances.manager._procs) == [1, 2]
+    assert started == []

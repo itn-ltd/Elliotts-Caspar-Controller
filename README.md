@@ -64,15 +64,17 @@ Releases include two files:
    - **Name**: shown on the dashboard, and used in clip-trigger URLs
    - **NDI Name**: how the output appears on the network
    - **Type**: `HTML5` for web graphics (enter the URL) or `Media` for clips (optionally a startup AMCP command)
-   - **AMCP Port**: blank to auto-assign (base port + position)
+   - **AMCP Port**: blank to auto-assign (base port + instance number - 1, so reordering never changes it)
 6. Click **Save & Regenerate Configs**, then **Start All** on the dashboard.
 
 ### What Start All does
 
-1. Writes a `casparcg_inst_N.config` for each output next to `casparcg.exe`
-2. Stops every CasparCG process on the machine (only the app's own, once #5 is done)
-3. Starts each output in order, waits for AMCP to answer (up to 90 s), then waits 5 s before the next
+1. Skips outputs already running. It reconnects to a CasparCG already answering on an output's port rather than starting a second one.
+2. Writes a `casparcg_inst_N.config` for each remaining output next to `casparcg.exe`
+3. Starts each in order, waits for AMCP to answer (up to 90 s), then waits 5 s before the next
 4. Sends each output its startup command
+
+It never stops a running output, and never touches a CasparCG on a port the app doesn't use. Start, stop and restart run one at a time in the background: the API answers `202` at once, and progress and failures go to the event log and the tray. Stop All also cancels a Start All that's still going.
 
 ### Output types
 
@@ -166,8 +168,8 @@ All need the key or a signed-in session, except `/api/health`.
 |---|---|---|
 | GET | `/api/health` | Version and up/down, no auth |
 | GET | `/api/status` | All outputs: status, tally, current clip |
-| POST | `/api/server/start`, `/api/server/stop` | Start All / Stop All |
-| POST | `/api/instance/{id}/restart`, `/stop` | One output |
+| POST | `/api/server/start`, `/api/server/stop` | Start All / Stop All (`202`, runs in the background) |
+| POST | `/api/instance/{id}/restart`, `/stop` | One output (`202`) |
 | POST | `/api/instance/{id}/amcp` | Send a raw AMCP command: `{"command": "..."}` |
 | GET | `/api/instance/{id}/load?clip=` | Load a clip by output number |
 | GET | `/api/media` | Clips in the media folder |

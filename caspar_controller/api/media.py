@@ -4,10 +4,11 @@ import os
 
 from fastapi import APIRouter, HTTPException
 
+from caspar_controller import instances
 from caspar_controller.api import instance_or_404
-from caspar_controller.caspar.amcp import AMCPClient, is_amcp_safe
+from caspar_controller.caspar.amcp import is_amcp_safe
 from caspar_controller.log import log_event
-from caspar_controller.settings import instance_amcp_port, load as load_config
+from caspar_controller.settings import load as load_config
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ def _play_clip(cfg: dict, inst: dict, clip: str, loop: bool) -> tuple[str, str]:
             detail="Clip names can't contain quotes, backslashes or control characters",
         )
     cmd = f'PLAY 1-1 "{clip}"' + (" LOOP" if loop else "")
-    return cmd, AMCPClient(port=instance_amcp_port(cfg, inst)).send(cmd)
+    return cmd, instances.manager.client(cfg, inst).send(cmd)
 
 
 @router.get("/api/load")

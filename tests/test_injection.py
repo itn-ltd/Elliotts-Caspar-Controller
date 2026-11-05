@@ -7,6 +7,7 @@ import pytest
 from conftest import TESTS_DIR, amcp_log, free_port, instance, windows_only
 from fake_amcp import FakeAMCPServer
 
+from caspar_controller import instances
 from caspar_controller.caspar import config_xml, process
 from caspar_controller.caspar.amcp import AMCPClient
 from caspar_controller.caspar.process import CasparProcessManager
@@ -27,7 +28,8 @@ def test_caspar_launched_directly_without_a_shell(monkeypatch, tmp_path):
     monkeypatch.setattr(process.subprocess, "Popen", fake_popen)
     exe = str(tmp_path / "casparcg.exe")
     m = CasparProcessManager(exe_path=exe, amcp_port=free_port(), config_filename="c.config")
-    m.start()
+    with pytest.raises(RuntimeError):  # launch errors now reach the caller (#5)
+        m.start()
     # A list (no shell parses the name) starting with the full exe path.
     assert captured["args"] == [exe, "c.config"]
 
@@ -112,10 +114,12 @@ def test_unsafe_saved_startup_command_does_not_break_start(
     inst = instance(1, "Clips", "media", startup_command="CLEAR 1\nKILL", amcp_port=port)
     write_config({"caspar_exe_path": str(caspar_dir / "casparcg.cmd"), "instances": [inst]})
     try:
-        assert client.post("/api/server/start").status_code == 200
+        assert client.post("/api/server/start").status_code == 202
+        instances.manager.wait()
         assert "KILL" not in amcp_log(caspar_dir, port)
     finally:
         client.post("/api/server/stop")
+        instances.manager.wait()
 
 
 # ---------------------------------------------------------------- config validation

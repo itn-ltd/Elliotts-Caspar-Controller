@@ -6,10 +6,10 @@ galleries' build when they are available (see #7).
 """
 
 import pytest
-from conftest import free_port, instance, run_status_worker_once
+from conftest import free_port, instance
 from fake_amcp import EMPTY_LAYER_XML, FakeAMCPServer
 
-from caspar_controller import log, tally
+from caspar_controller import instances, log, tally
 from caspar_controller.caspar.info import parse_layer_info
 
 PLAYING_XML = (
@@ -121,9 +121,9 @@ def test_worker_marks_live_instances_and_clip_info(client, write_config):
                 ],
             }
         )
-        run_status_worker_once()
+        instances.manager.poll_status()
 
-        assert live.commands[0] == "INFO 1-1"  # liveness comes from INFO, not VERSION
+        assert live.commands == ["VERSION", "INFO 1-1"]  # VERSION for liveness, INFO for the clip
         data = client.get("/api/status").json()
 
     assert data["running"] is True
@@ -132,6 +132,14 @@ def test_worker_marks_live_instances_and_clip_info(client, write_config):
     assert one["layer"]["clip"] == "AMB.mp4"
     assert two["status"] == "stopped"
     assert two["layer"] == EMPTY
+
+
+def test_liveness_uses_version(client, write_config):
+    # A live server that rejects INFO (e.g. channel not ready) used to show as stopped.
+    with FakeAMCPServer(replies={"INFO": "404 INFO FAILED"}) as s:
+        write_config({"instances": [instance(1, "GFX1", amcp_port=s.port)]})
+        instances.manager.poll_status()
+        assert client.get("/api/status").json()["instances"][0]["status"] == "live"
 
 
 def test_tally_is_merged_by_ndi_name(client, write_config, monkeypatch):

@@ -1306,8 +1306,8 @@ function loadSettings() {
   });
 }
 
-function computedPort(i) {
-  return (parseInt(document.getElementById('amcp_base_port').value) || 5250) + i;
+function computedPort(inst) {  // matches settings.instance_amcp_port: by id, not position
+  return (parseInt(document.getElementById('amcp_base_port').value) || 5250) + inst.id - 1;
 }
 
 function onBasePortChange() {
@@ -1324,7 +1324,7 @@ function renderInstanceTable(insts) {
     const cmdVal = escapeHtml(inst.startup_command);
     const nameVal = escapeHtml(inst.name);
     const ndiVal  = escapeHtml(inst.ndi_name);
-    const port = computedPort(i);
+    const port = computedPort(inst);
     return `
     <div class="ch-edit-card">
       <div class="ch-edit-top">
@@ -1367,10 +1367,9 @@ function toggleType(i) {
 }
 
 function getFormInstances() {
-  const base = parseInt(document.getElementById('amcp_base_port').value) || 5250;
   return currentInstances.map((inst, i) => {
     const portVal = parseInt(document.getElementById('inst_port_' + i)?.value) || 0;
-    const autoPort = base + i;
+    const autoPort = computedPort(inst);
     return {
       ...inst,
       name:            document.getElementById('inst_name_' + i)?.value ?? inst.name,
@@ -1402,7 +1401,8 @@ function moveDown(i) {
 function addInstance() {
   currentInstances = getFormInstances();
   const n = currentInstances.length + 1;
-  currentInstances.push({ id: n, name: 'INST' + n, ndi_name: 'PCR3 INST' + n,
+  const id = Math.max(0, ...currentInstances.map(i => i.id)) + 1;  // ids are never reused
+  currentInstances.push({ id, name: 'INST' + n, ndi_name: 'PCR3 INST' + n,
                            type: 'html', url: '', startup_command: '', amcp_port: 0 });
   renderInstanceTable(currentInstances);
 

@@ -10,13 +10,27 @@ from caspar_controller.settings import instance_amcp_port
 log = logging.getLogger(__name__)
 
 
+def _exe_dir(config: dict) -> str:
+    """The folder holding casparcg.exe, or "" if the path isn't absolute."""
+    exe = config.get("caspar_exe_path", "")
+    return os.path.dirname(exe) if exe and os.path.isabs(exe) else ""
+
+
 def caspar_instance_config_path(config: dict, inst: dict) -> str:
     """Return the full path for a per-instance casparcg config file."""
-    filename = f"casparcg_inst_{inst['id']}.config"
-    exe = config.get("caspar_exe_path", "")
-    if exe and os.path.isabs(exe):
-        return os.path.join(os.path.dirname(exe), filename)
-    return filename
+    return os.path.join(_exe_dir(config), f"casparcg_inst_{inst['id']}.config")
+
+
+def reset_html_cache(config: dict, inst: dict) -> None:
+    """Wipe an instance's CEF cache just before it starts.
+
+    Otherwise Chromium can show "Restore pages?" or open the config file on start-up.
+    """
+    exe_dir = _exe_dir(config)
+    if exe_dir:
+        cache = os.path.join(exe_dir, "html_cache", f"inst_{inst['id']}")
+        shutil.rmtree(cache, ignore_errors=True)
+        os.makedirs(cache, exist_ok=True)
 
 
 def regenerate_instance_config(config: dict, inst: dict) -> str:
@@ -31,16 +45,10 @@ def regenerate_instance_config(config: dict, inst: dict) -> str:
     video_mode = escape(config["video_mode"])
     ndi_name = escape(inst["ndi_name"])
 
-    exe = config.get("caspar_exe_path", "")
-    if exe and os.path.isabs(exe):
-        exe_dir = os.path.dirname(exe)
-        for subdir in (f"log\\inst_{inst_id}", f"data\\inst_{inst_id}"):
-            os.makedirs(os.path.join(exe_dir, subdir), exist_ok=True)
-        # Wipe the CEF session cache before each start so Chromium never shows
-        # a "Restore pages?" dialog or navigates to the config file on startup.
-        html_cache = os.path.join(exe_dir, f"html_cache\\inst_{inst_id}")
-        shutil.rmtree(html_cache, ignore_errors=True)
-        os.makedirs(html_cache, exist_ok=True)
+    exe_dir = _exe_dir(config)
+    if exe_dir:
+        for subdir in ("log", "data", "html_cache"):
+            os.makedirs(os.path.join(exe_dir, subdir, f"inst_{inst_id}"), exist_ok=True)
 
     xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -102,10 +110,9 @@ def ensure_test_pattern_images(config: dict) -> None:
     """
     media_dir = config.get("media_path", "").strip()
     if not media_dir:
-        exe = config.get("caspar_exe_path", "")
-        if not exe or not os.path.isabs(exe):
+        if not _exe_dir(config):
             return
-        media_dir = os.path.join(os.path.dirname(exe), "media")
+        media_dir = os.path.join(_exe_dir(config), "media")
     os.makedirs(media_dir, exist_ok=True)
     for name in os.listdir(TEST_PATTERNS_DIR):
         target = os.path.join(media_dir, name)

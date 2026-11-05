@@ -21,9 +21,9 @@ from caspar_controller.api import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tally.refresh_monitors()
-    instances.start_status_worker()
+    instances.manager.start_status_worker()
     yield
-    instances.stop_status_worker()
+    instances.manager.stop_status_worker()
     tally.stop_all()
 
 

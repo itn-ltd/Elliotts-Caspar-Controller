@@ -51,19 +51,12 @@ def _config_file() -> str:
 
 
 def instance_amcp_port(cfg: dict, inst: dict) -> int:
-    """Return the AMCP port for an instance.
+    """inst['amcp_port'] if set, otherwise base port + id - 1.
 
-    Uses inst['amcp_port'] if explicitly set (non-zero), otherwise falls back
-    to base_port + position in the instances list.
+    By id, not list position, so reordering never moves a live instance's port.
+    v1.x renumbered ids by position on every save, so existing ports don't change.
     """
-    override = inst.get("amcp_port")
-    if override:
-        return int(override)
-    base = cfg.get("amcp_base_port", 5250)
-    for i, x in enumerate(cfg.get("instances", [])):
-        if x["id"] == inst["id"]:
-            return base + i
-    return base
+    return int(inst.get("amcp_port") or cfg.get("amcp_base_port", 5250) + inst["id"] - 1)
 
 
 def load() -> dict:

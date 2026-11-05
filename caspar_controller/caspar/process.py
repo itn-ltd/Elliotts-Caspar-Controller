@@ -47,61 +47,39 @@ class CasparProcessManager:
         self._client = AMCPClient(port=amcp_port)
 
     def start(self) -> bool:
-        """Launch CasparCG using self.config_filename. Caller must pre-write the config."""
+        """Launch CasparCG and wait for AMCP. Caller writes the config; raises OSError if the exe can't run."""
         if self.is_running():
             return True
-        try:
-            # No shell: names never reach a command line. Full path: works even where
-            # NoDefaultCurrentDirectoryInExePath stops the current folder being searched.
-            self._process = subprocess.Popen(
-                [os.path.abspath(self.exe_path), self.config_filename],
-                cwd=self._exe_dir(),
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            # Poll AMCP every second — move on as soon as it responds.
-            # 90s hard timeout handles slow cold starts without hanging forever.
-            deadline = time.time() + 90
-            while time.time() < deadline:
-                time.sleep(1)
-                if self._client.ping():
-                    return True
-            return False
-        except Exception:
-            return False
+        # No shell: names never reach a command line. Full path: works even where
+        # NoDefaultCurrentDirectoryInExePath stops the current folder being searched.
+        self._process = subprocess.Popen(
+            [os.path.abspath(self.exe_path), self.config_filename],
+            cwd=self._exe_dir(),
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        # 90 s covers slow cold starts; galleries take under 60 s.
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            time.sleep(1)
+            if self._process.poll() is not None:
+                return False
+            if self._client.ping():
+                return True
+        return False
 
     def adopt_existing(self) -> bool:
         """Adopt the CasparCG already listening on this AMCP port. Returns True if adopted."""
-        if not self._client.ping():
-            return False
+        # Listener first: on Windows a connect to a closed port takes about 2 s.
         proc = _listening_on(self.amcp_port)
-        if not proc:
+        if not proc or not self._client.ping():
             return False
         self._process = _AdoptedProcess(_launch_root(proc).pid)
         return True
 
-    @staticmethod
-    def _kill_caspar_on_port(port: int) -> None:
-        """Kill the CasparCG process (and its cmd parent) listening on a specific AMCP port."""
-        proc = _listening_on(port)
-        if proc:
-            CasparProcessManager._kill_tree(_launch_root(proc).pid)
-        time.sleep(0.3)
-
-    @staticmethod
-    def _kill_all_caspar_instances() -> None:
-        """Kill every casparcg.exe (and its cmd.exe parent) found on this machine."""
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                if "casparcg" in proc.name().lower():
-                    CasparProcessManager._kill_tree(_launch_root(proc).pid)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        time.sleep(1.5)
-
     def stop(self) -> None:
         """Stop CasparCG: send BYE then immediately kill the process tree."""
         self._client.send("BYE")
-        time.sleep(0.2)  # brief grace period for graceful shutdown
+        time.sleep(0.2)  # a moment to exit cleanly before the kill
         if self._process and self._process.poll() is None:
             self._kill_tree(self._process.pid)
         self._process = None

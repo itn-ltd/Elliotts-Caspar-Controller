@@ -19,29 +19,25 @@ TITLE = "Elliott's Caspar Controller"
 
 
 def _status_text(_item=None) -> str:
-    live, _ = instances.cached_status()
+    live, _ = instances.manager.cached_status()
     return f"{sum(live.values())}/{len(load_config()['instances'])} instances live"
 
 
 def _restart_all() -> None:
     log_event("Restarting all instances (tray)...")
-    threading.Thread(target=instances.restart_all, args=(load_config(),), daemon=True).start()
+    instances.manager.restart_all()
 
 
 def start_caspar() -> None:
     """Reconnect to CasparCG left running, then auto-start the rest if that's switched on."""
-    adopted = instances.adopt_running()
-    if adopted:
-        log_event(f"Reconnected to {adopted} running CasparCG instance(s).")
+    instances.manager.adopt_running()
     cfg = load_config()
-    if not cfg["autostart_caspar"] or adopted == len(cfg["instances"]):
+    if not cfg["autostart_caspar"]:
         return
     if not os.path.isfile(cfg["caspar_exe_path"]):
         log_event("Auto-start skipped: set the CasparCG path in Settings.")
         return
-    # Never kill outputs that are already on air: only start the missing ones.
-    started, _ = (instances.start_missing if adopted else instances.start_all)(cfg)
-    log_event(f"Auto-started {len(started)}/{len(cfg['instances']) - adopted} instances")
+    instances.manager.start_all()  # skips instances already running, so live outputs stay up
 
 
 class _LastError(logging.Handler):
@@ -87,6 +83,7 @@ def run() -> None:
             return
         webbrowser.open(url)
         threading.Thread(target=_refresh_menu, args=(icon,), daemon=True).start()
+        instances.manager.notify = lambda message: icon.notify(message[:250], TITLE)
         try:
             start_caspar()
         except Exception as e:  # a thread with nobody to report to

@@ -14,11 +14,7 @@ Apply these to every change. Check your diff against the checklist at the end be
 - **One source of truth for values.** Ports, paths, default config, version numbers and the empty-layer dict (`caspar.info.EMPTY_LAYER`) live in one place and are imported.
 - **Same in tests:** use `conftest.py` fixtures, `instance()`, `fake_amcp.py` and `fake_caspar.py`. Add a fixture instead of repeating setup.
 
-Known duplicates to remove when you touch them (don't add more):
-
-| Duplicate | Keep one |
-|---|---|
-| Start/stop/restart sequences in `instances.py` (×3) | One `InstanceManager` (#5) |
+Don't add a second copy of anything that already has one home, e.g. start/stop/restart (`InstanceManager`) or AMCP connections (`instances.manager.client()`).
 
 ## 2. Where shared code goes
 
