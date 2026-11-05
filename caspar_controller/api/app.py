@@ -16,6 +16,7 @@ from caspar_controller.api import (
     pages,
     remotes,
 )
+from caspar_controller.settings import load as load_config
 
 
 @asynccontextmanager
@@ -36,8 +37,10 @@ for router in ROUTERS:
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/web", StaticFiles(directory=pages.WEB_DIR), name="web")
 
 
 @app.get("/api/health")
 def api_health():
-    return {"ok": True, "version": __version__}
+    # Open without sign-in: the login page shows the server name too.
+    return {"ok": True, "version": __version__, "server_name": load_config()["server_name"]}

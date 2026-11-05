@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — Elliott's Caspar Controller</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/http-generator" class="">HTTP Generator</a><a href="/settings" class="active">Settings</a></nav>
+<div id="toast-container"></div>
+<main class="main">
+<h1 style="margin-bottom:24px;color:#fff">Settings<span class="h1-server" data-server-name hidden></span></h1>
+
+<!-- Server Identity -->
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:16px">Server Identity</h2>
+  <div style="display:flex;gap:10px;align-items:flex-end">
+    <div class="form-group" style="flex:1;margin:0">
+      <label>Server Name <span style="color:var(--muted);font-size:11px">(shown in the nav bar and browser tab)</span></label>
+      <input type="text" id="server_name" placeholder="e.g. GFX PC, Studio A, Backup">
+    </div>
+    <button class="btn btn-primary" onclick="saveServerName()" style="flex-shrink:0">Save</button>
+  </div>
+</div>
+
+<!-- Web UI Password -->
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:12px">Web UI Password</h2>
+  <div id="password-warning" style="display:none;background:rgba(245,158,11,0.12);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:12px;color:var(--warning);font-size:13px">
+    ⚠ No password set. Other devices can't use the web UI until you set one.
+  </div>
+  <div style="display:flex;gap:10px;align-items:flex-end">
+    <div class="form-group" id="current-password-group" style="flex:1;margin:0">
+      <label>Current password</label>
+      <input type="password" id="current_password">
+    </div>
+    <div class="form-group" style="flex:1;margin:0">
+      <label>New password <span style="color:var(--muted);font-size:11px">(required, everyone signs in with it)</span></label>
+      <input type="password" id="web_password">
+    </div>
+    <button class="btn btn-primary" onclick="savePassword()" style="flex-shrink:0">Save</button>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
+</div>
+
+<!-- API Key -->
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-bottom:4px">API Key</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">
+    Companion, panels and other controllers send this as an <code>X-API-Key</code> header or <code>?api_key=</code>.
+    Rotating it breaks every device using the old key.
+  </p>
+  <div style="display:flex;gap:10px">
+    <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
+    <button class="btn btn-secondary" onclick="copyApiKey()" style="flex-shrink:0">Copy</button>
+    <button class="btn btn-danger" onclick="rotateApiKey()" style="flex-shrink:0">Rotate</button>
+  </div>
+</div>
+
+<!-- CasparCG Executable -->
+<div class="card" style="margin-bottom:16px" id="exe-card">
+  <h2 style="margin-bottom:4px">CasparCG Executable</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    Download CasparCG Server from
+    <a href="https://github.com/CasparCG/server/releases" target="_blank">github.com/CasparCG/server/releases</a>
+    and extract it, then point to the <code>casparcg.exe</code> inside.
+  </p>
+  <div id="exe-warning" style="display:none;background:rgba(245,158,11,0.12);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:12px;color:var(--warning);font-size:13px">
+    ⚠ CasparCG path is not set — the app cannot start CasparCG until this is configured.
+  </div>
+  <div style="display:flex;gap:10px;align-items:flex-end">
+    <div class="form-group" style="flex:1;margin:0">
+      <label>Path to casparcg.exe</label>
+      <input type="text" id="caspar_exe_path" placeholder="C:\CasparCG\casparcg.exe">
+    </div>
+    <button class="btn btn-primary" onclick="saveExePath()" style="flex-shrink:0">Save Path</button>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">
+    Per-instance config files are written to the same folder as the exe when CasparCG is started.
+  </p>
+</div>
+
+<!-- Output settings + instance editor -->
+<div class="card" id="settings-form">
+  <h2 style="margin-bottom:16px">Output Settings</h2>
+  <div class="grid-2">
+    <div class="form-group">
+      <label>Video Mode</label>
+      <select id="video_mode">
+        <option value="1080p2500">1080p 25fps</option>
+        <option value="1080p5000">1080p 50fps</option>
+        <option value="1080p2997">1080p 29.97fps</option>
+        <option value="1080p3000">1080p 30fps</option>
+        <option value="1080p5994">1080p 59.94fps</option>
+        <option value="1080p6000">1080p 60fps</option>
+        <option value="1080i5000">1080i 50i</option>
+        <option value="1080i5994">1080i 59.94i</option>
+        <option value="1080i6000">1080i 60i</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Base AMCP Port <span style="color:var(--muted);font-size:11px">(instances get base, base+1, base+2…)</span></label>
+      <input type="number" id="amcp_base_port" value="5250" oninput="onBasePortChange()">
+    </div>
+    <div class="form-group">
+      <label>Web UI Port</label>
+      <input type="number" id="web_port" value="5280">
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
+      <input type="checkbox" id="autostart_caspar"
+             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);cursor:pointer">
+      <label for="autostart_caspar" style="margin:0;color:var(--text);cursor:pointer">
+        Auto-start CasparCG when the app launches
+      </label>
+    </div>
+    <div class="form-group" style="grid-column:1/-1">
+      <label>Media Folder Path <span style="color:var(--muted);font-size:11px">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
+      <input type="text" id="media_path" placeholder="e.g. D:\Media or leave blank for default">
+    </div>
+  </div>
+
+  <h2 style="margin:20px 0 8px">Instances</h2>
+
+  <!-- Column header row -->
+  <div style="display:flex;gap:8px;padding:0 12px 6px;color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">
+    <span style="width:48px;flex-shrink:0"></span>
+    <span style="width:86px;flex-shrink:0">Type</span>
+    <span style="flex:0 0 110px">Name</span>
+    <span style="flex:0 0 160px">NDI Name</span>
+    <span style="flex:1">URL / Startup Command</span>
+    <span style="width:90px;flex-shrink:0">AMCP Port</span>
+    <span style="width:36px;flex-shrink:0"></span>
+  </div>
+
+  <div id="instances-tbody"></div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px">
+    <button class="btn btn-primary" onclick="saveSettings()">Save & Regenerate Configs</button>
+    <button class="btn btn-primary btn-sm" onclick="addInstance()">+ Add Instance</button>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:10px">
+    Each instance is a separate CasparCG process with its own AMCP port. Restart CasparCG after saving to apply changes.
+  </p>
+</div>
+
+<!-- Remote Controllers -->
+<div class="card" style="margin-top:16px">
+  <h2 style="margin-bottom:8px">Remote Controllers</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    Add other Elliott's Caspar Controller instances to monitor and control from the dashboard.
+    Use the full URL including port, e.g. <code>http://192.168.1.101:5280</code>.
+    The server name is pulled automatically from each remote.
+  </p>
+  <div id="remotes-list"></div>
+  <div style="display:flex;gap:10px;margin-top:12px">
+    <button class="btn btn-primary btn-sm" onclick="addRemote()">+ Add Remote</button>
+    <button class="btn btn-primary" onclick="saveRemotes()">Save Remote Controllers</button>
+  </div>
+</div>
+
+<!-- Config Import / Export -->
+<div class="card" style="margin-top:16px">
+  <h2 style="margin-bottom:8px">Config Backup</h2>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    Export your full configuration as a JSON file, or import a previously saved config (this will overwrite all current settings).
+  </p>
+  <div style="display:flex;gap:10px">
+    <button class="btn btn-secondary" onclick="exportConfig()">Export Config</button>
+    <button class="btn btn-secondary" onclick="importConfig()">Import Config</button>
+  </div>
+</div>
+
+</main>
+<script src="/web/app.js"></script>
+<script>
+let currentInstances = [];
+let _passwordSet = false;
+
+let _remotes = [];
+
+function renderRemoteList() {
+  const el = document.getElementById('remotes-list');
+  if (!_remotes.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;margin-bottom:8px">No remote controllers added yet.</p>';
+    return;
+  }
+  el.innerHTML = _remotes.map((r, i) => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input type="text" id="remote_url_${i}" value="${escapeHtml(r.url)}"
+             placeholder="http://192.168.1.101:5280"
+             style="flex:1;min-width:0">
+      <input type="password" id="remote_key_${i}" value="${escapeHtml(r.api_key)}"
+             placeholder="${r.api_key_set ? 'Key saved (blank keeps it)' : "Remote's API key"}"
+             style="flex:1;min-width:0">
+      <button class="btn btn-secondary btn-sm" onclick="testRemote(${i})" title="Test connection">Test</button>
+      <button class="btn btn-danger btn-sm" style="flex-shrink:0"
+              onclick="removeRemote(${i})">×</button>
+    </div>`).join('');
+}
+
+function addRemote() {
+  _remotes = getFormRemotes();
+  _remotes.push({ url: '', api_key: '' });
+  renderRemoteList();
+}
+
+function removeRemote(i) {
+  _remotes = getFormRemotes();
+  _remotes.splice(i, 1);
+  renderRemoteList();
+}
+
+function formRemote(i) {
+  return {
+    url: (document.getElementById('remote_url_' + i)?.value || '').trim(),
+    api_key: (document.getElementById('remote_key_' + i)?.value || '').trim(),
+    api_key_set: !!_remotes[i]?.api_key_set,
+  };
+}
+
+function getFormRemotes() {
+  return _remotes.map((_, i) => formRemote(i)).filter(r => r.url);
+}
+
+function testRemote(i) {
+  const remote = formRemote(i);
+  const url = remote.url;
+  if (!url) { toast('Enter a URL first', 'warning'); return; }
+  toast('Testing connection...', 'info');
+  api('/api/remote/test', 'POST', remote).then(d => {
+    if (d.online && !d.authorised) {
+      toast('Reached ' + url + ' but its API key was rejected', 'warning');
+    } else if (d.online) {
+      const name = d.server_name || url;
+      toast('Connected! ' + name + ' (v' + (d.version || '?') + ')', 'success');
+    } else {
+      toast('Could not reach ' + url, 'error');
+    }
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function saveRemotes() {
+  const remotes = getFormRemotes();
+  api('/api/config', 'POST', { remote_controllers: remotes })
+    .then(() => { _remotes = remotes; renderRemoteList(); toast('Remote controllers saved', 'success'); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function loadSettings() {
+  api('/api/config').then(cfg => {
+    const exePath = cfg.caspar_exe_path || '';
+    document.getElementById('caspar_exe_path').value = exePath;
+    document.getElementById('exe-warning').style.display = exePath ? 'none' : 'block';
+    document.getElementById('video_mode').value = cfg.video_mode || '1080p2500';
+    document.getElementById('amcp_base_port').value = cfg.amcp_base_port || 5250;
+    document.getElementById('web_port').value = cfg.web_port || 5280;
+    document.getElementById('autostart_caspar').checked = !!cfg.autostart_caspar;
+    document.getElementById('media_path').value = cfg.media_path || '';
+    document.getElementById('server_name').value = cfg.server_name || '';
+    document.getElementById('password-warning').style.display = cfg.password_set ? 'none' : 'block';
+    document.getElementById('current-password-group').style.display = cfg.password_set ? '' : 'none';
+    _passwordSet = cfg.password_set;
+    _remotes = (cfg.remote_controllers || []);
+    renderRemoteList();
+    currentInstances = (cfg.instances || []).map(inst => ({
+      ...inst,
+      type: inst.type || 'html',
+      startup_command: inst.startup_command || '',
+      url: inst.url || '',
+      amcp_port: inst.amcp_port || 0,
+    }));
+    renderInstanceTable(currentInstances);
+  });
+}
+
+function computedPort(inst) {  // matches settings.instance_amcp_port: by id, not position
+  return (parseInt(document.getElementById('amcp_base_port').value) || 5250) + inst.id - 1;
+}
+
+function onBasePortChange() {
+  currentInstances = getFormInstances();
+  renderInstanceTable(currentInstances);
+
+}
+
+function renderInstanceTable(insts) {
+  const last = insts.length - 1;
+  document.getElementById('instances-tbody').innerHTML = insts.map((inst, i) => {
+    const isHtml = (inst.type || 'html') === 'html';
+    const urlVal = escapeHtml(inst.url);
+    const cmdVal = escapeHtml(inst.startup_command);
+    const nameVal = escapeHtml(inst.name);
+    const ndiVal  = escapeHtml(inst.ndi_name);
+    const port = computedPort(inst);
+    return `
+    <div class="ch-edit-card">
+      <div class="ch-edit-top">
+        <div style="flex-shrink:0;width:48px;display:flex;flex-direction:column;gap:3px">
+          <button class="btn btn-secondary btn-sm" style="height:22px;padding:0 8px;font-size:11px"
+                  ${i===0?'disabled':''} onclick="moveUp(${i})">▲</button>
+          <button class="btn btn-secondary btn-sm" style="height:22px;padding:0 8px;font-size:11px"
+                  ${i===last?'disabled':''} onclick="moveDown(${i})">▼</button>
+        </div>
+        <select id="inst_type_${i}" onchange="toggleType(${i})" style="flex-shrink:0;width:86px">
+          <option value="html" ${isHtml?'selected':''}>HTML5</option>
+          <option value="media" ${!isHtml?'selected':''}>Media</option>
+        </select>
+        <input type="text" id="inst_name_${i}" value="${nameVal}" placeholder="Name"
+               style="flex:0 0 110px;min-width:0">
+        <input type="text" id="inst_ndi_${i}" value="${ndiVal}" placeholder="NDI Name"
+               style="flex:0 0 160px;min-width:0">
+        <input type="number" id="inst_port_${i}" value="${inst.amcp_port || port}"
+               placeholder="${port}" data-auto="${port}"
+               style="flex-shrink:0;width:90px;font-size:11px;padding:5px 8px;text-align:right;margin-left:auto"
+               title="Leave blank or set to 0 to auto-assign (base port + instance number - 1)">
+        <button class="btn btn-danger btn-sm" style="flex-shrink:0;padding:0 10px"
+                onclick="deleteInstance(${i})" title="Remove this instance">×</button>
+      </div>
+      <div class="ch-edit-source">
+        <input type="text" id="inst_url_${i}" value="${urlVal}" placeholder="https://..."
+               style="width:100%;${isHtml?'':'display:none'}">
+        <input type="text" id="inst_cmd_${i}" value="${cmdVal}"
+               placeholder='PLAY 1-1 "CLIP" LOOP — leave blank to just CLEAR'
+               style="width:100%;${!isHtml?'':'display:none'}">
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleType(i) {
+  const isHtml = document.getElementById('inst_type_' + i).value === 'html';
+  document.getElementById('inst_url_' + i).style.display = isHtml ? '' : 'none';
+  document.getElementById('inst_cmd_' + i).style.display = isHtml ? 'none' : '';
+}
+
+function getFormInstances() {
+  return currentInstances.map((inst, i) => {
+    const box = document.getElementById('inst_port_' + i);
+    const portVal = parseInt(box?.value) || 0;
+    // The auto port the box was drawn with: after a base-port change it still shows the old one.
+    const autoPort = Number(box?.dataset.auto) || computedPort(inst);
+    return {
+      ...inst,
+      name:            document.getElementById('inst_name_' + i)?.value ?? inst.name,
+      ndi_name:        document.getElementById('inst_ndi_' + i)?.value ?? inst.ndi_name,
+      type:            document.getElementById('inst_type_' + i)?.value ?? inst.type,
+      url:             document.getElementById('inst_url_' + i)?.value ?? inst.url,
+      startup_command: document.getElementById('inst_cmd_' + i)?.value ?? inst.startup_command,
+      // Only save explicit port if it differs from auto-computed; 0 means "auto"
+      amcp_port:       (portVal && portVal !== autoPort) ? portVal : 0,
+    };
+  });
+}
+
+
+function moveUp(i) {
+  if (i === 0) return;
+  currentInstances = getFormInstances();
+  [currentInstances[i-1], currentInstances[i]] = [currentInstances[i], currentInstances[i-1]];
+  renderInstanceTable(currentInstances);
+}
+
+function moveDown(i) {
+  if (i >= currentInstances.length - 1) return;
+  currentInstances = getFormInstances();
+  [currentInstances[i], currentInstances[i+1]] = [currentInstances[i+1], currentInstances[i]];
+  renderInstanceTable(currentInstances);
+}
+
+function addInstance() {
+  currentInstances = getFormInstances();
+  const n = currentInstances.length + 1;
+  const id = Math.max(0, ...currentInstances.map(i => i.id)) + 1;  // ids are never reused
+  currentInstances.push({ id, name: 'INST' + n, ndi_name: 'PCR3 INST' + n,
+                           type: 'html', url: '', startup_command: '', amcp_port: 0 });
+  renderInstanceTable(currentInstances);
+
+  toast('Instance added', 'success');
+}
+
+function deleteInstance(i) {
+  const name = currentInstances[i]?.name || ('Inst ' + (i+1));
+  if (!confirm('Delete instance "' + name + '"?')) return;
+  currentInstances = getFormInstances();
+  currentInstances.splice(i, 1);
+  renderInstanceTable(currentInstances);
+
+  toast(name + ' deleted', 'warning');
+}
+
+function saveExePath() {
+  const path = document.getElementById('caspar_exe_path').value.trim();
+  api('/api/config', 'POST', { caspar_exe_path: path })
+    .then(() => {
+      toast('CasparCG path saved', 'success');
+      document.getElementById('exe-warning').style.display = path ? 'none' : 'block';
+    })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function saveSettings() {
+  const instances = getFormInstances();
+  const payload = {
+    video_mode:       document.getElementById('video_mode').value,
+    amcp_base_port:   parseInt(document.getElementById('amcp_base_port').value),
+    web_port:         parseInt(document.getElementById('web_port').value),
+    autostart_caspar: document.getElementById('autostart_caspar').checked,
+    media_path:       document.getElementById('media_path').value.trim(),
+    instances,
+  };
+  api('/api/config', 'POST', payload).then(() => {
+    currentInstances = instances;
+    toast('Settings saved — restart CasparCG to apply', 'success');
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function saveServerName() {
+  const name = document.getElementById('server_name').value.trim();
+  api('/api/config', 'POST', { server_name: name })
+    .then(() => { toast('Server name saved', 'success'); location.reload(); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function savePassword() {
+  const pw = document.getElementById('web_password').value;
+  const current = document.getElementById('current_password').value;
+  if (!pw.trim()) { toast('Enter a password', 'warning'); return; }
+  api('/api/password', 'POST', { password: pw, current_password: current })
+    .then(d => {
+      ['web_password', 'current_password'].forEach(id => document.getElementById(id).value = '');
+      if (_passwordSet) { toast('Password changed', 'success'); return; }
+      // First password: this browser was trusted as local, now it needs to sign in.
+      toast('Password saved, please sign in', 'success');
+      setTimeout(() => location.href = '/login', 1200);
+    })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function loadApiKey() {
+  api('/api/key').then(d => { document.getElementById('api_key').value = d.api_key; });
+}
+
+function copyApiKey() {
+  navigator.clipboard.writeText(document.getElementById('api_key').value)
+    .then(() => toast('API key copied', 'success'))
+    .catch(() => toast('Copy failed, select the key and copy it manually', 'warning'));
+}
+
+function rotateApiKey() {
+  if (!confirm('Rotate the API key? Every Companion button, panel and remote using the old key stops working.')) return;
+  api('/api/key/rotate', 'POST').then(d => {
+    document.getElementById('api_key').value = d.api_key;
+    toast('API key rotated', 'success');
+  }).catch(() => toast('Failed to rotate', 'error'));
+}
+
+function exportConfig() {
+  fetch('/api/config/export')
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'elliotts_caspar_config.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast('Config exported', 'success');
+    })
+    .catch(() => toast('Export failed', 'error'));
+}
+
+function importConfig() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      let cfg;
+      try { cfg = JSON.parse(ev.target.result); }
+      catch { toast('Invalid JSON file', 'error'); return; }
+      if (!confirm('This will replace all current settings. Continue?')) return;
+      api('/api/config/import', 'POST', cfg)
+        .then(() => { toast('Config imported', 'success'); loadSettings(); })
+        .catch(e => toast(e.message, 'error'));
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+loadSettings();
+loadApiKey();
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP Generator — Elliott's Caspar Controller</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/http-generator" class="active">HTTP Generator</a><a href="/settings" class="">Settings</a></nav>
+<div id="toast-container"></div>
+<main class="main">
+<h1 style="margin-bottom:24px;color:#fff">HTTP Generator<span class="h1-server" data-server-name hidden></span></h1>
+
+<p style="color:var(--muted);margin-bottom:20px">
+  Select an instance and clip to generate a ready-to-use HTTP GET URL.
+  Any device that can fire an HTTP request — browser, automation system, hardware controller — can use it to load a clip instantly.
+</p>
+
+<div class="card">
+  <h2 style="margin-bottom:20px">URL Builder</h2>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="form-group" style="margin:0">
+      <label>Media Instance</label>
+      <select id="gen-instance" onchange="onSelectionChange()">
+        <option value="">— select instance —</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>Clip</label>
+      <select id="gen-clip" onchange="onSelectionChange()">
+        <option value="">— select clip —</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-group" style="margin-bottom:20px">
+    <label>Playback</label>
+    <select id="gen-loop" onchange="onSelectionChange()" style="max-width:220px">
+      <option value="">Loop continuously (default)</option>
+      <option value="false">Play once then stop</option>
+    </select>
+  </div>
+
+  <div id="gen-url-container" style="display:none">
+    <label style="margin-bottom:8px;display:block">Generated URL — click to copy</label>
+    <div id="gen-url" onclick="copyUrl()"
+         style="background:var(--input-bg);border:2px solid var(--border);border-radius:10px;
+                padding:16px 20px;font-family:Consolas,monospace;font-size:13px;
+                cursor:pointer;word-break:break-all;color:var(--accent);
+                transition:border-color 0.2s,background 0.2s"
+         onmouseenter="this.style.borderColor='var(--accent)'"
+         onmouseleave="this.style.borderColor='var(--border)'"
+         title="Click to copy to clipboard">
+    </div>
+    <p id="gen-copied"
+       style="color:var(--success);font-size:13px;margin-top:8px;display:none;font-weight:600">
+      ✓ Copied to clipboard
+    </p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-bottom:12px">How it works</h3>
+  <p style="color:var(--muted);font-size:13px;line-height:1.7">
+    Send the generated URL as an HTTP GET request from any device on the same network.
+    The app will forward the clip to the selected CasparCG instance immediately.<br><br>
+    Works from a web browser, <code>curl</code>, a Companion button, a touchscreen panel,
+    or any automation system that supports HTTP requests.<br><br>
+    Every request needs this controller's API key (Settings → API Key). The URL above includes it as
+    <code>api_key=</code>. Where a device can send headers, prefer <code>X-API-Key</code> so the key stays out of URLs and logs:
+  </p>
+  <div style="margin-top:12px;background:var(--input-bg);border-radius:8px;padding:12px 16px;font-family:Consolas,monospace;font-size:12px;color:var(--muted)">
+    curl -H "X-API-Key: &lt;key&gt;" "<span class="lan-url"></span>/api/load?instance=Clipplayer&clip=MYCLIP"
+  </div>
+</div>
+
+</main>
+<script src="/web/app.js"></script>
+<script>
+let _mediaInstances = [];
+let _clips = [];
+let _apiKey = '';
+let _base = location.origin;
+
+function loadData() {
+  api('/api/key').then(data => { _apiKey = data.api_key; onSelectionChange(); });
+  // The address other machines use, even when this page is open on localhost.
+  api('/api/config').then(cfg => {
+    _base = cfg.lan_url;
+    document.querySelectorAll('.lan-url').forEach(el => { el.textContent = _base; });
+    onSelectionChange();
+  });
+  api('/api/status').then(data => {
+    _mediaInstances = (data.instances || []).filter(i => i.type === 'media');
+    const sel = document.getElementById('gen-instance');
+    if (_mediaInstances.length === 0) {
+      sel.innerHTML = '<option value="">No media instances configured</option>';
+    } else {
+      sel.innerHTML = '<option value="">— select instance —</option>' +
+        options(_mediaInstances.map(i => i.name));
+    }
+    onSelectionChange();
+  });
+  api('/api/media').then(data => {
+    _clips = data.clips || [];
+    const sel = document.getElementById('gen-clip');
+    sel.innerHTML = '<option value="">— select clip —</option>' +
+      options(_clips);
+    onSelectionChange();
+  });
+}
+
+function onSelectionChange() {
+  const instance = document.getElementById('gen-instance').value;
+  const clip     = document.getElementById('gen-clip').value;
+  const loopVal  = document.getElementById('gen-loop').value;
+  const container = document.getElementById('gen-url-container');
+  const urlEl     = document.getElementById('gen-url');
+
+  if (!instance || !clip) {
+    container.style.display = 'none';
+    return;
+  }
+
+  let url = _base + '/api/load?instance=' + encodeURIComponent(instance) + '&clip=' + encodeURIComponent(clip);
+  if (loopVal === 'false') url += '&loop=false';
+  url += '&api_key=' + encodeURIComponent(_apiKey);
+
+  urlEl.textContent = url;
+  container.style.display = 'block';
+  document.getElementById('gen-copied').style.display = 'none';
+}
+
+function copyUrl() {
+  const url = document.getElementById('gen-url').textContent.trim();
+  if (!url) return;
+  const copied = () => {
+    const el = document.getElementById('gen-copied');
+    el.style.display = 'block';
+    document.getElementById('gen-url').style.background = 'rgba(0,188,212,0.1)';
+    setTimeout(() => {
+      el.style.display = 'none';
+      document.getElementById('gen-url').style.background = 'var(--input-bg)';
+    }, 2000);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(copied).catch(() => fallbackCopy(url, copied));
+  } else {
+    fallbackCopy(url, copied);
+  }
+}
+
+function fallbackCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); cb(); } catch(e) {}
+  document.body.removeChild(ta);
+}
+
+loadData();
+</script>
+</body>
+</html>

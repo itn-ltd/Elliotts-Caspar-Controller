@@ -1,6 +1,7 @@
 """Settings: read, save, export and import the config."""
 
 import json
+import socket
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -22,10 +23,24 @@ from caspar_controller.settings import (
 router = APIRouter()
 
 
+def _lan_ip() -> str:
+    """This PC's address on the network (no packet is sent: UDP connect only picks a route)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
 @router.get("/api/config")
 def api_config_get():
     cfg = load_config()
-    return {**without_secrets(cfg), "password_set": bool(cfg["web_password_hash"])}
+    return {
+        **without_secrets(cfg),
+        "password_set": bool(cfg["web_password_hash"]),
+        "lan_url": f"http://{_lan_ip()}:{cfg['web_port']}",  # for trigger URLs other PCs use
+    }
 
 
 @router.post("/api/config")

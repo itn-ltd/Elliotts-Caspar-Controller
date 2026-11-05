@@ -26,14 +26,19 @@ def test_pages_render(client, path, heading):
     assert heading in r.text
 
 
-def test_server_name_shown_in_title(client, write_config):
-    write_config({"server_name": "Studio A"})
-    assert "<title>Dashboard — Studio A</title>" in client.get("/").text
+def test_pages_are_static_files_and_hold_no_config(client, write_config):
+    # Since #7 the server name and URLs come from the API, filled in by the page's script.
+    write_config({"server_name": "Studio A", "web_port": 5999})
+    page = client.get("/")
+    assert "Studio A" not in page.text
+    assert page.headers["cache-control"] == "no-cache"
+    assert client.get("/web/app.js").status_code == 200
+    assert client.get("/web/app.css").status_code == 200
 
 
-def test_http_generator_uses_web_port(client, write_config):
+def test_trigger_base_url_uses_web_port(client, write_config):
     write_config({"web_port": 5999})
-    assert ":5999/api/load?instance=" in client.get("/http-generator").text
+    assert client.get("/api/config").json()["lan_url"].endswith(":5999")
 
 
 def test_static_files(client):

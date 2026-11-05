@@ -18,7 +18,7 @@ except Exception:
     VERSION = "0.1.0"
 
 datas = []
-for folder in ('caspar_controller/static', 'caspar_controller/caspar/test_patterns'):
+for folder in ('caspar_controller/static', 'caspar_controller/web', 'caspar_controller/caspar/test_patterns'):
     datas.append((folder, folder))
 if os.path.exists('README.md'):
     datas.append(('README.md', '.'))

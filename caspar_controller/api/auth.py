@@ -3,12 +3,12 @@
 import secrets
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from caspar_controller.api import or_400
-from caspar_controller.api.pages import SETUP_REQUIRED, card_page
+from caspar_controller.api.pages import web_page
 from caspar_controller.auth import key_matches, new_api_key, verify_password
 from caspar_controller.log import log_event
 from caspar_controller.settings import load as load_config, save as save_config, set_password
@@ -44,7 +44,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in ("/login", "/api/health") or path.startswith("/static/"):
+        if path in ("/login", "/api/health") or path.startswith(("/static/", "/web/")):
             return await call_next(request)
         cfg = load_config()
         first_run = not cfg["web_password_hash"]
@@ -62,7 +62,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
         if first_run:
-            return HTMLResponse(card_page("Setup required", SETUP_REQUIRED), status_code=403)
+            return web_page("setup", status_code=403)
         return RedirectResponse(url="/login")
 
 
