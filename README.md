@@ -209,11 +209,16 @@ All need the key or a signed-in session, except `/api/health`.
 
 | | |
 |---|---|
-| **File** | `elliotts_caspar_config.json` (an old `elliotts_casper_config.json` is renamed automatically) |
-| **Installed app** | Next to the exe in the install folder |
-| **From source** | Project root (ignored by git, as it holds secrets) |
+| **File** | `%ProgramData%\CasparController\config.json` |
+| **From source** | The same, unless `CASPAR_CONTROLLER_HOME` points somewhere else |
+| **First run** | Copies a v1.x `elliotts_caspar_config.json` (or `casper` spelling) from beside the app or the repo, keeping the original. With none, `profile.json` in the same folder (e.g. deployed by Intune) supplies the instances and other settings. |
 
-- **Editing:** you can edit it directly while the app isn't running, but Settings is easier.
+- **Editing:** Settings is easier. The app reads the file once and caches it, so edit it by hand only while the app isn't running.
+- **Saving:** atomic (a temp file, then a swap), so a crash mid-save can't leave half a file.
+- **Validation:** Save, Import and `profile.json` all go through the same checks:
+  - ports in range, and no two instances on the same AMCP port (explicit or automatic)
+  - instance and NDI names unique, up to 64 letters, numbers, spaces and `- _ . ( ) + & # '`
+  - the CasparCG path must be an existing `casparcg.exe`
 - **Secrets:** `api_key`, `web_password_hash` and the remote controllers' keys live here. Treat the file as sensitive.
 - **Backup:** Export and Import are under **Settings → Config Backup**. Exports never include the password, the API key or any remote's key. Importing keeps this machine's password, API key and saved remote keys, and its CasparCG path if the imported one doesn't exist here.
 
@@ -233,6 +238,7 @@ git clone https://github.com/itn-ltd/Elliotts-Caspar-Controller.git
 cd Elliotts-Caspar-Controller
 python -m venv .venv && .venv\Scripts\activate
 pip install -e ".[dev]"          # add ,ndi for NDI tally
+set CASPAR_CONTROLLER_HOME=%CD%\.home   # optional: keep dev config out of ProgramData
 python -m caspar_controller
 ```
 
@@ -261,7 +267,7 @@ iscc /DMyAppVersion="1.2.3" installer\setup.iss  # installer\Output\ElliottsCasp
 ```
 caspar_controller/
 ├── __main__.py, tray.py   Entry point and tray icon; runs the web server
-├── settings.py            Config file: load, validate, save   → elliotts_caspar_config.json
+├── settings.py            Config: Settings model, load, atomic save → %ProgramData%\CasparController
 ├── auth.py                Password hashing and API keys
 ├── instances.py           Start, stop, restart and live status of each output
 ├── remotes.py             Client for other controllers

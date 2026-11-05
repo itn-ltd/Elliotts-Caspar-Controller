@@ -1,12 +1,9 @@
 """Settings: read, save, export and import the config."""
 
 import json
-import os
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
 
 from caspar_controller import tally
 from caspar_controller.api import or_400
@@ -14,6 +11,7 @@ from caspar_controller.caspar.config_xml import regenerate_all_instance_configs
 from caspar_controller.log import log_event
 from caspar_controller.settings import (
     MACHINE_KEYS,
+    foreign_config,
     keep_remote_keys,
     load as load_config,
     save as save_config,
@@ -24,31 +22,6 @@ from caspar_controller.settings import (
 router = APIRouter()
 
 
-class ConfigUpdate(BaseModel):
-    caspar_exe_path: Optional[str] = None
-    amcp_base_port: Optional[int] = None
-    web_port: Optional[int] = None
-    video_mode: Optional[str] = None
-    autostart_caspar: Optional[bool] = None
-    media_path: Optional[str] = None
-    server_name: Optional[str] = None
-    instances: Optional[list] = None
-    remote_controllers: Optional[list] = None
-
-
-def _keep_ids_unique(insts: list) -> None:
-    """Keep each instance's id, so reordering never retargets a running process.
-
-    A clashing or non-positive id gets the next free number.
-    """
-    next_id = max((i["id"] for i in insts), default=0) + 1
-    seen = set()
-    for inst in insts:
-        if inst["id"] < 1 or inst["id"] in seen:
-            inst["id"], next_id = next_id, next_id + 1
-        seen.add(inst["id"])
-
-
 @router.get("/api/config")
 def api_config_get():
     cfg = load_config()
@@ -56,16 +29,16 @@ def api_config_get():
 
 
 @router.post("/api/config")
-def api_config_post(update: ConfigUpdate):
+def api_config_post(update: dict):
     cfg = load_config()
-    data = update.model_dump(exclude_none=True)
-    or_400(validate_config, data)
+    # Only the Settings fields come back, so secrets can't be set here. Ports are checked
+    # against the saved base port unless this save changes it.
+    data = {k: v for k, v in update.items() if v is not None}
+    data = or_400(validate_config, {"amcp_base_port": cfg["amcp_base_port"], **data})
     if "remote_controllers" in data:
         data["remote_controllers"] = keep_remote_keys(
             data["remote_controllers"], cfg["remote_controllers"]
         )
-    if "instances" in data:
-        _keep_ids_unique(data["instances"])
     cfg.update(data)
     save_config(cfg)
     regenerate_all_instance_configs(cfg)
@@ -94,12 +67,8 @@ async def api_config_import(request: Request):
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Config must be a JSON object")
     current = load_config()
-    # Another PC's CasparCG path is meaningless here: keep this PC's.
-    if "caspar_exe_path" in body and not os.path.isfile(body["caspar_exe_path"] or ""):
-        body["caspar_exe_path"] = current["caspar_exe_path"]
-    or_400(validate_config, body)
     # Imports never change this machine's password, API key or forced-change flag.
-    body = {k: v for k, v in body.items() if k not in MACHINE_KEYS}
+    body = or_400(foreign_config, body, current["caspar_exe_path"])
     body["remote_controllers"] = keep_remote_keys(
         body.get("remote_controllers", []), current["remote_controllers"]
     )

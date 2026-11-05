@@ -40,4 +40,5 @@ Use the `code-quality` skill (`.claude/skills/code-quality/`) when writing or re
 - `instances.manager` (`InstanceManager`) is the only thing that creates or controls CasparCG processes. Start/stop/restart are jobs on its one worker thread; tests call `instances.manager.wait()` after submitting one.
 - `noqa` comments in the app code mark known bugs and name the ticket that fixes them. Fix the bug in that ticket; don't just delete the `noqa`.
 - The package is `caspar_controller`; user-facing names change to "Caspar Controller" in #13.
+- Config is `%ProgramData%\CasparController\config.json` (`CASPAR_CONTROLLER_HOME` overrides it), read once and cached; `settings.save()` clears the cache. Tests get a temp home from `conftest.py`.
 - The repo is public until it's moved to a private one. Don't commit secrets, real URLs or gallery configs.

@@ -82,7 +82,10 @@ def config_dir(tmp_path, monkeypatch):
     monkeypatch.delenv(settings.INITIAL_PASSWORD_ENV, raising=False)
     d = tmp_path / "app"
     d.mkdir()
-    monkeypatch.setattr(settings, "_config_dir", lambda: str(d))
+    monkeypatch.setenv(settings.HOME_ENV, str(d))
+    # Never pick up the real v1.x config beside the repo (it holds a real API key).
+    monkeypatch.setattr(settings, "LEGACY_DIR", str(tmp_path / "legacy"))
+    monkeypatch.setattr(settings, "_cache", None)
     return d
 
 
@@ -92,7 +95,8 @@ def write_config(config_dir):
 
     def _write(cfg: dict) -> dict:
         cfg = {"api_key": API_KEY, **cfg}
-        (config_dir / "elliotts_caspar_config.json").write_text(json.dumps(cfg), encoding="utf-8")
+        (config_dir / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+        settings._cache = None  # load() reads the file again
         return cfg
 
     return _write

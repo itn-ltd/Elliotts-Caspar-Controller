@@ -12,6 +12,8 @@ version.txt
 elliotts_casper_config.json
 # Holds the API key and password hash once the app has run.
 elliotts_caspar_config.json
+# Dev config home (CASPAR_CONTROLLER_HOME), same secrets.
+.home/
 casparcg.config
 log/
 media/
