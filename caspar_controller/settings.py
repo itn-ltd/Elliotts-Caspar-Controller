@@ -240,9 +240,12 @@ def foreign_config(data: dict, this_exe: str) -> dict:
     """Validate a config from elsewhere (an import or a profile) for use on this PC."""
     if not isinstance(data, dict):
         raise ValueError("Config must be a JSON object")
-    # v1.x password keys too: load() would turn them into this machine's password. Older
-    # formats (a v1.x export) are converted first, so they're checked as they'll be saved.
-    data = _upgrade({k: v for k, v in data.items() if k not in (*MACHINE_KEYS, *V1_PASSWORD_KEYS)})
+    # v1.x password keys too: load() would turn them into this machine's password.
+    data = {k: v for k, v in data.items() if k not in (*MACHINE_KEYS, *V1_PASSWORD_KEYS)}
+    try:  # older formats (a v1.x export), so they're checked as they'll be saved
+        data = _upgrade(data)
+    except (AttributeError, TypeError):
+        pass  # a malformed shape: validation below says what's wrong
     # Another PC's CasparCG path is meaningless here: keep this PC's.
     if "caspar_exe_path" in data and not os.path.isfile(data["caspar_exe_path"] or ""):
         data["caspar_exe_path"] = this_exe
