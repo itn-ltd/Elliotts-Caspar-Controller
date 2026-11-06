@@ -43,15 +43,24 @@ def _trusted_local(request: Request) -> bool:
 
 
 _CHANGE_PASSWORD_PATHS = ("/change-password", "/api/password", "/logout")
-# Account control and CasparCG's own console: never with the API key, which lives in
-# panel configs and URLs.
+# Account control: never with the API key, which lives in panel configs and URLs.
 _SESSION_ONLY_PATHS = ("/api/password", "/api/key", "/api/key/rotate")
 
 
-def _session_only(path: str) -> bool:
-    return path in _SESSION_ONLY_PATHS or (
-        path.startswith("/api/instance/") and path.endswith("/console")
-    )
+def _supplied_key(request: Request) -> str | None:
+    return request.headers.get("x-api-key") or request.query_params.get("api_key")
+
+
+def still_allowed(request: Request) -> bool:
+    """For a long-lived stream: is the sign-in or key it opened with still good?"""
+    token = request.cookies.get("session")
+    if token:
+        return token in _sessions  # sign-out and password changes end sessions
+    cfg = load_config()
+    supplied = _supplied_key(request)
+    if supplied:
+        return key_matches(supplied, cfg["api_key"])
+    return not cfg["web_password_hash"] and _trusted_local(request)
 
 
 # All the trigger key may do: fire clips, as Automator and panels do.
@@ -114,9 +123,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if first_run and _trusted_local(request):
             return await call_next(request)
         if path.startswith("/api/"):
-            supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
+            supplied = _supplied_key(request)
             full = key_matches(supplied, cfg["api_key"])
-            if _session_only(path) or not (full or key_matches(supplied, cfg["trigger_key"])):
+            if path in _SESSION_ONLY_PATHS or not (full or key_matches(supplied, cfg["trigger_key"])):
                 return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
             if not _client_allowed(request, cfg["api_clients"]):
                 return _refuse(request, "this address isn't allowed to use the API keys")

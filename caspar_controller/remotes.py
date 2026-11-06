@@ -15,6 +15,11 @@ class RemoteKeyRejected(Exception):
     """The remote answered 401: its saved API key is wrong."""
 
 
+# Everything a remote call can raise: key rejected, unreachable or an error status, or a
+# reply that isn't a controller's JSON object.
+ERRORS = (RemoteKeyRejected, requests.RequestException, ValueError)
+
+
 def _call(remote: dict, method: str, path: str, timeout: float = 5, **kwargs) -> dict:
     """Request another controller's API with that controller's key; its JSON reply."""
     url = remote.get("url", "").rstrip("/")
@@ -29,7 +34,11 @@ def _call(remote: dict, method: str, path: str, timeout: float = 5, **kwargs) ->
     )
     if r.status_code == 401:
         raise RemoteKeyRejected
-    return r.json()
+    r.raise_for_status()  # a 404 or 500 from the remote is a failure, not "OK"
+    data = r.json()
+    if not isinstance(data, dict):
+        raise ValueError("Not a Caspar Controller reply")
+    return data
 
 
 def health(remote: dict) -> dict:
@@ -45,11 +54,11 @@ def server_action(remote: dict, action: Literal["start", "stop"]) -> dict:
 
 
 def instance_action(remote: dict, inst_id: int, action: Literal["restart", "stop"]) -> dict:
-    return _call(remote, "POST", f"/api/instance/{int(inst_id)}/{action}")
+    return _call(remote, "POST", f"/api/instance/{inst_id}/{action}")
 
 
 def amcp(remote: dict, inst_id: int, command: str) -> dict:
-    return _call(remote, "POST", f"/api/instance/{int(inst_id)}/amcp", json={"command": command})
+    return _call(remote, "POST", f"/api/instance/{inst_id}/amcp", json={"command": command})
 
 
 def remote_status(idx: int, remote: dict) -> dict:
@@ -66,7 +75,7 @@ def remote_status(idx: int, remote: dict) -> dict:
         data = _call(remote, "GET", "/api/status", timeout=6)
     except RemoteKeyRejected:
         return {**offline, "online": True, "auth_error": True}
-    except (requests.RequestException, ValueError):
+    except ERRORS:
         return offline
     server_name = data.get("server_name", "").strip()
     if server_name:

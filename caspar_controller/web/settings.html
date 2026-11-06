@@ -200,6 +200,7 @@ let currentInstances = [];
 let _passwordSet = false;
 
 let _remotes = [];
+let _savedRemotes = [];  // what the server holds (keys never sent back): Test checks these
 
 function renderRemoteList() {
   const el = document.getElementById('remotes-list');
@@ -249,8 +250,12 @@ function testRemote(i) {
   const remote = formRemote(i);
   const url = remote.url;
   if (!url) { toast('Enter a URL first', 'warning'); return; }
-  // Test checks the saved remote (the server never contacts an unsaved URL).
-  if (url !== (_remotes[i] || {}).url || remote.api_key) {
+  // Test checks the saved remote (the server never contacts an unsaved URL), so the form
+  // must match what's saved: same rows in the same order, and no key typed but not saved.
+  const form = _remotes.map((_, n) => formRemote(n));
+  const unsaved = form.length !== _savedRemotes.length
+    || form.some((r, n) => r.url !== _savedRemotes[n].url || r.api_key);
+  if (unsaved) {
     toast('Save Remote Controllers first, then Test', 'warning');
     return;
   }
@@ -270,7 +275,14 @@ function testRemote(i) {
 function saveRemotes() {
   const remotes = getFormRemotes();
   api('/api/config', 'POST', { remote_controllers: remotes })
-    .then(() => { _remotes = remotes; renderRemoteList(); toast('Remote controllers saved', 'success'); })
+    .then(() => api('/api/config'))
+    .then(cfg => {
+      // Show what the server saved, so typed keys don't go back into the page.
+      _remotes = cfg.remote_controllers || [];
+      _savedRemotes = _remotes.map(r => ({...r}));
+      renderRemoteList();
+      toast('Remote controllers saved', 'success');
+    })
     .catch(e => toast(e.message, 'error'));
 }
 
@@ -292,6 +304,7 @@ function loadSettings() {
     document.getElementById('current-password-group').style.display = cfg.password_set ? '' : 'none';
     _passwordSet = cfg.password_set;
     _remotes = (cfg.remote_controllers || []);
+    _savedRemotes = _remotes.map(r => ({...r}));
     renderRemoteList();
     currentInstances = (cfg.instances || []).map(inst => ({
       ...inst,
@@ -484,9 +497,7 @@ function loadApiKey() {
 const KEY_NAMES = {api: 'API key', trigger: 'Trigger key'};
 
 function copyKey(which) {
-  navigator.clipboard.writeText(document.getElementById(which + '_key').value)
-    .then(() => toast(KEY_NAMES[which] + ' copied', 'success'))
-    .catch(() => toast('Copy failed, select the key and copy it manually', 'warning'));
+  copyText(document.getElementById(which + '_key').value, KEY_NAMES[which] + ' copied');
 }
 
 function rotateKey(which) {
