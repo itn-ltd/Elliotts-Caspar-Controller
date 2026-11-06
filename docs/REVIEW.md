@@ -449,10 +449,10 @@ All phases land on the `feature/v2-refactor` branch and ship together; there's n
 
 Done in #1, #2 and #3.
 
-- [x] **Test safety net, before any other change:** `tests/`, `pytest` in CI, `fake_amcp.py`, and the characterisation suite (4.10) on unchanged code. *Done when:* `pytest` runs on every PR, and every 4.10 row has a passing or xfail test that keeps passing through the refactor.
-- [x] **API key and session auth** on all `/api/*`; remove localhost bypass. *Done when:* auth-matrix test passes for every route except `/api/health`.
+- [x] **Test safety net, before any other change:** `tests/`, `pytest` in CI, `fake_amcp.py`, and the characterisation suite (4.10) on unchanged code. *Done when:* `pytest` runs on every PR, and every 4.10 row has a passing or xfail test that keeps passing through the refactor. *Rows:* config generation, loading and ports in `test_config.py`; start sequence in `test_start_sequence.py`; triggers in `test_triggers.py`; status and clip info in `test_status.py`; media in `test_media.py`.
+- [x] **API key and session auth** on all `/api/*`; remove localhost bypass. *Done when:* auth-matrix test passes for every route except `/api/health`. *Note:* the old bypass is gone, but one narrower trust stays by design: until a password is set, a browser on the controller PC itself (addressing it as localhost, same-origin) gets in, so first-run setup is possible. It ends when a password is set (`test_first_run_this_pc_has_access`).
 - [x] **`StaticFiles` mount.** *Done when:* `/static/C:/Windows/win.ini` and `/static/../pyproject.toml` return 404.
-- [x] **Launch CasparCG without `cmd /k`.** *Done when:* an instance named `A | B & C <D>` starts and the process tree is only `casparcg.exe`.
+- [x] **Launch CasparCG without `cmd /k`.** *Done when:* an instance named `A | B & C <D>` starts and the process tree is only `casparcg.exe`. *Note:* the real exe is launched directly with no shell; the process-tree test's tree includes `cmd.exe` only because its fake CasparCG is a `.cmd` file.
 - [x] **Hash the password; never return it.** *Done when:* `/api/config` contains no `web_password`.
 - [x] **Disable the self-updater.** *Done when:* no requests to `api.github.com`.
 - [x] **Escape generated XML and UI text.** *Done when:* names containing `<&"--` give valid XML and render as text.
@@ -461,7 +461,7 @@ Done in #1, #2 and #3.
 
 Done in #4, #5 and #6. Instance IDs stayed integers rather than UUIDs, so existing `/api/instance/{id}` panel URLs keep working. Adoption goes by the process on each instance's AMCP port, not a PID file.
 
-- [x] **New package layout** (4.1), moving code before changing it. *Done when:* tests pass, `core.py` and `gui_launcher.py` are gone, no module over ~400 lines.
+- [x] **New package layout** (4.1), moving code before changing it. *Done when:* tests pass, `core.py` and `gui_launcher.py` are gone, no module over ~400 lines. *Note:* `api/pages.py` (the page HTML) was exempt until Phase 2.1 moved the pages to `web/`.
 - [x] **`InstanceManager` as single owner**; remove `_sync_api_managers` and GUI duplicates. *Done when:* only `instances.py` constructs processes, and concurrent Start All runs once.
 - [x] **Non-blocking start/restart.** *Done when:* `POST /api/server/start` returns in under 200 ms.
 - [x] **Stable instance IDs.** *Done when:* reordering while live still stops the right process.
