@@ -1,7 +1,7 @@
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Regular.ttf'); font-weight: 400; }
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Light.ttf');   font-weight: 300; }
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Medium.ttf');  font-weight: 500; }
-@font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Bold.ttf');    font-weight: 700; }
+@font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Bold.ttf');    font-weight: 500; }
 
 /* Company theme: the shared tokens, as other company apps use them. Pages set <html class="dark">. */
 .dark {
@@ -71,8 +71,8 @@ body {
 ::selection { background: var(--selection); color: var(--background); }
 a { color: var(--primary-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1 { font-size: 24px; font-weight: 700; color: var(--text-strong); }
-h2 { font-size: 18px; font-weight: 600; color: var(--text-strong); }
+h1 { font-size: 24px; font-weight: 500; color: var(--text-strong); }
+h2 { font-size: 18px; font-weight: 500; color: var(--text-strong); }
 h3 { font-size: 15px; font-weight: 500; color: var(--text-secondary); }
 code { background: var(--surface-glass); border-radius: var(--radius-xs); padding: 1px 5px; color: var(--text-secondary); }
 
@@ -87,12 +87,12 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .itn-logo {
   display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px;
   border: 2px solid var(--text-strong); border-radius: var(--radius-full);
-  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.5px;
 }
-.brand-name { font-size: 22px; font-weight: 700; }
+.brand-name { font-size: 22px; font-weight: 500; }
 .topnav { display: flex; gap: 4px; flex-wrap: wrap; }
 .topnav a {
-  padding: 8px 16px; border-radius: var(--radius-md); font-weight: 600; font-size: 15px;
+  padding: 8px 16px; border-radius: var(--radius-md); font-weight: 500; font-size: 15px;
   color: var(--text-secondary); transition: background 0.15s, color 0.15s;
 }
 .topnav a:hover { color: var(--text-strong); background: var(--surface-glass); text-decoration: none; }
@@ -101,7 +101,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .topbar-server { color: var(--text-muted); font-weight: 500; }
 .signout {
   display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
-  color: var(--text-secondary); font: 600 15px 'ITVReem', sans-serif;
+  color: var(--text-secondary); font: 500 15px 'ITVReem', sans-serif;
 }
 .signout:hover { color: var(--text-strong); }
 
@@ -118,7 +118,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .stat {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 20px;
 }
-.stat-label { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 600; color: var(--text-strong); }
+.stat-label { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 500; color: var(--text-strong); }
 .stat-icon {
   display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
   border-radius: var(--radius-full); background: var(--surface-glass);
@@ -127,7 +127,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .icon-error { color: var(--error); background: var(--error-bg); }
 .icon-warning { color: var(--warning); background: var(--warning-bg); }
 .icon-primary { color: var(--primary-text); background: var(--primary-soft); }
-.stat-value { display: flex; align-items: center; font-size: 32px; font-weight: 700; color: var(--text-strong); margin: 14px 0 4px; }
+.stat-value { display: flex; align-items: center; font-size: 32px; font-weight: 500; color: var(--text-strong); margin: 14px 0 4px; }
 .stat-sub { color: var(--text-muted); font-size: 13px; }
 
 /* PANELS: the big rounded containers, with a header row or a tab row */
@@ -144,7 +144,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .tab {
   display: inline-flex; align-items: center; gap: 8px; padding: 18px 16px 16px; margin-bottom: -1px;
   background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
-  color: var(--text-muted); font: 600 15px 'ITVReem', sans-serif;
+  color: var(--text-muted); font: 500 15px 'ITVReem', sans-serif;
 }
 .tab:hover { color: var(--text-strong); }
 .tab.active { color: var(--text-strong); border-bottom-color: var(--primary); }
@@ -183,8 +183,8 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 /* The page's main action (Start All, Sign In): the CTA gradient */
 .btn-cta       { background: var(--cta-gradient); color: #fff; border-radius: var(--radius-lg); }
 .btn-cta:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-danger    { background: var(--error-border); color: #fff; }
-.btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
+.btn-danger    { background: var(--error-bg); color: var(--error); border-color: rgb(251 113 133 / 0.35); }
+.btn-danger:hover:not(:disabled) { background: rgb(244 63 94 / 0.25); }
 .btn-success   { background: var(--success-bg); color: var(--success); border-color: rgb(110 231 183 / 0.3); }
 .btn-success:hover:not(:disabled) { background: rgb(16 185 129 / 0.25); }
 .btn-warning   { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
@@ -195,7 +195,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 /* BADGES */
 .badge {
   display: inline-block; padding: 3px 10px; border-radius: var(--radius-full);
-  font-size: 12px; font-weight: 600; border: 1px solid transparent;
+  font-size: 12px; font-weight: 500; border: 1px solid transparent;
 }
 .badge-success { background: var(--success-bg); color: var(--success); border-color: rgb(110 231 183 / 0.3); }
 .badge-error   { background: var(--error-bg);   color: var(--error);   border-color: rgb(251 113 133 / 0.3); }
@@ -283,12 +283,12 @@ label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size:
 }
 .channel-card:hover { border-color: var(--border-strong); }
 .channel-card .ch-num {
-  font-size: 11px; color: var(--text-hint); font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+  font-size: 11px; color: var(--text-hint); font-weight: 500; text-transform: uppercase; letter-spacing: 1px;
 }
-.channel-card .ch-name { font-size: 18px; font-weight: 700; color: var(--text-strong); }
+.channel-card .ch-name { font-size: 18px; font-weight: 500; color: var(--text-strong); }
 .channel-card .ch-ndi  { font-size: 12px; color: var(--text-muted); }
 .clip-info { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clip-info .clip-name { color: var(--text-strong); font-weight: 600; }
+.clip-info .clip-name { color: var(--text-strong); font-weight: 500; }
 .clip-progress { width: 100%; height: 4px; background: var(--border); border-radius: var(--radius-xs); overflow: hidden; margin-top: 2px; }
 .clip-progress-bar { height: 100%; background: var(--cta-gradient); border-radius: var(--radius-xs); }
 .clip-remaining { color: var(--error); }
@@ -314,7 +314,7 @@ label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size:
 }
 .tally-badge-program, .tally-badge-preview {
   display: inline-flex; align-items: center; gap: 4px; border-radius: var(--radius-full);
-  padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: .5px;
+  padding: 2px 8px; font-size: 10px; font-weight: 500; letter-spacing: .5px;
 }
 .tally-badge-program { background: var(--error-border); color: #fff; animation: tally-pulse 1s infinite; }
 .tally-badge-preview { background: var(--warning); color: var(--background); }
@@ -331,7 +331,7 @@ label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size:
   user-select: none; transition: border-color 0.15s;
 }
 .remote-header:hover { border-color: var(--border-strong); }
-.remote-name { font-weight: 700; font-size: 16px; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.remote-name { font-weight: 500; font-size: 16px; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .remote-chevron {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: var(--radius-sm); flex-shrink: 0;
@@ -354,7 +354,7 @@ label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size:
   border-radius: var(--radius-full); padding: 4px 12px; font-size: 12px; white-space: nowrap;
   background: var(--surface-glass); border: 1px solid var(--border-strong); color: var(--text-muted);
 }
-.chip-success { background: var(--success-bg); border-color: rgb(110 231 183 / 0.3); color: var(--success); font-weight: 600; }
+.chip-success { background: var(--success-bg); border-color: rgb(110 231 183 / 0.3); color: var(--success); font-weight: 500; }
 
 /* Console side panel (console.js) */
 #console-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 50; }
