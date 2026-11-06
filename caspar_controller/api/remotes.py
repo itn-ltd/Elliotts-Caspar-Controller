@@ -31,6 +31,7 @@ def _relay(call, *args):
 
 @router.get("/api/remotes")
 def api_remotes():
+    """Each Remote Controller's status, without its key."""
     saved = load_config().get("remote_controllers", [])
     if not saved:
         return {"remotes": []}
@@ -40,6 +41,7 @@ def api_remotes():
 
 @router.get("/api/remote/{idx}/media")
 def api_remote_media(idx: int):
+    """A Remote Controller's clips."""
     remote = _get_remote(idx)
     try:
         return remotes.media(remote)
@@ -69,15 +71,18 @@ def api_remote_test(idx: int):
 
 @router.post("/api/remote/{idx}/server/{action}")
 def api_remote_server(idx: int, action: Literal["start", "stop"]):
+    """Start All or Stop All on a Remote Controller."""
     return _relay(remotes.server_action, _get_remote(idx), action)
 
 
 # Before /{action}, which would otherwise capture "amcp".
 @router.post("/api/remote/{idx}/instance/{inst_id}/amcp")
 def api_remote_amcp(idx: int, inst_id: int, req: CommandRequest):
+    """Send a raw AMCP command to an output on a Remote Controller."""
     return _relay(remotes.amcp, _get_remote(idx), inst_id, command_or_400(req))
 
 
 @router.post("/api/remote/{idx}/instance/{inst_id}/{action}")
 def api_remote_instance(idx: int, inst_id: int, action: Literal["restart", "stop"]):
+    """Restart or stop one output on a Remote Controller."""
     return _relay(remotes.instance_action, _get_remote(idx), inst_id, action)

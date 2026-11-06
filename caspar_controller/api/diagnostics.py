@@ -74,6 +74,7 @@ def build(cfg: dict) -> bytes:
 
 @router.get("/api/diagnostics")
 def api_diagnostics():
+    """A zip for the service desk: config without secrets, versions and logs."""
     name = f"caspar-controller-diagnostics-{time.strftime('%Y%m%d-%H%M%S')}.zip"
     return Response(
         content=build(load_config()),

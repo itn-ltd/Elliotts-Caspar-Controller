@@ -35,6 +35,7 @@ def _lan_ip() -> str:
 
 @router.get("/api/config")
 def api_config_get():
+    """The config, without the password hash or any API key."""
     cfg = load_config()
     return {
         **without_secrets(cfg),
@@ -45,6 +46,7 @@ def api_config_get():
 
 @router.post("/api/v1-notice/dismiss")
 def api_v1_notice_dismiss():
+    """Hide the dashboard's "Imported from v1.x" notice."""
     cfg = load_config()
     if cfg.pop("v1_notice", None):
         save_config(cfg)
@@ -53,6 +55,7 @@ def api_v1_notice_dismiss():
 
 @router.post("/api/config")
 def api_config_post(update: dict):
+    """Save Settings fields; anything left out is kept."""
     cfg = load_config()
     # Only the Settings fields come back, so secrets can't be set here.
     data = {k: v for k, v in update.items() if v is not None}
@@ -75,6 +78,7 @@ def api_config_post(update: dict):
 
 @router.get("/api/config/export")
 def api_config_export():
+    """The config as a file, without secrets or this PC's own marks."""
     cfg = {k: v for k, v in without_secrets(load_config()).items() if k not in MACHINE_KEYS}
     content = json.dumps(cfg, indent=2).encode("utf-8")
     return Response(
@@ -86,7 +90,7 @@ def api_config_export():
 
 @router.post("/api/config/import")
 async def api_config_import(request: Request):
-
+    """Replace the settings with an exported config; this PC's keys and password stay."""
     try:
         body = await request.json()
     except Exception:

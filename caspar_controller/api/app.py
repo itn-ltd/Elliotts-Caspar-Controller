@@ -47,10 +47,11 @@ app.mount("/web", StaticFiles(directory=pages.WEB_DIR), name="web")
 
 @app.get("/api/health")
 def api_health():
-    """For monitoring, the sign-in page and Remote Controllers: open, so nothing sensitive.
+    """Open health check for monitoring: versions and each output's state by id.
 
-    The server name is shown before sign-in anyway; outputs are by id only, with no names,
-    URLs, ports or settings.
+    The sign-in page and Remote Controllers use it too. It's open, so nothing sensitive: the
+    server name is shown before sign-in anyway, and outputs are by id, with no names, URLs,
+    ports or settings.
     """
     insts = status_payload()["instances"]
     return {

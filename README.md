@@ -290,24 +290,11 @@ iscc /DMyAppVersion="1.2.3" installer\setup.iss  # installer\Output\CasparContro
 
 `build.yml` builds and publishes a release when a `v*.*.*` tag is pushed (or run manually).
 
-### Architecture
+### Architecture and API
 
-```
-caspar_controller/
-├── __main__.py, tray.py   Entry point and tray icon; runs the web server
-├── settings.py            Config: Settings model, load, atomic save → %ProgramData%\CasparController
-├── auth.py                Password hashing and API keys
-├── instances.py           Start, stop, restart and live status of each output
-├── remotes.py             Client for other controllers
-├── tally.py               NDI tally monitor
-├── log.py                 Event log shown on the dashboard
-├── caspar/                AMCP client, INFO parsing, casparcg.config, process, test patterns
-├── static/                Fonts and icons
-├── web/                   The web UI: plain HTML, app.css and app.js, no build step
-└── api/                   FastAPI app and one router per area   → http://0.0.0.0:<web-port>
-    ├── events.py          /api/events: live status and event log (server-sent events)
-    └── pages.py           Serves web/*.html behind sign-in
-```
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the tray, InstanceManager, API, web UI, config and logs, and how they fit.
+- [docs/API.md](docs/API.md): every endpoint and who may call it, generated from the app (`python tools/api_docs.py`; a test fails if it's stale).
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): for the service desk: start and stop, reading the console, diagnostics.
 
 ---
 
@@ -316,6 +303,12 @@ caspar_controller/
 - **Windows only:** process and console handling use Windows APIs.
 - **Start-up order matters:** starting outputs in parallel can make receivers latch onto the wrong NDI source, so don't bypass the sequential start.
 - **Known bugs** are listed in [`docs/REVIEW.md`](docs/REVIEW.md) and tracked as issues.
+
+## Licences
+
+- **Caspar Controller:** MIT ([LICENSE](LICENSE)), from BlueElliott's original project.
+- **CasparCG Server:** GPL-3.0, by the CasparCG project; source at https://github.com/CasparCG/server. The controller runs it as a separate program and doesn't change it. The notice is also in **Settings → General → About**, and goes with the CasparCG package in #10.
+- **ITV Reem fonts:** included for ITN's build.
 
 ## Issues
 
