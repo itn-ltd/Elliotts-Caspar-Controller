@@ -7,17 +7,21 @@
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="active">Triggers</a><a href="/settings" class="">Settings</a></nav>
+<header class="topbar" data-page="triggers"></header>
 <div id="toast-container"></div>
 <main class="main">
-<h1 style="margin-bottom:24px">Triggers<span class="h1-server" data-server-name hidden></span></h1>
-<p style="color:var(--text-muted);margin-bottom:20px">
-  Pick an output and a clip to get a ready-to-use trigger. Automator, Companion, hardware panels or
-  anything that can call a URL can fire it.
-</p>
-
+<div class="page-head">
+  <div>
+    <h1>Triggers</h1>
+    <p class="page-sub">Ready-made URLs that play a clip on an output, for Automator, Companion and panels.</p>
+  </div>
+</div>
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Build a trigger</h2><p class="muted">Pick an output and a clip. Automator, Companion, hardware panels or anything that can call a URL can fire it.</p></div>
+  </div>
+  <div class="panel-body">
 <div class="card">
-  <h2 style="margin-bottom:20px">Build a trigger</h2>
 
   <div class="grid-2" style="margin-bottom:16px">
     <div class="form-group" style="margin:0">
@@ -57,7 +61,7 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:16px">
+<div class="card">
   <h3 style="margin-bottom:12px">How it works</h3>
   <p style="color:var(--text-muted);font-size:13px;line-height:1.7">
     The trigger is an HTTP GET to this controller, which plays the clip on that output at once.
@@ -68,6 +72,8 @@
   </p>
 </div>
 
+  </div>
+</section>
 </main>
 <script src="/web/app.js"></script>
 <script src="/web/console.js" defer></script>

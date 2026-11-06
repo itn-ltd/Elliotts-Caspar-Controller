@@ -7,10 +7,19 @@
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="active">Dashboard</a><a href="/triggers" class="">Triggers</a><a href="/settings" class="">Settings</a></nav>
+<header class="topbar" data-page="dashboard"></header>
 <div id="toast-container"></div>
 <main class="main">
-<h1 style="margin-bottom:24px">Dashboard<span class="h1-server" data-server-name hidden></span></h1>
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="page-sub">Every CasparCG output on this PC, and the controllers it watches.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-cta" id="btn-start" onclick="serverAction('start')">Start All</button>
+    <button class="btn btn-danger" onclick="serverAction('stop')">Stop All</button>
+  </div>
+</div>
 
 <div id="setup-banner" class="banner banner-warning" style="display:none">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
@@ -28,27 +37,44 @@
   <p>Each crashed or hung 5 times in 10 minutes. Check its Console, then Start it to try again.</p>
 </div>
 
-<div class="card">
-  <div class="card-header">
-    <div style="display:flex;align-items:center">
-      <span class="pulse" id="pulse"></span>
-      <span id="server-status-label">Checking...</span>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-cta" id="btn-start" onclick="serverAction('start')">Start All</button>
-      <button class="btn btn-danger"  onclick="serverAction('stop')">Stop All</button>
-    </div>
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-success"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>Outputs live</div>
+    <div class="stat-value"><span class="pulse" id="pulse"></span><span id="stat-live">–</span></div>
+    <div class="stat-sub" id="stat-live-sub">Checking…</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-error"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/></svg></span>On air</div>
+    <div class="stat-value" id="stat-air">–</div>
+    <div class="stat-sub" id="stat-air-sub">on program in the gallery</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-warning"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>Auto-restart</div>
+    <div class="stat-value" id="stat-restart">–</div>
+    <div class="stat-sub" id="stat-restart-sub">outputs crashed, hung or failed</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-primary"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span>CasparCG</div>
+    <div class="stat-value" id="stat-version">–</div>
+    <div class="stat-sub" id="stat-version-sub">version</div>
   </div>
 </div>
 
-<div id="instance-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px"></div>
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Outputs</h2><p class="muted">Each CasparCG instance on this PC and its NDI output.</p></div>
+  </div>
+  <div class="panel-body"><div id="instance-grid" class="card-grid"></div></div>
+</section>
 
 <div id="remotes-section"></div>
 
-<div class="card">
-  <h3 style="margin-bottom:10px">Event Log</h3>
-  <div class="log-box" id="log-box"></div>
-</div>
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Event log</h2><p class="muted">What this controller has done, newest first.</p></div>
+  </div>
+  <div class="panel-body"><div class="log-box" id="log-box"></div></div>
+</section>
 
 </main>
 <script src="/web/app.js"></script>
@@ -205,15 +231,20 @@ function showStatus(data) {
   const liveCount = data.instances.filter(i => i.status === 'live').length;
   const total = data.instances.length;
   const versions = [...new Set(data.instances.map(i => i.caspar_version).filter(Boolean))];
-  document.getElementById('server-status-label').textContent = running
-    ? `CasparCG Running — ${liveCount}/${total} instances` + (versions.length ? ` · ${versions.join(', ')}` : '')
-    : 'CasparCG Stopped';
+  const setText = (id, text) => { document.getElementById(id).textContent = text; };
+  setText('stat-live', `${liveCount}/${total}`);
+  setText('stat-live-sub', running ? 'answering AMCP' : 'CasparCG is stopped');
+  setText('stat-air', data.instances.filter(i => i.on_program).length);
+  setText('stat-air-sub', data.tally_available ? 'on program in the gallery' : 'tally needs NDI on this PC');
+  const attention = data.instances.filter(i => !['live', 'stopped'].includes(i.status));
+  setText('stat-restart', attention.length);
+  setText('stat-restart-sub', attention.length ? attention.map(i => `${i.name}: ${i.status}`).join(', ') : 'all outputs healthy');
+  setText('stat-version', versions.length ? versions.map(v => v.split(' ')[0]).join(', ') : '–');
+  setText('stat-version-sub', versions.length ? versions.map(v => v.split(' ').slice(1).join(' ') || 'version').join(', ') : 'not running');
 
   const btnStart = document.getElementById('btn-start');
   const allRunning = total > 0 && liveCount === total;
   btnStart.disabled = allRunning;
-  btnStart.style.opacity = allRunning ? '0.4' : '';
-  btnStart.style.cursor  = allRunning ? 'not-allowed' : '';
   btnStart.textContent = allRunning
     ? `All Running (${total}/${total})`
     : liveCount > 0
@@ -368,9 +399,9 @@ function renderRemotes(remotes) {
   if (key !== _remotesKey) {
     _remotesKey = key;
     Object.keys(_shown).filter(k => k.startsWith('r')).forEach(k => delete _shown[k]);
-    sec.innerHTML = !remotes.length ? '' : `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <h2 style="color:var(--text-muted);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Remote Controllers</h2>
-    </div>` + remotes.map(rem => {
+    sec.innerHTML = !remotes.length ? '' : `<section class="panel">
+      <div class="panel-head"><div><h2>Remote Controllers</h2><p class="muted">Other controllers this one watches and controls.</p></div></div>
+      <div class="panel-body">` + remotes.map(rem => {
       const collapsed = _isCollapsed(rem.idx);
       return `
       <div class="remote-section">
@@ -391,7 +422,7 @@ function renderRemotes(remotes) {
           <div id="rmsg_${rem.idx}" style="display:contents"></div>
         </div>
       </div>`;
-    }).join('');
+    }).join('') + '</div></section>';
     remotes.forEach(rem => populateRemoteMediaDropdowns(rem.idx, true));
   }
 

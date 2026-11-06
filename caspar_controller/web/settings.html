@@ -7,69 +7,34 @@
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="">Triggers</a><a href="/settings" class="active">Settings</a></nav>
+<header class="topbar" data-page="settings"></header>
 <div id="toast-container"></div>
 <main class="main">
-<h1 style="margin-bottom:24px">Settings<span class="h1-server" data-server-name hidden></span></h1>
-
-<!-- Server Identity -->
-<div class="card" style="margin-bottom:16px">
-  <h2 style="margin-bottom:16px">Server Identity</h2>
-  <div style="display:flex;gap:10px;align-items:flex-end">
-    <div class="form-group" style="flex:1;margin:0">
-      <label>Server Name <span style="color:var(--text-muted);font-size:11px">(shown in the nav bar and browser tab)</span></label>
-      <input type="text" id="server_name" placeholder="e.g. GFX PC, Studio A, Backup">
-    </div>
-    <button class="btn btn-primary" onclick="saveServerName()" style="flex-shrink:0">Save</button>
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="page-sub">How this controller runs its CasparCG outputs and who can use it.</p>
   </div>
 </div>
 
-<!-- Web UI Password -->
-<div class="card" style="margin-bottom:16px">
-  <h2 style="margin-bottom:12px">Web UI Password</h2>
-  <div id="password-warning" class="notice-warning" style="display:none">
-    ⚠ No password set. Other devices can't use the web UI until you set one.
-  </div>
-  <div style="display:flex;gap:10px;align-items:flex-end">
-    <div class="form-group" id="current-password-group" style="flex:1;margin:0">
-      <label>Current password</label>
-      <input type="password" id="current_password">
-    </div>
-    <div class="form-group" style="flex:1;margin:0">
-      <label>New password <span style="color:var(--text-muted);font-size:11px">(required, everyone signs in with it)</span></label>
-      <input type="password" id="web_password">
-    </div>
-    <button class="btn btn-primary" onclick="savePassword()" style="flex-shrink:0">Save</button>
-  </div>
-  <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
-</div>
 
-<!-- API Keys -->
-<div class="card" style="margin-bottom:16px">
-  <h2 style="margin-bottom:4px">API Keys</h2>
-  <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
-    Devices send a key as an <code>X-API-Key</code> header or <code>?api_key=</code>.
-    Rotating a key breaks every device using the old one.
-  </p>
-  <label>Trigger key <span style="color:var(--text-muted);font-size:11px">(fires clips and nothing else: give this one to Automator and panels)</span></label>
-  <div style="display:flex;gap:10px;margin-bottom:14px">
-    <input type="text" id="trigger_key" readonly style="flex:1;font-family:Consolas,monospace">
-    <button class="btn btn-secondary" onclick="copyKey('trigger')" style="flex-shrink:0">Copy</button>
-    <button class="btn btn-danger" onclick="rotateKey('trigger')" style="flex-shrink:0">Rotate</button>
-  </div>
-  <label>Full API key <span style="color:var(--text-muted);font-size:11px">(everything: for Companion setups and other controllers)</span></label>
-  <div style="display:flex;gap:10px;margin-bottom:14px">
-    <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
-    <button class="btn btn-secondary" onclick="copyKey('api')" style="flex-shrink:0">Copy</button>
-    <button class="btn btn-danger" onclick="rotateKey('api')" style="flex-shrink:0">Rotate</button>
-  </div>
-  <label>Allowed addresses <span style="color:var(--text-muted);font-size:11px">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
-  <textarea id="api_clients" rows="3" style="width:100%;font-family:Consolas,monospace" placeholder="e.g. the Automator PC"></textarea>
-  <button class="btn btn-primary btn-sm" onclick="saveApiClients()" style="margin-top:8px">Save addresses</button>
-</div>
 
+
+
+
+
+
+<section class="panel">
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="outputs"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Outputs</button>
+    <button class="tab" role="tab" data-tab="security"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Security</button>
+    <button class="tab" role="tab" data-tab="remotes"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Remote Controllers</button>
+    <button class="tab" role="tab" data-tab="general"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>General</button>
+  </div>
+  <div class="panel-body">
+<div class="tab-panel" data-tab="outputs" hidden>
 <!-- CasparCG Executable -->
-<div class="card" style="margin-bottom:16px" id="exe-card">
+<div class="card" id="exe-card">
   <h2 style="margin-bottom:4px">CasparCG Executable</h2>
   <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
     Download CasparCG Server from
@@ -164,9 +129,55 @@
     Each instance is a separate CasparCG process with its own AMCP port. Restart CasparCG after saving to apply changes.
   </p>
 </div>
+</div>
+<div class="tab-panel" data-tab="security" hidden>
+<!-- Web UI Password -->
+<div class="card">
+  <h2 style="margin-bottom:12px">Web UI Password</h2>
+  <div id="password-warning" class="notice-warning" style="display:none">
+    ⚠ No password set. Other devices can't use the web UI until you set one.
+  </div>
+  <div style="display:flex;gap:10px;align-items:flex-end">
+    <div class="form-group" id="current-password-group" style="flex:1;margin:0">
+      <label>Current password</label>
+      <input type="password" id="current_password">
+    </div>
+    <div class="form-group" style="flex:1;margin:0">
+      <label>New password <span style="color:var(--text-muted);font-size:11px">(required, everyone signs in with it)</span></label>
+      <input type="password" id="web_password">
+    </div>
+    <button class="btn btn-primary" onclick="savePassword()" style="flex-shrink:0">Save</button>
+  </div>
+  <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
+</div>
 
+<!-- API Keys -->
+<div class="card">
+  <h2 style="margin-bottom:4px">API Keys</h2>
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
+    Devices send a key as an <code>X-API-Key</code> header or <code>?api_key=</code>.
+    Rotating a key breaks every device using the old one.
+  </p>
+  <label>Trigger key <span style="color:var(--text-muted);font-size:11px">(fires clips and nothing else: give this one to Automator and panels)</span></label>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <input type="text" id="trigger_key" readonly style="flex:1;font-family:Consolas,monospace">
+    <button class="btn btn-secondary" onclick="copyKey('trigger')" style="flex-shrink:0">Copy</button>
+    <button class="btn btn-danger" onclick="rotateKey('trigger')" style="flex-shrink:0">Rotate</button>
+  </div>
+  <label>Full API key <span style="color:var(--text-muted);font-size:11px">(everything: for Companion setups and other controllers)</span></label>
+  <div style="display:flex;gap:10px;margin-bottom:14px">
+    <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
+    <button class="btn btn-secondary" onclick="copyKey('api')" style="flex-shrink:0">Copy</button>
+    <button class="btn btn-danger" onclick="rotateKey('api')" style="flex-shrink:0">Rotate</button>
+  </div>
+  <label>Allowed addresses <span style="color:var(--text-muted);font-size:11px">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
+  <textarea id="api_clients" rows="3" style="width:100%;font-family:Consolas,monospace" placeholder="e.g. the Automator PC"></textarea>
+  <button class="btn btn-primary btn-sm" onclick="saveApiClients()" style="margin-top:8px">Save addresses</button>
+</div>
+</div>
+<div class="tab-panel" data-tab="remotes" hidden>
 <!-- Remote Controllers -->
-<div class="card" style="margin-top:16px">
+<div class="card">
   <h2 style="margin-bottom:8px">Remote Controllers</h2>
   <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
     Add other Elliott's Caspar Controller instances to monitor and control from the dashboard.
@@ -179,9 +190,22 @@
     <button class="btn btn-primary" onclick="saveRemotes()">Save Remote Controllers</button>
   </div>
 </div>
+</div>
+<div class="tab-panel" data-tab="general" hidden>
+<!-- Server Identity -->
+<div class="card">
+  <h2 style="margin-bottom:16px">Server Identity</h2>
+  <div style="display:flex;gap:10px;align-items:flex-end">
+    <div class="form-group" style="flex:1;margin:0">
+      <label>Server Name <span style="color:var(--text-muted);font-size:11px">(shown in the nav bar and browser tab)</span></label>
+      <input type="text" id="server_name" placeholder="e.g. GFX PC, Studio A, Backup">
+    </div>
+    <button class="btn btn-primary" onclick="saveServerName()" style="flex-shrink:0">Save</button>
+  </div>
+</div>
 
 <!-- Config Import / Export -->
-<div class="card" style="margin-top:16px">
+<div class="card">
   <h2 style="margin-bottom:8px">Config Backup</h2>
   <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
     Export your full configuration as a JSON file, or import a previously saved config (this will overwrite all current settings).
@@ -191,7 +215,9 @@
     <button class="btn btn-secondary" onclick="importConfig()">Import Config</button>
   </div>
 </div>
-
+</div>
+  </div>
+</section>
 </main>
 <script src="/web/app.js"></script>
 <script src="/web/console.js" defer></script>
