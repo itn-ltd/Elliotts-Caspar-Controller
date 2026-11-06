@@ -156,3 +156,175 @@ function copyText(text, done = 'Copied') {
 function suggestedNdi(server, name) {
   return `${server} ${name}`.replace(/[^\w .()'-]/g, '').replace(/\s+/g, ' ').trim();
 }
+
+// Styled dropdowns. Each <select> gets a button and a list; the select stays hidden underneath
+// as the source of truth, so page code that sets .value, rewrites the options or listens for
+// change keeps working unchanged. Lists over 10 options get a search box.
+const Dropdown = (() => {
+  const proto = HTMLSelectElement.prototype;
+  const native = {value: Object.getOwnPropertyDescriptor(proto, 'value'),
+    selectedIndex: Object.getOwnPropertyDescriptor(proto, 'selectedIndex')};
+  const CHEVRON = '<svg class="dd-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+  let open = null;  // {select, button, list, items, active, timer}
+
+  // A disabled option with no value is a heading, like "─── Test Patterns ───".
+  const isHeading = o => o.disabled && !o.value;
+  const startsWith = (item, key) => item.textContent.toLowerCase().startsWith(key.toLowerCase());
+
+  function label(sel) {
+    const button = sel._dropdown, o = sel.options[sel.selectedIndex];
+    button.innerHTML = `<span class="dd-label${o && !o.value ? ' dd-placeholder' : ''}">${escapeHtml(o ? o.text : '')}</span>${CHEVRON}`;
+    button.disabled = sel.disabled;
+    button.title = sel.title;
+  }
+
+  function enhance(sel) {
+    if (sel._dropdown || sel.multiple) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'dd-button';
+    button.style.cssText = sel.style.cssText;  // inline widths, flex and the like
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-expanded', 'false');
+    sel._dropdown = button;
+    sel.classList.add('dd-native');
+    sel.tabIndex = -1;
+    sel.after(button);
+    for (const [prop, d] of Object.entries(native)) {
+      Object.defineProperty(sel, prop, {configurable: true, get() { return d.get.call(this); },
+        set(v) { d.set.call(this, v); label(this); }});
+    }
+    new MutationObserver(() => { label(sel); if (open && open.select === sel) render(); })
+      .observe(sel, {childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'title']});
+    sel.addEventListener('change', () => label(sel));
+    button.addEventListener('click', () => (open && open.select === sel ? close() : show(sel)));
+    button.addEventListener('keydown', e => {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) { e.preventDefault(); e.stopPropagation(); show(sel); }
+    });
+    label(sel);
+  }
+
+  function render() {
+    const {select, list} = open;
+    const search = list.querySelector('.dd-search');
+    const query = search ? search.value.trim().toLowerCase() : '';
+    const box = list.querySelector('.dd-options');
+    box.innerHTML = '';
+    open.items = [];
+    [...select.options].forEach((o, i) => {
+      if (isHeading(o)) {
+        if (!query) box.insertAdjacentHTML('beforeend', `<div class="dd-group">${escapeHtml(o.text.replace(/─/g, '').trim())}</div>`);
+        return;
+      }
+      if (query && !o.text.toLowerCase().includes(query)) return;
+      const item = document.createElement('div');
+      item.className = 'dd-option' + (o.disabled ? ' dd-disabled' : '') + (o.value ? '' : ' dd-placeholder');
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', String(i === select.selectedIndex));
+      item.textContent = o.text;
+      item.dataset.index = i;
+      if (!o.disabled) {
+        item.addEventListener('mousedown', e => e.preventDefault());  // keep focus in the search box
+        item.addEventListener('click', () => choose(i));
+        item.addEventListener('mousemove', () => activate(open.items.indexOf(item), false));
+        open.items.push(item);
+      }
+      box.appendChild(item);
+    });
+    if (!open.items.length) box.innerHTML = '<div class="dd-empty">No matches</div>';
+    const current = open.items.findIndex(it => Number(it.dataset.index) === select.selectedIndex);
+    activate(current >= 0 ? current : 0, true);
+  }
+
+  function activate(n, scroll) {
+    if (!open.items.length) return;
+    open.active = Math.max(0, Math.min(n, open.items.length - 1));
+    open.items.forEach((it, i) => it.classList.toggle('active', i === open.active));
+    if (scroll) open.items[open.active].scrollIntoView({block: 'nearest'});
+  }
+
+  // Fixed to the viewport, so a card or a scrolling tab panel can't clip it; opens upwards
+  // when there's more room above.
+  function place() {
+    const {button, list} = open;
+    const r = button.getBoundingClientRect();
+    const below = innerHeight - r.bottom - 12, above = r.top - 12;
+    const up = below < 240 && above > below;
+    list.style.minWidth = r.width + 'px';
+    list.style.left = Math.max(8, Math.min(r.left, innerWidth - list.offsetWidth - 8)) + 'px';
+    list.style.maxHeight = Math.min(340, up ? above : below) + 'px';
+    list.style.top = up ? '' : r.bottom + 4 + 'px';
+    list.style.bottom = up ? innerHeight - r.top + 4 + 'px' : '';
+  }
+
+  function show(sel) {
+    close();
+    const button = sel._dropdown;
+    const list = document.createElement('div');
+    list.className = 'dd-list';
+    list.setAttribute('role', 'listbox');
+    const searchable = sel.options.length > 10;
+    list.innerHTML = (searchable ? '<input class="dd-search" type="text" placeholder="Search…" aria-label="Search">' : '')
+      + '<div class="dd-options"></div>';
+    document.body.appendChild(list);
+    button.setAttribute('aria-expanded', 'true');
+    // Live updates can rebuild a card: close if this select goes, and follow it if it moves.
+    open = {select: sel, button, list, items: [], active: 0,
+      timer: setInterval(() => (sel.isConnected ? place() : close()), 250)};
+    render();
+    place();
+    const search = list.querySelector('.dd-search');
+    if (search) { search.addEventListener('input', render); search.focus(); }
+  }
+
+  function choose(i) {
+    const {select, button} = open;
+    close();
+    button.focus();
+    if (select.selectedIndex === i) return;
+    native.selectedIndex.set.call(select, i);
+    select.dispatchEvent(new Event('change', {bubbles: true}));  // runs inline onchange too
+  }
+
+  function close() {
+    if (!open) return;
+    clearInterval(open.timer);
+    open.list.remove();
+    open.button.setAttribute('aria-expanded', 'false');
+    open = null;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (!open) return;
+    const typing = e.target.classList && e.target.classList.contains('dd-search');
+    const keys = {
+      ArrowDown: () => activate(open.active + 1, true),
+      ArrowUp: () => activate(open.active - 1, true),
+      Enter: () => open.items.length && choose(Number(open.items[open.active].dataset.index)),
+      Escape: () => { const b = open.button; close(); b.focus(); },
+      Tab: close,
+    };
+    if (keys[e.key]) {
+      if (e.key !== 'Tab') e.preventDefault();
+      e.stopPropagation();  // a page's own Enter handler mustn't fire too
+      keys[e.key]();
+    } else if (!typing && e.key.length === 1) {  // type-ahead: the next option starting with it
+      const next = open.items.findIndex((it, i) => i > open.active && startsWith(it, e.key));
+      const n = next >= 0 ? next : open.items.findIndex(it => startsWith(it, e.key));
+      if (n >= 0) activate(n, true);
+    }
+  }, true);
+  document.addEventListener('mousedown', e => {
+    if (open && !open.list.contains(e.target) && !open.button.contains(e.target)) close();
+  });
+  addEventListener('resize', close);
+  document.addEventListener('scroll', e => { if (open && !open.list.contains(e.target)) close(); }, true);
+
+  // Every select on the page, now and as pages add them.
+  const enhanceIn = root => root.querySelectorAll && root.querySelectorAll('select').forEach(enhance);
+  enhanceIn(document);
+  new MutationObserver(records => records.forEach(r => r.addedNodes.forEach(n => {
+    if (n.tagName === 'SELECT') enhance(n); else enhanceIn(n);
+  }))).observe(document.body, {childList: true, subtree: true});
+  return {close};
+})();
