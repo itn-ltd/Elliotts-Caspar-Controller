@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,8 +10,8 @@
 <nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="active">Triggers</a><a href="/settings" class="">Settings</a></nav>
 <div id="toast-container"></div>
 <main class="main">
-<h1 style="margin-bottom:24px;color:#fff">Triggers<span class="h1-server" data-server-name hidden></span></h1>
-<p style="color:var(--muted);margin-bottom:20px">
+<h1 style="margin-bottom:24px">Triggers<span class="h1-server" data-server-name hidden></span></h1>
+<p style="color:var(--text-muted);margin-bottom:20px">
   Pick an output and a clip to get a ready-to-use trigger. Automator, Companion, hardware panels or
   anything that can call a URL can fire it.
 </p>
@@ -43,7 +43,7 @@
       </select>
     </div>
     <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer">
-      <input type="checkbox" id="show-key" onchange="build()" style="accent-color:var(--accent)">
+      <input type="checkbox" id="show-key" onchange="build()" style="accent-color:var(--primary)">
       Show the trigger key
     </label>
     <button class="btn btn-danger btn-sm" onclick="rotateTriggerKey()" title="Every trigger using the old key stops working">Rotate trigger key</button>
@@ -59,7 +59,7 @@
 
 <div class="card" style="margin-top:16px">
   <h3 style="margin-bottom:12px">How it works</h3>
-  <p style="color:var(--muted);font-size:13px;line-height:1.7">
+  <p style="color:var(--text-muted);font-size:13px;line-height:1.7">
     The trigger is an HTTP GET to this controller, which plays the clip on that output at once.
     Triggers use this controller's <strong>trigger key</strong> (Settings → API Keys), which can fire clips
     and nothing else: in the URL as <code>api_key=</code>, or in an <code>X-API-Key</code> header, which keeps

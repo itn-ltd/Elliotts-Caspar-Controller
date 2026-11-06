@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,14 +10,14 @@
 <nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="">Triggers</a><a href="/settings" class="active">Settings</a></nav>
 <div id="toast-container"></div>
 <main class="main">
-<h1 style="margin-bottom:24px;color:#fff">Settings<span class="h1-server" data-server-name hidden></span></h1>
+<h1 style="margin-bottom:24px">Settings<span class="h1-server" data-server-name hidden></span></h1>
 
 <!-- Server Identity -->
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-bottom:16px">Server Identity</h2>
   <div style="display:flex;gap:10px;align-items:flex-end">
     <div class="form-group" style="flex:1;margin:0">
-      <label>Server Name <span style="color:var(--muted);font-size:11px">(shown in the nav bar and browser tab)</span></label>
+      <label>Server Name <span style="color:var(--text-muted);font-size:11px">(shown in the nav bar and browser tab)</span></label>
       <input type="text" id="server_name" placeholder="e.g. GFX PC, Studio A, Backup">
     </div>
     <button class="btn btn-primary" onclick="saveServerName()" style="flex-shrink:0">Save</button>
@@ -27,7 +27,7 @@
 <!-- Web UI Password -->
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-bottom:12px">Web UI Password</h2>
-  <div id="password-warning" style="display:none;background:rgba(245,158,11,0.12);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:12px;color:var(--warning);font-size:13px">
+  <div id="password-warning" class="notice-warning" style="display:none">
     ⚠ No password set. Other devices can't use the web UI until you set one.
   </div>
   <div style="display:flex;gap:10px;align-items:flex-end">
@@ -36,34 +36,34 @@
       <input type="password" id="current_password">
     </div>
     <div class="form-group" style="flex:1;margin:0">
-      <label>New password <span style="color:var(--muted);font-size:11px">(required, everyone signs in with it)</span></label>
+      <label>New password <span style="color:var(--text-muted);font-size:11px">(required, everyone signs in with it)</span></label>
       <input type="password" id="web_password">
     </div>
     <button class="btn btn-primary" onclick="savePassword()" style="flex-shrink:0">Save</button>
   </div>
-  <p style="color:var(--muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
+  <p style="color:var(--text-muted);font-size:12px;margin-top:8px">Changing it signs out every other browser.</p>
 </div>
 
 <!-- API Keys -->
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-bottom:4px">API Keys</h2>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">
     Devices send a key as an <code>X-API-Key</code> header or <code>?api_key=</code>.
     Rotating a key breaks every device using the old one.
   </p>
-  <label>Trigger key <span style="color:var(--muted);font-size:11px">(fires clips and nothing else: give this one to Automator and panels)</span></label>
+  <label>Trigger key <span style="color:var(--text-muted);font-size:11px">(fires clips and nothing else: give this one to Automator and panels)</span></label>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <input type="text" id="trigger_key" readonly style="flex:1;font-family:Consolas,monospace">
     <button class="btn btn-secondary" onclick="copyKey('trigger')" style="flex-shrink:0">Copy</button>
     <button class="btn btn-danger" onclick="rotateKey('trigger')" style="flex-shrink:0">Rotate</button>
   </div>
-  <label>Full API key <span style="color:var(--muted);font-size:11px">(everything: for Companion setups and other controllers)</span></label>
+  <label>Full API key <span style="color:var(--text-muted);font-size:11px">(everything: for Companion setups and other controllers)</span></label>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
     <button class="btn btn-secondary" onclick="copyKey('api')" style="flex-shrink:0">Copy</button>
     <button class="btn btn-danger" onclick="rotateKey('api')" style="flex-shrink:0">Rotate</button>
   </div>
-  <label>Allowed addresses <span style="color:var(--muted);font-size:11px">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
+  <label>Allowed addresses <span style="color:var(--text-muted);font-size:11px">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
   <textarea id="api_clients" rows="3" style="width:100%;font-family:Consolas,monospace" placeholder="e.g. the Automator PC"></textarea>
   <button class="btn btn-primary btn-sm" onclick="saveApiClients()" style="margin-top:8px">Save addresses</button>
 </div>
@@ -71,12 +71,12 @@
 <!-- CasparCG Executable -->
 <div class="card" style="margin-bottom:16px" id="exe-card">
   <h2 style="margin-bottom:4px">CasparCG Executable</h2>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
     Download CasparCG Server from
     <a href="https://github.com/CasparCG/server/releases" target="_blank">github.com/CasparCG/server/releases</a>
     and extract it, then point to the <code>casparcg.exe</code> inside.
   </p>
-  <div id="exe-warning" style="display:none;background:rgba(245,158,11,0.12);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:12px;color:var(--warning);font-size:13px">
+  <div id="exe-warning" class="notice-warning" style="display:none">
     ⚠ CasparCG path is not set — the app cannot start CasparCG until this is configured.
   </div>
   <div style="display:flex;gap:10px;align-items:flex-end">
@@ -86,7 +86,7 @@
     </div>
     <button class="btn btn-primary" onclick="saveExePath()" style="flex-shrink:0">Save Path</button>
   </div>
-  <p style="color:var(--muted);font-size:12px;margin-top:8px">
+  <p style="color:var(--text-muted);font-size:12px;margin-top:8px">
     Per-instance config files are written to the same folder as the exe when CasparCG is started.
   </p>
 </div>
@@ -110,7 +110,7 @@
       </select>
     </div>
     <div class="form-group">
-      <label>Base AMCP Port <span style="color:var(--muted);font-size:11px">(instances get base, base+1, base+2…)</span></label>
+      <label>Base AMCP Port <span style="color:var(--text-muted);font-size:11px">(instances get base, base+1, base+2…)</span></label>
       <input type="number" id="amcp_base_port" value="5250" oninput="onBasePortChange()">
     </div>
     <div class="form-group">
@@ -119,24 +119,24 @@
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
       <input type="checkbox" id="autostart_caspar"
-             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);cursor:pointer">
-      <label for="autostart_caspar" style="margin:0;color:var(--text);cursor:pointer">
+             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);cursor:pointer">
+      <label for="autostart_caspar" style="margin:0;color:var(--foreground);cursor:pointer">
         Auto-start CasparCG when the app launches
       </label>
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
       <input type="checkbox" id="auto_restart"
-             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--accent);cursor:pointer">
-      <label for="auto_restart" style="margin:0;color:var(--text);cursor:pointer">
+             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);cursor:pointer">
+      <label for="auto_restart" style="margin:0;color:var(--foreground);cursor:pointer">
         Auto-restart instances that crash or hang
       </label>
     </div>
     <div class="form-group">
-      <label>Hang timeout <span style="color:var(--muted);font-size:11px">(seconds without an AMCP reply before restarting, 5-600)</span></label>
+      <label>Hang timeout <span style="color:var(--text-muted);font-size:11px">(seconds without an AMCP reply before restarting, 5-600)</span></label>
       <input type="number" id="hang_timeout" value="30" min="5" max="600">
     </div>
     <div class="form-group" style="grid-column:1/-1">
-      <label>Media Folder Path <span style="color:var(--muted);font-size:11px">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
+      <label>Media Folder Path <span style="color:var(--text-muted);font-size:11px">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
       <input type="text" id="media_path" placeholder="e.g. D:\Media or leave blank for default">
     </div>
   </div>
@@ -144,7 +144,7 @@
   <h2 style="margin:20px 0 8px">Instances</h2>
 
   <!-- Column header row -->
-  <div style="display:flex;gap:8px;padding:0 12px 6px;color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">
+  <div style="display:flex;gap:8px;padding:0 12px 6px;color:var(--text-muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">
     <span style="width:48px;flex-shrink:0"></span>
     <span style="width:86px;flex-shrink:0">Type</span>
     <span style="flex:0 0 110px">Name</span>
@@ -160,7 +160,7 @@
     <button class="btn btn-primary" onclick="saveSettings()">Save & Regenerate Configs</button>
     <button class="btn btn-primary btn-sm" onclick="addInstance()">+ Add Instance</button>
   </div>
-  <p style="color:var(--muted);font-size:12px;margin-top:10px">
+  <p style="color:var(--text-muted);font-size:12px;margin-top:10px">
     Each instance is a separate CasparCG process with its own AMCP port. Restart CasparCG after saving to apply changes.
   </p>
 </div>
@@ -168,7 +168,7 @@
 <!-- Remote Controllers -->
 <div class="card" style="margin-top:16px">
   <h2 style="margin-bottom:8px">Remote Controllers</h2>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
     Add other Elliott's Caspar Controller instances to monitor and control from the dashboard.
     Use the full URL including port, e.g. <code>http://192.168.1.101:5280</code>.
     The server name is pulled automatically from each remote.
@@ -183,7 +183,7 @@
 <!-- Config Import / Export -->
 <div class="card" style="margin-top:16px">
   <h2 style="margin-bottom:8px">Config Backup</h2>
-  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
     Export your full configuration as a JSON file, or import a previously saved config (this will overwrite all current settings).
   </p>
   <div style="display:flex;gap:10px">
@@ -205,7 +205,7 @@ let _savedRemotes = [];  // what the server holds (keys never sent back): Test c
 function renderRemoteList() {
   const el = document.getElementById('remotes-list');
   if (!_remotes.length) {
-    el.innerHTML = '<p style="color:var(--muted);font-size:13px;margin-bottom:8px">No remote controllers added yet.</p>';
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;margin-bottom:8px">No remote controllers added yet.</p>';
     return;
   }
   el.innerHTML = _remotes.map((r, i) => `
