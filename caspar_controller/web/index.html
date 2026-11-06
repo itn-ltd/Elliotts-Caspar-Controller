@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard — Caspar Controller</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<header class="topbar" data-page="dashboard"></header>
+<div id="toast-container"></div>
+<main class="main">
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="page-sub">Every CasparCG output on this PC, and the controllers it watches.</p>
+    <p class="page-sub lan-address" id="lan-address" hidden>
+      Other PCs: <code id="lan-url"></code>
+      <button class="link-btn" onclick="copyText(document.getElementById('lan-url').textContent, 'Address copied')">Copy</button>
+    </p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" id="btn-start" onclick="serverAction('start')">Start All</button>
+    <button class="btn btn-danger" onclick="serverAction('stop')">Stop All</button>
+  </div>
+</div>
+
+<div id="setup-banner" class="banner banner-warning" style="display:none">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <span style="font-size:22px">⚙</span>
+    <h2>Setup Required</h2>
+  </div>
+  <p style="margin-bottom:12px">
+    CasparCG isn't set up yet. The setup wizard takes you through the path to <code>casparcg.exe</code>, your outputs and their NDI names, in a few steps.
+  </p>
+  <a href="/welcome" class="btn btn-warning">Open the setup wizard →</a>
+</div>
+
+<div id="v1-banner" class="banner banner-warning" hidden>
+  <h2 style="margin-bottom:8px">Imported from v1.x</h2>
+  <p style="margin-bottom:8px">
+    Settings and <span id="v1-outputs"></span> came from <code id="v1-source"></code>.
+    That file is untouched, and a copy is in <code>config.v1-backup.json</code>.
+    <span id="v1-password">Your v1.x password still works.</span> Auto-restart is now on.
+  </p>
+  <p style="margin-bottom:12px">
+    <strong style="color:var(--text-strong)">Triggers now need a key.</strong>
+    Add <code>&amp;api_key=<span id="v1-key"></span></code> to every Automator, Companion and panel URL, or copy new ones from Triggers.
+    To keep a PC working while you change it over, list it under Settings → API Keys → Changeover.
+  </p>
+  <a href="/triggers" class="btn btn-warning">Open Triggers →</a>
+  <button class="btn btn-secondary" onclick="dismissV1Notice()">Dismiss</button>
+</div>
+
+<div id="failed-banner" class="banner banner-error" hidden>
+  <strong>Auto-restart gave up on: <span id="failed-names"></span></strong>
+  <p>Each crashed or hung 5 times in 10 minutes. Check its Console, then Start it to try again.</p>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-success"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>Outputs live</div>
+    <div class="stat-value"><span class="pulse" id="pulse"></span><span id="stat-live">–</span></div>
+    <div class="stat-sub" id="stat-live-sub">Checking…</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-error"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/></svg></span>On air</div>
+    <div class="stat-value" id="stat-air">–</div>
+    <div class="stat-sub" id="stat-air-sub">on program in the gallery</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-warning"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>Auto-restart</div>
+    <div class="stat-value" id="stat-restart">–</div>
+    <div class="stat-sub" id="stat-restart-sub">outputs crashed, hung or failed</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-primary"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span>CasparCG</div>
+    <div class="stat-value" id="stat-version">–</div>
+    <div class="stat-sub" id="stat-version-sub">version</div>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Outputs</h2><p class="muted">Each CasparCG instance on this PC and its NDI output.</p></div>
+  </div>
+  <div class="panel-body"><div id="instance-grid" class="card-grid"></div></div>
+</section>
+
+<div id="remotes-section"></div>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Event log</h2><p class="muted">What this controller has done, newest first.</p></div>
+  </div>
+  <div class="panel-body"><div class="log-box" id="log-box"></div></div>
+</section>
+
+</main>
+<script src="/web/app.js"></script>
+<script src="/web/console.js" defer></script>
+<script>
+let lastRunning = null;
+let _clipsKey = '';  // the clip list last written, so an unchanged list doesn't touch the dropdowns
+
+function loadMediaClips(force) {
+  api('/api/media').then(data => {
+    const clips = data.clips || [];
+    const key = JSON.stringify(clips);
+    if (!force && key === _clipsKey) return;
+    _clipsKey = key;
+    document.querySelectorAll('[id^="media_"]').forEach(sel => { sel.innerHTML = clipOptions(clips, sel.value); });
+  });
+}
+
+function onMediaSelect(id) {
+  const clip = document.getElementById('media_' + id).value;
+  if (!clip) return;
+  document.getElementById('amcp_' + id).value = `PLAY 1-1 "${clip}" LOOP`;
+}
+
+let _instanceNames = {};
+let _cardsKey = '';
+const _shown = {};  // element id -> HTML last written, so unchanged parts aren't touched
+const _waitingLive = new Map();  // inst id -> when it was started from this page
+const START_WARNING_MS = 120000;  // not live by then: say so
+
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(Number(s) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// The clip section of a card's status box: name, time left and progress. Remote cards use it too.
+function layerHtml(inst) {
+  const li = inst.layer || {};
+  if (inst.status !== 'live' || !li.clip) return '';
+  const time = Number(li.time) || 0, duration = Number(li.duration) || 0;
+  const timed = duration > 0 && !li.loop;
+  const right = li.loop ? '<span class="clip-loop" title="Looping">↻</span>'
+    : timed ? `<span class="clip-remaining">-${fmtTime(duration - time)}</span>` : '';
+  const bar = timed
+    ? `<div class="clip-progress"><div class="clip-progress-bar" style="width:${Math.min(100, time / duration * 100).toFixed(1)}%"></div></div>`
+    : '';
+  return `<div class="clip-head"><span class="clip-name">${escapeHtml(li.clip)}</span>${right}</div>${bar}
+    <div class="clip-time">${fmtTime(time)}${timed ? ' / ' + fmtTime(duration) : ''}</div>`;
+}
+
+function tallyClass(inst) {
+  return inst.on_program ? 'tally-program' : inst.on_preview ? 'tally-preview' : '';
+}
+
+function tallyBadge(inst) {
+  return inst.on_program ? '<span class="tally-badge-program">● LIVE</span>'
+    : inst.on_preview ? '<span class="tally-badge-preview">◐ PVW</span>' : '';
+}
+
+// live: green; auto-restart at work (crashed/hung/restarting (n/5)): amber; stopped: plain; else red.
+function stateClass(inst) {
+  const s = inst.status;
+  return 'ch-state ' + (s === 'live' ? 'state-live' : /\(\d+\/\d+\)$/.test(s) ? 'state-warning'
+    : s === 'stopped' ? '' : 'state-error');
+}
+
+// The status row of a card: dot, state and Start/Stop. onStart/onStop are JS call strings.
+function stateHtml(inst, onStart, onStop) {
+  const label = inst.status.charAt(0).toUpperCase() + inst.status.slice(1);
+  return `<span class="state-label"><span class="state-dot"></span>${escapeHtml(label)}</span>` + (inst.status === 'live'
+    ? `<button class="btn btn-sm btn-outline" onclick="${onStop}">■ Stop</button>`
+    : `<button class="btn btn-sm btn-primary" onclick="${onStart}">▶ Start</button>`);
+}
+
+function setAutoRestart(id, on) {
+  api('/api/instance/' + id + '/auto-restart', 'POST', {auto_restart: on ? 'on' : 'off'})
+    .then(() => toast(_instanceNames[id] + ': auto-restart ' + (on ? 'on' : 'off'), 'info'))
+    .catch(e => toast(e.message, 'error'));
+}
+
+function setHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el && _shown[id] !== html) {
+    el.innerHTML = html;
+    _shown[id] = html;
+  }
+}
+
+// A card's fixed parts; live parts go in the p+'tally_', p+'state_', p+'layer_' elements.
+// p is '' for this PC's cards and 'r' for a remote's, whose key is idx_id.
+function cardHtml(inst, p, key, media, foot) {
+  const isHtml = inst.type === 'html' || !inst.type;
+  const mediaRows = isHtml ? '' : `
+    <div class="ch-media">
+      <select id="${p}media_${key}" onchange="${media.select}"><option value="">— pick a clip —</option></select>
+      <div class="input-group">
+        <input type="text" id="${p}amcp_${key}" placeholder='PLAY 1-1 "CLIP" LOOP'>
+        <button class="btn btn-secondary" onclick="${media.send}">Send</button>
+      </div>
+    </div>`;
+  return `
+    <div class="channel-card" id="${p}card_${key}">
+      <div class="ch-head">
+        <span class="ch-num">Instance ${inst.id} · :${inst.amcp_port}</span>
+        <span class="ch-tags"><span id="${p}tally_${key}"></span>
+          <span class="type-pill ${isHtml ? '' : 'type-media'}">${isHtml ? 'HTML5' : 'Media'}</span></span>
+      </div>
+      <div>
+        <div class="ch-name">${escapeHtml(inst.name)}</div>
+        <div class="ch-ndi"><span class="ndi-tag">NDI</span>${escapeHtml(inst.ndi_name)}</div>
+      </div>
+      <div class="ch-state" id="${p}statebox_${key}">
+        <div class="ch-state-row" id="${p}state_${key}"></div>
+        <div class="ch-clip" id="${p}layer_${key}"></div>
+      </div>
+      ${mediaRows}
+      ${foot}
+    </div>`;
+}
+
+// Cards are built once per set of instances. Updates only touch their live parts, so an
+// open clip dropdown or a half-typed AMCP command is never reset.
+function buildCards(instances) {
+  Object.keys(_shown).forEach(k => delete _shown[k]);
+  document.getElementById('instance-grid').innerHTML = instances.map(inst => cardHtml(inst, '', inst.id,
+    {select: `onMediaSelect(${inst.id})`, send: `sendAmcp(${inst.id})`}, `
+      <div class="ch-foot">
+        <label class="switch" title="Restart this instance if it crashes or hangs">
+          <input type="checkbox" id="auto_${inst.id}" onchange="setAutoRestart(${inst.id}, this.checked)">
+          <span class="switch-track"></span>Auto Restart
+        </label>
+        <button class="link-btn" onclick="Console.open(${inst.id})"><span class="mono">&gt;_</span> Console</button>
+      </div>`)).join('');
+  loadMediaClips(true);
+}
+
+// The live parts of a card, local or remote.
+function updateCard(p, key, inst, onStart, onStop) {
+  document.getElementById(p + 'card_' + key).className = 'channel-card ' + tallyClass(inst);
+  document.getElementById(p + 'statebox_' + key).className = stateClass(inst);
+  setHtml(p + 'tally_' + key, tallyBadge(inst));
+  setHtml(p + 'state_' + key, stateHtml(inst, onStart, onStop));
+  setHtml(p + 'layer_' + key, layerHtml(inst));
+}
+
+function renderInstances(instances) {
+  _instanceNames = Object.fromEntries(instances.map(i => [i.id, i.name]));
+  const key = JSON.stringify(instances.map(i => [i.id, i.name, i.ndi_name, i.type, i.amcp_port]));
+  if (key !== _cardsKey) {
+    buildCards(instances);
+    _cardsKey = key;
+  }
+  instances.forEach(inst => {
+    updateCard('', inst.id, inst, `startInstance(${inst.id})`, `stopInstance(${inst.id})`);
+    document.getElementById('auto_' + inst.id).checked = inst.auto_restart;
+    if (_waitingLive.has(inst.id)) {
+      if (inst.status === 'live') toast(inst.name + ' is live', 'success');
+      else if (Date.now() - _waitingLive.get(inst.id) > START_WARNING_MS) toast(inst.name + ' took too long — check the log', 'warning');
+      else return;
+      _waitingLive.delete(inst.id);
+    }
+  });
+}
+
+function setText(id, text) { document.getElementById(id).textContent = text; }
+
+function showStatus(data) {
+  // A first run (nothing set up): go to the setup wizard, once per browser session.
+  if (data.needs_setup && !data.instances.length) {
+    let shown = true;
+    try { shown = sessionStorage.getItem('wizard_shown') === '1'; sessionStorage.setItem('wizard_shown', '1'); } catch (e) {}
+    if (!shown) { location.href = '/welcome'; return; }
+  }
+  const running = data.running;
+  document.getElementById('setup-banner').style.display = data.needs_setup ? 'block' : 'none';
+  document.getElementById('pulse').className = 'pulse ' + (running ? 'pulse-green' : 'pulse-red');
+  const liveCount = data.instances.filter(i => i.status === 'live').length;
+  const total = data.instances.length;
+  const versions = [...new Set(data.instances.map(i => i.caspar_version).filter(Boolean))];
+  setText('stat-live', `${liveCount}/${total}`);
+  setText('stat-live-sub', running ? 'answering AMCP' : 'CasparCG is stopped');
+  setText('stat-air', data.instances.filter(i => i.on_program).length);
+  setText('stat-air-sub', data.tally_available ? 'on program in the gallery' : 'tally needs NDI on this PC');
+  const attention = data.instances.filter(i => !['live', 'stopped'].includes(i.status));
+  setText('stat-restart', attention.length);
+  setText('stat-restart-sub', attention.length ? attention.map(i => `${i.name}: ${i.status}`).join(', ') : 'all outputs healthy');
+  setText('stat-version', versions.length ? versions.map(v => v.split(' ')[0]).join(', ') : '–');
+  setText('stat-version-sub', versions.length ? versions.map(v => v.split(' ').slice(1).join(' ') || 'version').join(', ') : 'not running');
+
+  const btnStart = document.getElementById('btn-start');
+  const allRunning = total > 0 && liveCount === total;
+  btnStart.disabled = allRunning;
+  btnStart.textContent = allRunning
+    ? `All Running (${total}/${total})`
+    : liveCount > 0
+      ? `Start Remaining (${total - liveCount})`
+      : 'Start All';
+
+  renderInstances(data.instances);
+  // Stays up while any instance is failed, whenever the page was opened.
+  const failed = data.instances.filter(i => i.status === 'failed').map(i => i.name);
+  document.getElementById('failed-banner').hidden = !failed.length;
+  document.getElementById('failed-names').textContent = failed.join(', ');
+
+  if (lastRunning !== null && lastRunning !== running)
+    toast(running ? 'CasparCG is now running' : 'CasparCG stopped', running ? 'success' : 'warning');
+  lastRunning = running;
+}
+
+function showLog(lines) {
+  document.getElementById('log-box').innerHTML = lines.slice().reverse().map(l => `<p>${escapeHtml(l)}</p>`).join('');
+}
+
+function serverAction(action) {
+  if (action === 'start' && document.getElementById('btn-start').disabled) return;
+  toast('Sending ' + action + '...', 'info');
+  api('/api/server/' + action, 'POST')
+    .then(d => toast(d.message || (action + ' OK'), 'success'))
+    .catch(() => toast('Failed to ' + action, 'error'));
+}
+
+function startInstance(id) {
+  const name = _instanceNames[id];
+  _waitingLive.set(id, Date.now());
+  api('/api/instance/' + id + '/restart', 'POST')
+    .then(d => toast(d.message || (name + ' starting...'), 'info'))
+    .catch(() => { _waitingLive.delete(id); toast('Failed to start ' + name, 'error'); });
+}
+
+function stopInstance(id) {
+  const name = _instanceNames[id];
+  api('/api/instance/' + id + '/stop', 'POST')
+    .then(d => toast(d.message || ('Stopping ' + name + '...'), 'warning'))
+    .catch(() => toast('Failed to stop ' + name, 'error'));
+}
+
+function sendAmcp(id) {
+  const input = document.getElementById('amcp_' + id);
+  const cmd = input.value.trim();
+  if (!cmd) { toast('Enter an AMCP command first', 'warning'); return; }
+  api('/api/instance/' + id + '/amcp', 'POST', { command: cmd }).then(d => {
+    toast('Inst' + id + ': ' + (d.response || 'OK'), 'success');
+  }).catch(e => toast(e.message, 'error'));
+}
+
+// ── Remote Controllers ─────────────────────────────────────────
+
+const _remoteStatusCache = {};  // idx -> last known status, shown while a remote is offline
+let _remotesKey = '';
+
+function _remoteCollapseKey(idx) { return 'remote_collapsed_' + idx; }
+
+function _isCollapsed(idx) {
+  try { return localStorage.getItem(_remoteCollapseKey(idx)) === '1'; } catch (e) { return false; }
+}
+
+function toggleRemote(idx) {
+  const header = document.getElementById('rh_' + idx);
+  const body   = document.getElementById('rb_' + idx);
+  if (!header || !body) return;
+  const collapse = !body.classList.contains('hidden');
+  body.classList.toggle('hidden', collapse);
+  header.classList.toggle('collapsed', collapse);
+  try {
+    if (collapse) localStorage.setItem(_remoteCollapseKey(idx), '1');
+    else localStorage.removeItem(_remoteCollapseKey(idx));
+  } catch (e) {}
+}
+
+// Another controller's data: force numbers, escape text.
+function remoteInst(raw) {
+  return {...raw, id: Number(raw.id) || 0, amcp_port: Number(raw.amcp_port) || 0, status: String(raw.status || '')};
+}
+
+function remoteCardShell(idx, inst) {
+  const key = idx + '_' + inst.id;
+  return cardHtml(inst, 'r', key,
+    {select: `onRemoteMediaSelect(${idx},${inst.id})`, send: `sendRemoteAmcp(${idx},${inst.id})`}, '');
+}
+
+function remoteHeaderHtml(rem, status) {
+  const badge = rem.online
+    ? '<span class="badge badge-success" style="font-size:11px;white-space:nowrap">● Online</span>'
+    : '<span class="badge badge-error" style="font-size:11px;white-space:nowrap">● Offline</span>';
+  if (!status) return badge;
+  const live = status.instances.filter(i => i.status === 'live').length;
+  return badge + `
+    <span class="badge badge-success">${live}/${status.instances.length} live</span>
+    <span class="badge badge-neutral">v${escapeHtml(status.version || '?')}</span>`;
+}
+
+function remoteMessageHtml(rem, status) {
+  const msg = text => `<div class="remote-offline-msg" style="grid-column:1/-1;margin-top:8px">${text}</div>`;
+  if (status && status.instances.length)
+    return rem.online ? '' : msg('⚠ Controller offline — showing last known state. Start All will attempt to reconnect.');
+  if (rem.auth_error) return msg("⚠ API key rejected. Check this remote's key in Settings.");
+  if (rem.online) return msg('No instances configured on this controller.');
+  return msg(`Cannot reach ${escapeHtml(rem.url)} — check that the controller is running and the URL is correct.`);
+}
+
+// Like the local cards: built when the set of remotes or their instances changes, then only
+// the live parts update, so an open clip dropdown or a typed AMCP command is never reset.
+function renderRemotes(remotes) {
+  const sec = document.getElementById('remotes-section');
+  remotes = (remotes || []).filter(Boolean);
+  remotes.forEach(rem => { if (rem.online && rem.status) _remoteStatusCache[rem.idx] = rem.status; });
+  const statusOf = rem => rem.online ? rem.status : _remoteStatusCache[rem.idx];
+  const instsOf = rem => (statusOf(rem) || {instances: []}).instances.map(remoteInst);
+
+  const key = JSON.stringify(remotes.map(rem => [rem.idx, rem.display_name,
+    instsOf(rem).map(i => [i.id, i.name, i.ndi_name, i.type, i.amcp_port])]));
+  if (key !== _remotesKey) {
+    _remotesKey = key;
+    Object.keys(_shown).filter(k => k.startsWith('r')).forEach(k => delete _shown[k]);
+    sec.innerHTML = !remotes.length ? '' : `<section class="panel">
+      <div class="panel-head"><div><h2>Remote Controllers</h2><p class="muted">Other controllers this one watches and controls.</p></div></div>
+      <div class="panel-body">` + remotes.map(rem => {
+      const collapsed = _isCollapsed(rem.idx);
+      return `
+      <div class="remote-section">
+        <div class="remote-header ${collapsed ? 'collapsed' : ''}" id="rh_${rem.idx}"
+             onclick="toggleRemote(${rem.idx})" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+            <span class="remote-chevron">▼</span>
+            <span class="remote-name">${escapeHtml(rem.display_name)}</span>
+            <span id="rhd_${rem.idx}" style="display:contents"></span>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px" onclick="event.stopPropagation()">
+            <button class="btn btn-success btn-sm" onclick="remoteServerAction(${rem.idx},'start')">Start All</button>
+            <button class="btn btn-danger btn-sm" onclick="remoteServerAction(${rem.idx},'stop')">Stop All</button>
+          </div>
+        </div>
+        <div class="remote-body ${collapsed ? 'hidden' : ''}" id="rb_${rem.idx}">
+          ${instsOf(rem).map(inst => remoteCardShell(rem.idx, inst)).join('')}
+          <div id="rmsg_${rem.idx}" style="display:contents"></div>
+        </div>
+      </div>`;
+    }).join('') + '</div></section>';
+    remotes.forEach(rem => populateRemoteMediaDropdowns(rem.idx, true));
+  }
+
+  remotes.forEach(rem => {
+    setHtml('rhd_' + rem.idx, remoteHeaderHtml(rem, statusOf(rem)));
+    setHtml('rmsg_' + rem.idx, remoteMessageHtml(rem, statusOf(rem)));
+    instsOf(rem).forEach(inst => {
+      const act = action => `remoteInstanceAction(${rem.idx}, ${inst.id}, '${action}')`;
+      updateCard('r', rem.idx + '_' + inst.id, inst, act('restart'), act('stop'));
+    });
+  });
+}
+
+function updateRemotes() {
+  api('/api/remotes').then(data => renderRemotes(data.remotes));
+}
+
+function remoteServerAction(idx, action) {
+  toast('Sending ' + action + ' to remote...', 'info');
+  api('/api/remote/' + idx + '/server/' + action, 'POST')
+    .then(d => { toast(d.message || action + ' OK', 'success'); updateRemotes(); })
+    .catch(() => toast('Remote action failed', 'error'));
+}
+
+function remoteInstanceAction(idx, instId, action) {
+  api('/api/remote/' + idx + '/instance/' + instId + '/' + action, 'POST')
+    .then(() => { setTimeout(updateRemotes, 2000); updateRemotes(); })
+    .catch(() => toast('Remote action failed', 'error'));
+}
+
+const _remoteClipsKey = {};  // idx -> clip list last written, so unchanged lists don't touch the dropdowns
+function populateRemoteMediaDropdowns(idx, force) {
+  const selects = document.querySelectorAll(`[id^="rmedia_${idx}_"]`);
+  if (!selects.length) return;
+  api('/api/remote/' + idx + '/media').then(data => {
+    const clips = data.clips || [];
+    const key = JSON.stringify(clips);
+    if (!force && key === _remoteClipsKey[idx]) return;
+    _remoteClipsKey[idx] = key;
+    document.querySelectorAll(`[id^="rmedia_${idx}_"]`).forEach(sel => { sel.innerHTML = clipOptions(clips, sel.value); });
+  });
+}
+
+function onRemoteMediaSelect(idx, instId) {
+  const clip = document.getElementById('rmedia_' + idx + '_' + instId)?.value;
+  if (!clip) return;
+  const inp = document.getElementById('ramcp_' + idx + '_' + instId);
+  if (inp) inp.value = `PLAY 1-1 "${clip}" LOOP`;
+}
+
+function sendRemoteAmcp(idx, instId) {
+  const input = document.getElementById('ramcp_' + idx + '_' + instId);
+  const cmd = input?.value?.trim();
+  if (!cmd) { toast('Enter an AMCP command first', 'warning'); return; }
+  api('/api/remote/' + idx + '/instance/' + instId + '/amcp', 'POST', { command: cmd })
+    .then(d => toast('Remote: ' + (d.response || 'OK'), 'success'))
+    .catch(() => toast('Remote AMCP failed', 'error'));
+}
+
+// From the config: the address other PCs use, and the v1.x import notice if there is one.
+function showConfigInfo() {
+  api('/api/config').then(cfg => {
+    setText('lan-url', cfg.lan_url);
+    document.getElementById('lan-address').hidden = false;
+    const notice = cfg.v1_notice;
+    if (!notice) return;
+    setText('v1-outputs', notice.outputs === 1 ? '1 output' : notice.outputs + ' outputs');
+    setText('v1-source', notice.source);
+    document.getElementById('v1-password').hidden = !notice.password;
+    api('/api/key').then(k => setText('v1-key', k.trigger_key)).catch(() => setText('v1-key', '<trigger key>'));
+    document.getElementById('v1-banner').hidden = false;
+  }).catch(() => {});
+}
+
+function dismissV1Notice() {
+  api('/api/v1-notice/dismiss', 'POST')
+    .then(() => { document.getElementById('v1-banner').hidden = true; })
+    .catch(e => toast(e.message, 'error'));
+}
+
+showConfigInfo();
+Live.on('status', showStatus);
+Live.on('log', data => showLog(data.log));
+updateRemotes();
+setInterval(updateRemotes, 3000);  // other controllers are still polled; there's no cross-agent stream
+// New clips copied into a media folder appear without a reload (unchanged lists aren't rewritten).
+setInterval(() => {
+  loadMediaClips();
+  Object.keys(_remoteStatusCache).forEach(idx => populateRemoteMediaDropdowns(idx));
+}, 15000);
+</script>
+</body>
+</html>

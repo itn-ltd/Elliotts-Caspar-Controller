@@ -1,15 +1,15 @@
-; Elliott's Caspar Controller -- Inno Setup installer script
+; Caspar Controller -- Inno Setup installer script
 ; Build: iscc /DMyAppVersion="2.0.4" setup.iss
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
 
-#define MyAppName      "Elliott's Caspar Controller"
-#define MyAppSlug      "ElliottsCasparController"
-#define MyAppPublisher "BlueElliott"
-#define MyAppURL       "https://github.com/BlueElliott/Elliotts-Caspar-Controller"
-#define MyAppExeName   "ElliottsCasparController.exe"
+#define MyAppName      "Caspar Controller"
+#define MyAppSlug      "CasparController"
+#define MyAppPublisher "ITN"
+#define MyAppURL       "https://github.com/itn-ltd/Elliotts-Caspar-Controller"
+#define MyAppExeName   "CasparController.exe"
 ; Fixed GUID -- no braces here, added at AppId line via {{ escape.
 #define MyAppId "A3F7C2D1-8B4E-4F9A-B2C6-E1D8A3F7C2D1"
 
@@ -26,7 +26,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=Output
 OutputBaseFilename={#MyAppSlug}Setup
-SetupIconFile=..\static\esc_icon.ico
+SetupIconFile=..\caspar_controller\static\esc_icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -38,7 +38,7 @@ VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
 CloseApplications=yes
-CloseApplicationsFilter={#MyAppExeName}
+CloseApplicationsFilter={#MyAppExeName},ElliottsCasparController.exe
 RestartApplications=no
 
 [Languages]
@@ -62,6 +62,12 @@ Source: "..\dist\{#MyAppSlug}\_internal\*"; \
   Flags: ignoreversion recursesubdirs createallsubdirs; \
   Components: main
 
+[InstallDelete]
+; v1.x's exe and its "Elliott's" shortcuts, which an upgrade would otherwise leave behind.
+Type: files; Name: "{app}\ElliottsCasparController.exe"
+Type: files; Name: "{autoprograms}\Elliott's Caspar Controller.lnk"
+Type: files; Name: "{autodesktop}\Elliott's Caspar Controller.lnk"
+
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}";  Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
@@ -72,7 +78,6 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: files; Name: "{app}\elliotts_caspar_config.json"
 Type: files; Name: "{app}\*.config"
 Type: files; Name: "{app}\*.old"
 

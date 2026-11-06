@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install ".[ndi,build]"
 
       - name: Set up MSVC (needed to compile PyInstaller bootloader)
         uses: ilammy/msvc-dev-cmd@v1
@@ -83,11 +83,11 @@ jobs:
           cat version.txt
 
       - name: Build with PyInstaller (--onedir)
-        run: pyinstaller ElliottsCasparController.spec
+        run: pyinstaller CasparController.spec
 
       - name: Verify PyInstaller output
         run: |
-          $exePath = "dist\ElliottsCasparController\ElliottsCasparController.exe"
+          $exePath = "dist\CasparController\CasparController.exe"
           if (Test-Path $exePath) {
             Write-Host "PyInstaller build OK: $exePath"
             Get-Item $exePath | Format-List Name, Length, LastWriteTime
@@ -109,7 +109,7 @@ jobs:
 
       - name: Verify installer
         run: |
-          $setup = "installer\Output\ElliottsCasparControllerSetup.exe"
+          $setup = "installer\Output\CasparControllerSetup.exe"
           if (Test-Path $setup) {
             Write-Host "Installer built OK"
             Get-Item $setup | Format-List Name, Length, LastWriteTime
@@ -122,83 +122,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: installer/Output/ElliottsCasparControllerSetup.exe
+          path: installer/Output/CasparControllerSetup.exe
           retention-days: 90
-
-  # ==================== BUILD PYTHON PACKAGE ====================
-  build-package:
-    name: Build Python Package
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
-
-      - name: Build sdist & wheel
-        run: python -m build
-
-      - name: Check package
-        run: twine check dist/*
-
-      - name: Upload python package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-package
-          path: dist/*
-          retention-days: 90
-
-  # ==================== PUBLISH TO PYPI ====================
-  publish-pypi:
-    name: Publish to PyPI
-    runs-on: ubuntu-latest
-    needs: build-package
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Download package artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package
-          path: dist/
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install twine
-        run: python -m pip install --upgrade twine
-
-      - name: Publish to PyPI
-        continue-on-error: true
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          if [ -z "$TWINE_PASSWORD" ]; then
-            echo "PYPI_API_TOKEN not set - skipping PyPI publish"
-            exit 0
-          fi
-          python -m twine upload dist/*
 
   # ==================== CREATE GITHUB RELEASE ====================
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-windows-installer, build-package]
+    needs: [build-windows-installer]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -244,28 +175,22 @@ jobs:
           PREV_TAG=$(git describe --abbrev=0 --tags ${{ github.ref_name }}^ 2>/dev/null || echo "")
 
           cat > release-notes.md << 'EOF'
-          ## Elliott's Caspar Controller ${{ github.ref_name }}
+          ## Caspar Controller ${{ github.ref_name }}
 
           Desktop app and web UI for managing multiple CasparCG NDI outputs from a single Windows machine.
 
           ### Installation
 
-          **New install or upgrade from v1.x:**
-          1. Download `ElliottsCasparControllerSetup.exe` below and run it
-          2. Follow the wizard — no admin rights required
-          3. Launch from the desktop shortcut
+          1. Download `CasparControllerSetup.exe` below and run it. It installs for the current user (no admin rights) and upgrades v1.x.
+          2. Launch Caspar Controller from the Start menu, then click the tray icon → Open Caspar Controller.
 
-          **Auto-update from v2.x:**
-          The app will notify you and handle the update silently.
+          The app never updates itself: install new versions with the installer.
 
           ### Quick Start
 
-          1. Run the installer and launch the app
-          2. Go to **Open Web UI** (or `http://127.0.0.1:5280`)
-          3. Go to **Settings** → set the path to `casparcg.exe`
-          4. Add your output instances, click **Save & Regenerate Configs**, then **Start All**
+          The setup wizard opens on first run: the CasparCG path, your outputs and their NDI names, the keys for Automator and Companion, Start All, then a password.
 
-          See the [README](https://github.com/BlueElliott/Elliotts-Caspar-Controller#readme) for full setup instructions.
+          See the [README](https://github.com/itn-ltd/Elliotts-Caspar-Controller#readme) for full setup instructions.
 
           ### Changelog
           EOF
@@ -279,7 +204,7 @@ jobs:
           echo "" >> release-notes.md
           echo "" >> release-notes.md
           echo "---" >> release-notes.md
-          echo "Issues: https://github.com/BlueElliott/Elliotts-Casper-Controller/issues" >> release-notes.md
+          echo "Issues: https://github.com/itn-ltd/Elliotts-Caspar-Controller/issues" >> release-notes.md
 
           cat release-notes.md
 
@@ -287,7 +212,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/windows-installer/ElliottsCasparControllerSetup.exe
+            artifacts/windows-installer/CasparControllerSetup.exe
             artifacts/LiteCasparServer.zip
           fail_on_unmatched_files: false
           body_path: release-notes.md

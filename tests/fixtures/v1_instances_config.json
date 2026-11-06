@@ -1,0 +1,34 @@
+{
+  "caspar_exe_path": "casparcg.exe",
+  "amcp_base_port": 5250,
+  "web_port": 5280,
+  "startup_delay": 60,
+  "video_mode": "1080p2500",
+  "autostart_caspar": true,
+  "media_path": "D:\\Media",
+  "server_name": "Gallery Server",
+  "web_password": "old-password",
+  "web_password_enabled": true,
+  "instances": [
+    {
+      "id": 1,
+      "name": "GFX1",
+      "ndi_name": "PCR3 GFX1",
+      "type": "html",
+      "url": "https://example.com/GFX1",
+      "startup_command": ""
+    },
+    {
+      "id": 2,
+      "name": "MEDIA1",
+      "ndi_name": "PCR3 MEDIA1",
+      "type": "media",
+      "url": "",
+      "startup_command": "PLAY 2-1 LOOP",
+      "amcp_port": 5300
+    }
+  ],
+  "remote_controllers": [
+    {"url": "http://10.0.0.20:5280"}
+  ]
+}

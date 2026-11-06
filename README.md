@@ -1,185 +1,165 @@
-# Elliott's Caspar Controller
+# Caspar Controller
 
-> Desktop app and web UI for managing multiple CasparCG NDI outputs from a single Windows machine.
+Run several CasparCG outputs from one Windows PC, each sent out as its own NDI source, and control them from a web page or over HTTP.
 
-[![Build Status](https://github.com/BlueElliott/Elliotts-Casper-Controller/actions/workflows/build.yml/badge.svg)](https://github.com/BlueElliott/Elliotts-Casper-Controller/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/itn-ltd/Elliotts-Caspar-Controller/actions/workflows/ci.yml/badge.svg)](https://github.com/itn-ltd/Elliotts-Caspar-Controller/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/Licence-MIT-yellow.svg)](LICENSE)
 
----
+ITN's build of [Elliott's Caspar Controller](https://github.com/BlueElliott/Elliotts-Caspar-Controller), created by BlueElliott.
 
 ## What it does
 
-Elliott's Caspar Controller launches and manages multiple CasparCG processes simultaneously — one per NDI output — from a single desktop GUI and web dashboard. Each instance gets its own AMCP port and NDI source name, so receivers (Tricasters, vMix, NDI Monitor, etc.) can independently subscribe to whichever outputs they need.
-
-It was built for live broadcast workflows where you need several named NDI graphics outputs running reliably from one Windows PC.
-
----
-
-## Features
-
-- **Desktop GUI** — Native Windows launcher with system tray, status indicator, and controller uptime
-- **Multi-instance CasparCG** — Each output is a separate CasparCG process with its own AMCP port and NDI name
-- **Sequential startup** — Instances start one at a time with a gap between them, so NDI receivers latch onto the correct source
-- **Web dashboard** — Live instance status, Start/Stop controls per instance, media clip picker, AMCP command input, event log
-- **HTTP clip loading** — External devices (hardware controllers, Companion, automation systems) can load clips via a simple HTTP GET
-- **HTTP Generator** — Built-in URL builder for generating and copying clip-load URLs
-- **Settings page** — Configure the CasparCG path, video mode, AMCP ports, and manage instances (add, remove, reorder) from the browser
-- **Check for Updates** — Checks GitHub releases and links directly to the latest version
-- **Auto-start** — Optionally launch CasparCG automatically when the app starts
-
----
-
-## Quick Start
-
-### 1. Download both files from the [Releases page](https://github.com/BlueElliott/Elliotts-Casper-Controller/releases)
-
-| File | What it is |
-|------|------------|
-| `ElliottsCasparController.exe` | The controller app |
-| `LiteCasparServer.zip` | CasparCG Server — pre-configured, ready to use |
-
-### 2. Set up CasparCG
-
-1. Extract `LiteCasparServer.zip` to a permanent folder on your machine, e.g. `C:\CasparCG\`
-2. Inside you'll find `casparcg.exe` — this is what the controller launches
-
-> **NDI:** Make sure the [NDI Runtime](https://ndi.video/tools/) is installed on the machine so CasparCG can output NDI sources.
-
-### 3. Run the controller
-
-1. Run `ElliottsCasparController.exe` — no installation needed, no Python required
-2. The desktop launcher opens. Click **Open Web UI** (or go to `http://127.0.0.1:5280` in a browser)
-
-### 4. Configure
-
-1. Go to **Settings** in the web UI
-2. Set the **path to casparcg.exe** (e.g. `C:\CasparCG\casparcg.exe`) and click **Save Path**
-3. Set your **Video Mode** (default: 1080p 25fps)
-4. Under **Instances**, click **+ Add Instance** for each NDI output you want:
-   - Give it a **Name** (used in the dashboard) and an **NDI Name** (how it appears on the network)
-   - Set the **Type**: `HTML5` for web-based graphics (e.g. Singular.live), `Media` for video clip playback
-   - For HTML5: enter the graphics URL. For Media: optionally enter a startup AMCP command
-5. Click **Save & Regenerate Configs**
-
-### 5. Start CasparCG
-
-Click **Start All** on the Dashboard (or **Start CasparCG** in the desktop launcher). The app will:
-
-1. Write a config file for each instance next to `casparcg.exe`
-2. Kill any existing CasparCG processes
-3. Launch each instance sequentially, waiting for AMCP to respond before moving to the next
-4. Send each instance its startup command (load URL or play clip)
-
-NDI sources will appear on the network named exactly as you configured them.
-
----
-
-## HTTP Clip Loading
-
-Any device on the same network can trigger a clip load via HTTP GET — no special integration needed.
-
-```
-GET http://<controller-ip>:<web-port>/api/load?instance=<name>&clip=<clip-name>
-GET http://<controller-ip>:<web-port>/api/load?instance=<name>&clip=<clip-name>&loop=false
-```
-
-Go to **HTTP Generator** in the web UI to build and copy these URLs without typing.
-
-Works from a web browser, `curl`, a Companion HTTP button, a touchscreen panel, or any automation system that can send HTTP GET requests.
-
----
-
-## Web Interface
-
-| URL | Page |
-|-----|------|
-| `http://<ip>:<port>/` | Dashboard — server controls, instance cards, media picker, event log |
-| `http://<ip>:<port>/http-generator` | HTTP URL Generator |
-| `http://<ip>:<port>/settings` | Settings — exe path, video mode, ports, instance editor |
-
-Default web port is `5280`. Change it via the port card in the desktop launcher or in Settings.
-
-The dashboard is accessible from any device on the network using the machine's IP address.
-
----
-
-## Instance Types
-
-| Type | What it does |
-|------|-------------|
-| `HTML5` | Sends `PLAY 1-1 [url]` to load a web graphics page (e.g. Singular.live, Vizrt Live, any URL) |
-| `Media` | Sends a custom AMCP startup command, or `CLEAR 1` if left blank. Exposes a clip picker on the dashboard. |
-
----
+- **One CasparCG process per output,** each with its own AMCP port and NDI name, for HTML graphics (such as Singular.live) or media clips.
+- **A dashboard** showing each output's state, the clip playing and the time left, with Start, Stop, a clip picker and an AMCP command box.
+- **Tally:** a card is outlined red when the vision mixer has it on programme and amber on preview.
+- **Clip triggers over HTTP** for Automator, Companion and hardware panels. The Triggers page builds the URLs.
+- **Auto-restart** for outputs that crash or hang, but never one that's on air.
+- **Remote Controllers:** watch and control other gallery PCs from one dashboard.
+- **Runs from the system tray.** Quitting the app leaves CasparCG running, so outputs stay on air.
 
 ## Requirements
 
-- Windows 10 / 11
-- [NDI Runtime](https://ndi.video/tools/) installed on the machine
-- `LiteCasparServer.zip` from the [Releases page](https://github.com/BlueElliott/Elliotts-Casper-Controller/releases) (includes CasparCG)
+- Windows 10 or 11
+- CasparCG Server
+- The [NDI Runtime](https://ndi.video/tools/)
 
-### Running from source
+## Install
+
+Install with `CasparControllerSetup.exe`, then open **Caspar Controller** from the Start menu. It will be in Company Portal once Intune deployment is ready (#39).
+
+The installer's optional CasparCG download still points at the original author's releases, so install CasparCG yourself for now (#10 replaces it). The app never updates itself.
+
+## Quick start
+
+1. **Open it:** click the tray icon, then **Open Caspar Controller**. On a new install the setup wizard opens by itself. You can open it again later from **Settings → Setup wizard**.
+2. **Follow the wizard:**
+   1. **CasparCG:** the path to `casparcg.exe`, and a check that the NDI Runtime is installed.
+   2. **Your outputs:** how many, then each one's type (HTML or Media), name, NDI name and graphics URL. NDI names are suggested from the controller's name.
+   3. **Keys:** the trigger key for Automator and panels, and the full API key for Companion and other controllers.
+   4. **Start the outputs.**
+   5. **Set a password,** so other PCs can use the web page.
+3. **Check the dashboard:** each output's card turns green when it's live.
+
+From another PC, browse to `http://<controller PC>:5280` and sign in.
+
+## Upgrading from the original version (v1.x)
+
+### Automatic import
+
+The first time the new version starts, it looks for a v1.x config and imports it. It checks each user's v1.x install, `C:\CasparCG`, and the app's own folder, and uses the newest file it finds.
+
+- **What carries over:**
+  - every setting
+  - the outputs, with the same numbers and AMCP ports
+  - the media folder
+  - the CasparCG path, if that file still exists
+  - the password, if one was switched on
+- **Auto-restart** is turned on.
+- **The v1.x file isn't changed.** A copy is saved as `config.v1-backup.json` beside the new config, without the plaintext password.
+- **A notice on the dashboard** says what was imported and shows the trigger key.
+
+### Export and import by hand
+
+Use this to move settings from a v1.x PC to a new one:
+
+1. **On the v1.x PC:** **Settings → Config Backup → Export Config** downloads `elliotts_caspar_config.json`.
+2. **On the new PC:** **Settings → General → Config Backup → Import Config**, and choose that file.
+
+The import keeps the new PC's own password, API keys, allowed addresses and saved Remote Controller keys. It never imports the v1.x password. If the file's CasparCG path doesn't exist on the new PC, the new PC's path is kept.
+
+### After upgrading
+
+- **Triggers now need a key.** Add `&api_key=<trigger key>` to every Automator, Companion and panel URL, or copy new URLs from the Triggers page.
+- **Changing over gradually:** under **Settings → Security → API Keys → Changeover**, list the addresses of devices that haven't been updated yet. They can fire triggers without a key for now, and each trigger is logged. Clear the list once they all send the key.
+- **Removing v1.x:** run `installer\remove-v1.ps1` as an administrator, with `-WhatIf` first to see what it will do. It only removes v1.x once the new version has imported its config, and CasparCG keeps running.
+
+## Using it
+
+### Output cards
+
+| Status box | Means |
+|---|---|
+| Green, **Live** | Running and answering |
+| Plain, **Stopped** | Not running: **Start** it |
+| Amber, **Crashed (1/5)**, **Hung (1/5)** or **Restarting (1/5)** | Auto-restart is bringing it back |
+| Red, **Failed** | It failed 5 times in 10 minutes, so auto-restart gave up. Check its console, then **Start** it |
+
+- **Start All** starts every output that isn't running, one every 5 seconds, so receivers pick up the right NDI source. Outputs already live aren't touched.
+- **Console**, at the bottom of each card, shows that output's CasparCG log, live.
+- **Auto Restart**, on each card, turns auto-restart on or off for that output.
+
+### Triggering clips
+
+On the **Triggers** page, pick a media output and a clip, then copy the URL:
+
+```
+http://<controller PC>:5280/api/load?instance=<output>&clip=<clip>&api_key=<trigger key>
+```
+
+- **Looping:** clips loop by default. Add `&loop=false` to play once.
+- **Companion:** use a **Generic HTTP GET** action with the URL. To keep the key out of the URL, send it as an `X-API-Key` header instead.
+- **Automator:** calls the same URL.
+
+### Remote Controllers
+
+Add other controllers in **Settings → Remote Controllers**, each with its URL (`http://<PC>:5280`) and its own full API key. **Test** checks that it answers and accepts the key. Its outputs then appear on this dashboard.
+
+## Security
+
+- **Password:** until one is set, only a browser on the controller PC itself can use the web page. Set or change it in **Settings → Security**. Changing it signs out every other browser. After 5 wrong passwords in a minute, that address has to wait a minute.
+- **API keys,** in **Settings → Security → API Keys:**
+  - **Trigger key:** fires clips and nothing else. Give it to Automator and panels.
+  - **Full API key:** everything except the password and the keys themselves. For Companion setups that start and stop outputs, and for other controllers.
+  - **Sending a key:** as an `X-API-Key` header or `?api_key=` in the URL.
+  - **Rotating a key** stops the old one working straight away.
+- **Allowed addresses** (optional): keys then only work from the listed IP addresses, subnets or host names. Signed-in browsers aren't affected.
+- **A starting password for new installs,** for example set by Intune:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable("CASPAR_CONTROLLER_INITIAL_PASSWORD", "<password>", "Machine")
+  ```
+
+  It only applies when no password is set, and the first person to sign in must choose a new one.
+- **Forgotten password:** quit the app, set `"web_password_hash": ""` and `"password_change_required": false` in the config file, then start the app again. It's then back to first-run mode, so set a new password from the controller PC.
+
+## Settings, logs and diagnostics
+
+Everything lives in `%ProgramData%\CasparController\`:
+
+| File | Holds |
+|---|---|
+| `config.json` | All settings, including the password hash and keys, so treat it as sensitive. Edit it in Settings, or by hand only while the app isn't running |
+| `logs\events.log` | The dashboard's event log, kept across restarts |
+| `logs\agent.log` | The app's own log, including errors |
+| `profile.json` | Optional settings for a new install, for example deployed by Intune |
+
+- **Backups:** **Settings → General → Config Backup** exports and imports the settings. Exports never include the password or any key.
+- **Diagnostics:** **Settings → General → Download diagnostics** saves a zip for the service desk. It holds the settings without passwords or keys, the versions, the app's logs and each output's CasparCG log.
+- **CasparCG's own files:** each output's config and logs are kept next to `casparcg.exe`. The configs are rewritten on every start, so don't edit them.
+
+## More documentation
+
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): for the service desk, covering starting and stopping, the console, diagnostics and common problems.
+- [docs/API.md](docs/API.md): every HTTP endpoint and who may call it.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the app is put together.
+- [CONTRIBUTING.md](CONTRIBUTING.md): developing, testing and the fake CasparCG preview.
+
+## Building
 
 ```bash
-git clone https://github.com/BlueElliott/Elliotts-Casper-Controller.git
-cd Elliotts-Casper-Controller
-pip install -r requirements.txt
-python -m elliotts_casper_controller
+pip install -e ".[build]"
+pyinstaller CasparController.spec                # dist\CasparController\
+iscc /DMyAppVersion="1.2.3" installer\setup.iss  # installer\Output\CasparControllerSetup.exe
 ```
 
-Python 3.8+ required.
+Pushing a `v*.*.*` tag builds and publishes a release (`build.yml`).
 
-### PyPI
+## Licences
 
-```bash
-pip install elliotts-casper-controller
-python -m elliotts_casper_controller
-```
-
----
-
-## Configuration file
-
-Settings are saved to `elliotts_casper_config.json` next to the exe (or project root when running from source). You can edit this file directly, but it's easier to use the Settings page.
-
-Per-instance CasparCG configs (`casparcg_inst_N.config`) are auto-generated next to `casparcg.exe` each time CasparCG is started. Do not edit these manually — they will be overwritten.
-
----
-
-## Building the executable
-
-```bash
-pip install pyinstaller
-pyinstaller ElliottsCasparController.spec
-# Output: dist/ElliottsCasparController-X.X.X.exe
-```
-
-Releases are built automatically by GitHub Actions when a `v*.*.*` tag is pushed.
-
----
-
-## Architecture
-
-```
-ElliottsCasparController.exe
-├── Tkinter desktop window    (gui_launcher.py)
-├── FastAPI web server         (core.py)            → http://0.0.0.0:<web-port>
-├── AMCP TCP client            (amcp_client.py)     → localhost:<amcp-port>
-├── CasparCG process manager   (process_manager.py)
-└── Config manager             (config_manager.py)  → elliotts_casper_config.json
-```
-
-Each CasparCG instance is launched as a separate process with `CREATE_NEW_CONSOLE` so they get independent console windows. The web server and desktop GUI share process state via in-place dict mutation (`_sync_api_managers`).
-
----
-
-## Known limitations
-
-- **Windows only** — The process management and console handling use Windows-specific APIs.
-- **NDI receiver sequencing** — If you start all instances simultaneously, some receivers may latch onto the wrong NDI source. The app starts instances sequentially with a 5-second gap to avoid this. Do not bypass this by starting instances manually in parallel.
-
----
+- **Caspar Controller:** MIT ([LICENSE](LICENSE)), from BlueElliott's original project.
+- **CasparCG Server:** GPL-3.0, by the CasparCG project. Its source code is at https://github.com/CasparCG/server. The controller runs it unchanged as a separate program. The notice is also in **Settings → General → About**.
+- **ITV Reem fonts:** included for ITN's build.
 
 ## Issues
 
-Report bugs at: https://github.com/BlueElliott/Elliotts-Casper-Controller/issues
+https://github.com/itn-ltd/Elliotts-Caspar-Controller/issues

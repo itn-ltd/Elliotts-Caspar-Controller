@@ -6,6 +6,7 @@
 | **Scope** | App code, installer, build pipeline, packaging, scripts |
 | **Goal** | Safe, easy to install and supportable for company-wide release via Intune |
 | **Direction** | **Approach A**: a local agent on each playout PC serves the web UI and an authenticated API. Remote Controllers link the agents. |
+| **Updated** | 2026-11-05: gallery answers and the templates request (4.13, 4.14) |
 
 ---
 
@@ -235,8 +236,7 @@ One static key, accepted as a header or a query parameter.
 - **Remote Controllers:** store `{url, api_key}` per remote; agents send the header. Replace `/proxy` with explicit endpoints.
 - **Caveats:**
   - Query keys leak into history, panel configs and proxy logs. Prefer the header and keep access logs off.
-  - Plain HTTP sends the key in clear. That's fine on an isolated gallery VLAN; otherwise add TLS later.
-  - Need panels that can fire clips but not reconfigure? Add a trigger-only key limited to `/api/load` later.
+  - Plain HTTP sends the key in clear, and the galleries **aren't** isolated (4.13). Phase 2 adds a trigger-only key for Automator and an optional list of allowed client addresses; whether TLS is also needed before release is an open decision.
 
 ### 4.3 Console side panel
 
@@ -264,7 +264,7 @@ One `/api/events` stream replaces the 2 s/3 s polling. Cards update in place (re
 - **Settings:** a global `auto_restart` toggle, default `true`, with an optional per-instance override (`on`, `off` or `inherit`). Both appear in Settings, and each instance card has a quick toggle.
 - **Triggers:**
   - **Crash:** the process exits unexpectedly. The output pipe closing or `poll()` returning reports this immediately.
-  - **Hang:** the process is alive but has missed `VERSION` replies for 30 s (configurable). The threshold is kept conservative so a busy instance isn't killed.
+  - **Hang:** the process is alive but has missed `VERSION` replies for 30 s (configurable). The threshold is kept conservative so a busy instance isn't killed. No gallery output takes more than 60 s to start (4.13), so these defaults stand.
 - **Restart:** start the instance again, wait for AMCP, then **re-send its startup command** (HTML URL or media command) so the output comes back with its content, not blank.
 - **Back-off and cap:** wait 2 s, 5 s, 15 s, 30 s and then 60 s between attempts. After 5 restarts in 10 minutes, stop retrying, mark the instance **failed** and raise a dashboard alert. A clean run of 10 minutes resets the counter.
 - **Operator intent wins:** Stop and Stop All switch auto-restart off for that instance until it is started again, so a deliberate stop is never undone. Settings changes and Restart All pause it while they run.
@@ -384,6 +384,50 @@ v1.x machines need taking over cleanly, so **keep the old config migrations** un
 
 **Test** with real v1.x configs collected from gallery machines, run against a fake `%LOCALAPPDATA%` tree. **Remove** the migration code once Intune shows no v1.x installs.
 
+Only PCR3 runs v1.x (4.13). The streaming VMs are new installs, but may already run CasparCG without the controller.
+
+### 4.13 Gallery requirements (team answers, 2026-11-05)
+
+**Sites.** The app runs in PCR3 today. The first rollout is PCR3 plus the Streaming & Syndication VMs; PCR4 comes later. Host names and addresses are kept out of this public repo and go in the Intune site profiles (4.6).
+
+| Site | App runs on | Operators open the UI from | HTTP control |
+|---|---|---|---|
+| PCR3 | The gallery's graphics server PC | A separate operator PC in the gallery | Automator |
+| Streaming | Four VMs, one controller each | The same VM | One shared Automator |
+| PCR4 (later) | Two VMs | Not yet known | Not yet known |
+
+**What this settles:**
+- **Usage:** HTTP triggering and the web UI from another PC are both in use. Nobody objected to Remote Controllers, so all three stay.
+- **Start-up times:** no output takes more than 60 s to start, so the auto-restart defaults in 4.5 stand.
+- **Network:** not isolated. PCR3 can be reached from anywhere on the corporate network. That moves three things forward:
+  - a trigger-only key and an optional list of allowed client addresses, so Automator's key can only fire clips and only from Automator (Phase 2)
+  - sign-in rate limiting (Phase 3)
+  - a firewall rule scoped to each site's operator PC and Automator (Phase 5)
+
+  TLS stays optional, pending a decision.
+
+- **Automator** calls plain URLs, so it sends its key as `?api_key=`. The allowed-address list stops a key copied from a URL being used from another machine.
+
+**Worked out without asking the team:**
+- **Number of streaming VMs:** the request named VMs 03 to 07, but listed 03 to 06. The Intune device group settles this at rollout.
+- **CasparCG versions:** each site's version, and whether the streaming VMs already run CasparCG, are checked on the machines when the CasparCG package work starts.
+
+### 4.14 CasparCG templates (team request, 2026-11-05)
+
+The team wants graphics played from CasparCG templates directly, instead of loading an external graphics app (Singular, SPX) into an HTML output.
+
+- **New instance type, "Graphics (templates)":** starts blank, same NDI output and start sequence as the other types.
+- **Explicit CG routes**, not raw AMCP: list templates, then add, play, update, next, stop and clear on a layer, with field data. Each command also has a GET form for Automator, and the trigger-only key accepts it.
+- **Template data is escaped for AMCP.** Today's clip checks reject the quotes that template data needs.
+- **Template folder** comes from the CasparCG package (`%ProgramData%\CasparCG\templates`) and is written into each instance's config. Today it is hard-coded as `template\` next to the exe.
+- **Operators** get a template panel on graphics cards; the Triggers page builds template URLs.
+
+**Before starting:** ask the team for one or two sample templates. They show the format, the field names and the data Automator sends; Flash templates don't run on CasparCG 2.3 and later. Unless the samples say otherwise, assume:
+- HTML templates.
+- Any layer.
+- Field data is optional.
+- Templates are copied into the folder by hand until Intune or a share is set up.
+
 ---
 
 ## 5. Roadmap
@@ -392,33 +436,39 @@ v1.x machines need taking over cleanly, so **keep the old config migrations** un
 |---|---|---|
 | **0. Stop the bleeding** | Tested and safe on a network | Characterisation tests first, then auth on all routes, `StaticFiles`, drop `cmd /k`, hide password, disable updater |
 | **1. Restructure** | One owner of state | Module split, `InstanceManager`, settings in `%ProgramData%` |
-| **2. Web UI** | Slick operator experience | Static front end, SSE, console panel, auto-restart, Triggers page, explicit remote API |
-| **3. Deployment** | One-click Company Portal install | Signed per-machine installer, Intune dependencies, v1.x migration, wizard, quickstart |
+| **2. Web UI** | Slick operator experience | Static front end, SSE, console panel, auto-restart, Triggers page, explicit remote API, trigger-only key, CasparCG templates |
+| **3. Deployment** | One-click Company Portal install | Signed per-machine installer, Intune dependencies, v1.x migration, wizard, quickstart, sign-in rate limit |
 | **4. Polish** | Supportable long-term | File logs, health endpoint, docs |
-| **Backlog** | Only if needed | Trigger-only key, TLS, central dashboard, CasparCG version upgrade |
+| **Backlog** | Only if needed | TLS, central dashboard, CasparCG version upgrade |
 
-Each phase ends in a tagged release. A task is done when its **Done when** check passes.
+All phases land on the `feature/v2-refactor` branch and ship together; there's no release per phase. A task is done when its **Done when** check passes.
 
-### Phase 0: Stop the bleeding
+**Progress (2026-11-05):** Phases 0 and 1 are done (#1–#6). Phase 2 is next.
 
-- [ ] **Test safety net, before any other change:** `tests/`, `pytest` in CI, `fake_amcp.py`, and the characterisation suite (4.10) on unchanged code. *Done when:* `pytest` runs on every PR, and every 4.10 row has a passing or xfail test that keeps passing through the refactor.
-- [ ] **API key and session auth** on all `/api/*`; remove localhost bypass. *Done when:* auth-matrix test passes for every route except `/api/health`.
-- [ ] **`StaticFiles` mount.** *Done when:* `/static/C:/Windows/win.ini` and `/static/../pyproject.toml` return 404.
-- [ ] **Launch CasparCG without `cmd /k`.** *Done when:* an instance named `A | B & C <D>` starts and the process tree is only `casparcg.exe`.
-- [ ] **Hash the password; never return it.** *Done when:* `/api/config` contains no `web_password`.
-- [ ] **Disable the self-updater.** *Done when:* no requests to `api.github.com`.
-- [ ] **Escape generated XML and UI text.** *Done when:* names containing `<&"--` give valid XML and render as text.
+### Phase 0: Stop the bleeding ✅
 
-### Phase 1: Restructure
+Done in #1, #2 and #3.
 
-- [ ] **New package layout** (4.1), moving code before changing it. *Done when:* tests pass, `core.py` and `gui_launcher.py` are gone, no module over ~400 lines.
-- [ ] **`InstanceManager` as single owner**; remove `_sync_api_managers` and GUI duplicates. *Done when:* only `instances.py` constructs processes, and concurrent Start All runs once.
-- [ ] **Non-blocking start/restart.** *Done when:* `POST /api/server/start` returns in under 200 ms.
-- [ ] **Stable instance IDs.** *Done when:* reordering while live still stops the right process.
-- [ ] **Kill only owned processes.** *Done when:* an unrelated `casparcg.exe` and a connected browser survive Start All and app launch.
-- [ ] **Pydantic settings, atomic save.** *Done when:* duplicate ports, names and unsafe characters are rejected, and reads never see partial JSON.
-- [ ] **New AMCP client.** *Done when:* reply-code and multi-line tests pass, and a local call takes under 50 ms.
-- [ ] **Apply the 3.3 cuts** in moved code. *Done when:* each line is removed or marked deferred.
+- [x] **Test safety net, before any other change:** `tests/`, `pytest` in CI, `fake_amcp.py`, and the characterisation suite (4.10) on unchanged code. *Done when:* `pytest` runs on every PR, and every 4.10 row has a passing or xfail test that keeps passing through the refactor. *Rows:* config generation, loading and ports in `test_config.py`; start sequence in `test_start_sequence.py`; triggers in `test_triggers.py`; status and clip info in `test_status.py`; media in `test_media.py`.
+- [x] **API key and session auth** on all `/api/*`; remove localhost bypass. *Done when:* auth-matrix test passes for every route except `/api/health`. *Note:* the old bypass is gone, but one narrower trust stays by design: until a password is set, a browser on the controller PC itself (addressing it as localhost, same-origin) gets in, so first-run setup is possible. It ends when a password is set (`test_first_run_this_pc_has_access`).
+- [x] **`StaticFiles` mount.** *Done when:* `/static/C:/Windows/win.ini` and `/static/../pyproject.toml` return 404.
+- [x] **Launch CasparCG without `cmd /k`.** *Done when:* an instance named `A | B & C <D>` starts and the process tree is only `casparcg.exe`. *Note:* the real exe is launched directly with no shell; the process-tree test's tree includes `cmd.exe` only because its fake CasparCG is a `.cmd` file.
+- [x] **Hash the password; never return it.** *Done when:* `/api/config` contains no `web_password`.
+- [x] **Disable the self-updater.** *Done when:* no requests to `api.github.com`.
+- [x] **Escape generated XML and UI text.** *Done when:* names containing `<&"--` give valid XML and render as text.
+
+### Phase 1: Restructure ✅
+
+Done in #4, #5 and #6. Instance IDs stayed integers rather than UUIDs, so existing `/api/instance/{id}` panel URLs keep working. Adoption goes by the process on each instance's AMCP port, not a PID file.
+
+- [x] **New package layout** (4.1), moving code before changing it. *Done when:* tests pass, `core.py` and `gui_launcher.py` are gone, no module over ~400 lines. *Note:* `api/pages.py` (the page HTML) was exempt until Phase 2.1 moved the pages to `web/`.
+- [x] **`InstanceManager` as single owner**; remove `_sync_api_managers` and GUI duplicates. *Done when:* only `instances.py` constructs processes, and concurrent Start All runs once.
+- [x] **Non-blocking start/restart.** *Done when:* `POST /api/server/start` returns in under 200 ms.
+- [x] **Stable instance IDs.** *Done when:* reordering while live still stops the right process.
+- [x] **Kill only owned processes.** *Done when:* an unrelated `casparcg.exe` and a connected browser survive Start All and app launch.
+- [x] **Pydantic settings, atomic save.** *Done when:* duplicate ports, names and unsafe characters are rejected, and reads never see partial JSON.
+- [x] **New AMCP client.** *Done when:* reply-code and multi-line tests pass, and a local call takes under 50 ms.
+- [x] **Apply the 3.3 cuts** in moved code. *Done when:* each line is removed or marked deferred.
 
 ### Phase 2: Web UI
 
@@ -429,13 +479,14 @@ Each phase ends in a tagged release. A task is done when its **Done when** check
 - [ ] **Triggers page.** *Done when:* a copied URL works from `curl` on another machine.
 - [ ] **Explicit remote API** with per-remote keys; delete `/proxy` and `/remote/test`. *Done when:* two agents control each other in a test, and no endpoint accepts an arbitrary URL.
 - [ ] **Fix INFO and clip parsing** (3.1 #1, #2, #8, #9). *Done when:* fixture tests pass and remote cards show clip and time.
+- [ ] **Trigger-only key and allowed client addresses** (4.2, 4.13). *Done when:* the trigger key can call `/api/load` but gets 403 on `/api/config`, and key calls from unlisted addresses are refused.
+- [ ] **CasparCG template outputs** (4.14). *Done when:* a template with escaped field data plays from a Triggers-page URL and from the dashboard.
 
-### Phase 3: Deployment
+### Phase 3: Deployment groundwork
 
-- [ ] **CasparCG package from CI** (4.8). *Done when:* CI outputs a versioned `.intunewin` with SHA-256 and licence notice.
-- [ ] **Signed per-machine installer**; downloader and updater removed. *Done when:* a silent SYSTEM install lands in Program Files, signatures verify, uninstall is clean.
-- [ ] **Intune apps, dependencies, detection, supersedence.** *Done when:* a clean machine installs from Company Portal with no manual steps.
-- [ ] **Tray auto-start, mutex, firewall rule.** *Done when:* the tray appears at sign-in, a second launch focuses the first, and remote browsers connect.
+The packaging and Intune work moved to Phase 5, which needs Intune access and a site PC.
+
+- [ ] **Rate-limit sign-in, expire sessions.** *Done when:* repeated wrong passwords from one address are refused, and old sessions are rejected.
 - [ ] **v1.x migration** (4.12). *Done when:* fixture tests pass and a real v1.x machine keeps its config, media and triggers, with v1.x removed.
 - [ ] **Wizard and new README.** *Done when:* a new user reaches live NDI outputs from the README alone.
 - [ ] **Rename to "Caspar Controller"** (4.11) across installer, exe, tray, web UI and repo. *Done when:* "Elliott's" and "Casper" appear nowhere except the author credit.
@@ -446,8 +497,16 @@ Each phase ends in a tagged release. A task is done when its **Done when** check
 - [ ] **`/api/health`.** *Done when:* monitoring can read it without auth and it exposes nothing sensitive.
 - [ ] **Docs and licensing** (4.11). *Done when:* docs reviewed and CasparCG GPL notices included.
 
+### Phase 5: Intune and site rollout
+
+- [ ] **CasparCG package from CI** (4.8). *Done when:* CI outputs a versioned `.intunewin` with SHA-256 and licence notice.
+- [ ] **Signed per-machine installer**; downloader and updater removed. *Done when:* a silent SYSTEM install lands in Program Files, signatures verify, uninstall is clean.
+- [ ] **Intune apps, dependencies, detection, supersedence.** *Done when:* a clean machine installs from Company Portal with no manual steps.
+- [ ] **Tray auto-start, mutex, firewall rule** scoped per site (4.13). *Done when:* the tray appears at sign-in, a second launch focuses the first, and remote browsers connect.
+- [ ] **On-site checks** on a playout PC during the pilot. *Done when:* every check passes or has a ticket.
+
 ### Backlog
 
-- [ ] **API hardening:** trigger-only key scope and optional TLS. *Done when:* a trigger key can call `/api/load` but gets 403 on `/api/config`.
+- [ ] **Optional TLS.** Decide before company release whether it's required (4.13). *Done when:* the UI and API work over HTTPS with the configured certificate.
 - [ ] **Central dashboard** (option B) on top of the agent API, if one URL for all galleries is wanted.
-- [ ] **Upgrade CasparCG** to a newer release, done separately from the Phase 3 packaging, which keeps the version galleries run today.
+- [ ] **Upgrade CasparCG** to a newer release, done separately from the Phase 5 packaging, which keeps the version galleries run today.

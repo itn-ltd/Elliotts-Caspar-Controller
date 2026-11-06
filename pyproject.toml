@@ -3,14 +3,15 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "elliotts-casper-controller"
+name = "caspar-controller"
 version = "1.1.1"
-description = "Elliott's Caspar Controller - Desktop app and web UI for managing CasparCG with NDI outputs"
+description = "Caspar Controller: run and control several CasparCG NDI outputs on one PC, from a web UI and an HTTP API"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "BlueElliott", email = "elliott.ramdass10@gmail.com"}
+    {name = "ITN"},
+    {name = "BlueElliott", email = "elliott.ramdass10@gmail.com"},  # original author
 ]
 keywords = ["casparcg", "ndi", "broadcast", "graphics", "control", "singular", "automation"]
 classifiers = [
@@ -20,8 +21,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -47,45 +46,42 @@ ndi = [
 ]
 dev = [
     "pytest>=7.4.0",
+    "httpx>=0.24.0",
     "pytest-cov>=4.1.0",
-    "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
+    "ruff==0.17.3",  # pinned so CI, pre-commit and local formatting agree
+    "pre-commit>=3.5.0",
     "bandit>=1.7.0",
 ]
 
 build = [
     "pyinstaller>=6.0.0",
-    "build>=1.0.0",
-    "twine>=4.0.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/BlueElliott/Elliotts-Casper-Controller"
-Repository = "https://github.com/BlueElliott/Elliotts-Casper-Controller"
-Issues = "https://github.com/BlueElliott/Elliotts-Casper-Controller/issues"
-Documentation = "https://github.com/BlueElliott/Elliotts-Casper-Controller#readme"
+Homepage = "https://github.com/itn-ltd/Elliotts-Caspar-Controller"
+Repository = "https://github.com/itn-ltd/Elliotts-Caspar-Controller"
+Issues = "https://github.com/itn-ltd/Elliotts-Caspar-Controller/issues"
+Documentation = "https://github.com/itn-ltd/Elliotts-Caspar-Controller#readme"
 
 [project.scripts]
-elliotts-casper-controller = "elliotts_casper_controller.core:main"
+caspar-controller = "caspar_controller.__main__:main"
 
-[tool.setuptools]
-packages = ["elliotts_casper_controller"]
+[tool.setuptools.packages.find]
+include = ["caspar_controller*"]
 
 [tool.setuptools.package-data]
-elliotts_casper_controller = ["*.json"]
-"*" = ["static/*"]
-
-# ==================== BLACK ====================
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-include = '\.pyi?$'
+caspar_controller = ["static/*", "web/*"]
+"caspar_controller.caspar" = ["test_patterns/*.png"]
 
 # ==================== RUFF ====================
+# Ruff is both the linter and the formatter (`ruff check .`, `ruff format .`).
 [tool.ruff]
 line-length = 100
-target-version = "py38"
+target-version = "py310"
+
+[tool.ruff.format]
+# Keep each file's existing line endings (Windows checkouts use CRLF).
+line-ending = "auto"
 
 [tool.ruff.lint]
 select = [
@@ -99,6 +95,19 @@ select = [
 ignore = [
     "E501",
 ]
+# Never auto-delete "unused" variables: some are referenced by broken lambdas
+# (see #5) and need fixing by hand, not removing.
+unfixable = ["F841"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+# ==================== PYTEST ====================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Known-bad behaviour is pinned with xfail (tests/test_known_issues.py); strict
+# means a fix makes the run fail until its xfail marker is removed.
+xfail_strict = true
 
 # ==================== BANDIT ====================
 [tool.bandit]

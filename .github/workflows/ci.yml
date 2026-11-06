@@ -1,0 +1,62 @@
+name: CI
+
+# Every PR, plus merges to master. Tests only: builds and releases are in build.yml (version tags).
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    # Ruff behaves the same on Linux, which is faster and cheaper than Windows.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Only ruff is needed. The version comes from pyproject.toml so it can't drift.
+      - name: Install ruff
+        run: pip install "$(grep -o 'ruff==[0-9.]*' pyproject.toml)"
+
+      - name: Lint
+        run: ruff check . --output-format github
+
+      - name: Check formatting
+        run: ruff format --check .
+
+  test:
+    name: Test
+    # Windows: the process tests launch real cmd.exe / CasparCG-style processes.
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -ra
