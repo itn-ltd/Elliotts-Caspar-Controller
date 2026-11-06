@@ -7,6 +7,7 @@ galleries' build when they are available (see #7).
 
 import json
 import threading
+import time
 import types
 
 import pytest
@@ -280,9 +281,9 @@ def test_events_stream_ends_when_the_session_does(write_config, monkeypatch):
 
     write_config({"instances": []})
     signed_in = types.SimpleNamespace(cookies={"session": "tok"})
-    api_auth._sessions.add("tok")
+    api_auth._sessions["tok"] = time.time()
     assert api_auth.still_allowed(signed_in) is True
-    api_auth._sessions.discard("tok")  # signed out after the stream opened
+    api_auth._sessions.pop("tok")  # signed out after the stream opened
     assert api_auth.still_allowed(signed_in) is False
 
 
