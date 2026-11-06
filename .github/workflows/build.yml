@@ -181,20 +181,14 @@ jobs:
 
           ### Installation
 
-          **New install or upgrade from v1.x:**
-          1. Download `CasparControllerSetup.exe` below and run it
-          2. Follow the wizard — no admin rights required
-          3. Launch from the desktop shortcut
+          1. Download `CasparControllerSetup.exe` below and run it. It installs for the current user (no admin rights) and upgrades v1.x.
+          2. Launch Caspar Controller from the Start menu, then click the tray icon → Open Caspar Controller.
 
-          **Auto-update from v2.x:**
-          The app will notify you and handle the update silently.
+          The app never updates itself: install new versions with the installer.
 
           ### Quick Start
 
-          1. Run the installer and launch the app
-          2. Go to **Open Web UI** (or `http://127.0.0.1:5280`)
-          3. Go to **Settings** → set the path to `casparcg.exe`
-          4. Add your output instances, click **Save & Regenerate Configs**, then **Start All**
+          The setup wizard opens on first run: the CasparCG path, your outputs and their NDI names, the keys for Automator and Companion, Start All, then a password.
 
           See the [README](https://github.com/itn-ltd/Elliotts-Caspar-Controller#readme) for full setup instructions.
 

@@ -4,11 +4,12 @@
 
 Uses a throwaway config in .home/preview (git-ignored), never ProgramData or a real CasparCG:
 two live HTML outputs, a media output playing a clip, one stopped output, and sample
-console lines. Start/Stop can't launch anything, as there's no casparcg.exe behind it.
+console lines. The fake servers run inside this process, so Start, Stop and Restart are
+disarmed here: they can't reconnect to, launch or kill any process.
 """
 
 import json
-import socket
+import os
 import sys
 import threading
 import webbrowser
@@ -16,7 +17,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "tests"))
+from conftest import free_port  # noqa: E402
 from fake_amcp import FakeAMCPServer  # noqa: E402
+
+from caspar_controller.caspar.process import CasparProcessManager  # noqa: E402
 
 PORT = 5390
 PLAYING = (
@@ -26,10 +30,11 @@ PLAYING = (
 )
 
 
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def disarm() -> None:
+    """Stop would otherwise find this process on a fake's port, 'adopt' it and kill it."""
+    CasparProcessManager.adopt_existing = lambda self: False
+    CasparProcessManager.start = lambda self: False
+    CasparProcessManager._kill_tree = staticmethod(lambda pid: None)
 
 
 def main() -> None:
@@ -46,54 +51,38 @@ def main() -> None:
         "[info] [ffmpeg] PROMO_2024.mp4 opened\n", encoding="utf-8"
     )
 
-    servers = [FakeAMCPServer(), FakeAMCPServer(), FakeAMCPServer(info_xml=PLAYING)]
+    fakes = [FakeAMCPServer(), FakeAMCPServer(), FakeAMCPServer(info_xml=PLAYING), None]
+    outputs = [("GFX1", "html"), ("GFX2", "html"), ("MEDIA1", "media"), ("MEDIA2", "media")]
     instances = [
         {
-            "id": 1,
-            "name": "GFX1",
-            "ndi_name": "PREVIEW GFX1",
-            "type": "html",
+            "id": n,
+            "name": name,
+            "ndi_name": f"PREVIEW {name}",
+            "type": kind,
             "url": "",
-            "amcp_port": servers[0].port,
-        },
-        {
-            "id": 2,
-            "name": "GFX2",
-            "ndi_name": "PREVIEW GFX2",
-            "type": "html",
-            "url": "",
-            "amcp_port": servers[1].port,
-        },
-        {
-            "id": 3,
-            "name": "MEDIA1",
-            "ndi_name": "PREVIEW MEDIA1",
-            "type": "media",
-            "amcp_port": servers[2].port,
-        },
-        {
-            "id": 4,
-            "name": "MEDIA2",
-            "ndi_name": "PREVIEW MEDIA2",
-            "type": "media",
-            "amcp_port": free_port(),
-        },
+            "amcp_port": fake.port if fake else free_port(),  # MEDIA2: nothing listening
+        }
+        for n, ((name, kind), fake) in enumerate(zip(outputs, fakes, strict=True), start=1)
     ]
-    # Fresh outputs each run (the fake servers get new ports); keep a password or keys set before.
+
+    # Fresh outputs each run (the fakes get new ports); keep a password or keys set before, but
+    # nothing that reaches other machines.
     config = home / "config.json"
     kept = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
+    for key in ("remote_controllers", "api_clients"):
+        kept.pop(key, None)
     kept.update(
         server_name=kept.get("server_name", "Preview"),
         web_port=PORT,
+        amcp_base_port=free_port(),  # outputs added here stay off 5250 and any real CasparCG
         caspar_exe_path=str(caspar / "casparcg.exe"),
         instances=instances,
     )
     config.write_text(json.dumps(kept, indent=2), encoding="utf-8")
 
-    import os
-
     os.environ["CASPAR_CONTROLLER_HOME"] = str(home)
     os.environ.pop("CASPAR_CONTROLLER_INITIAL_PASSWORD", None)
+    disarm()
     import uvicorn
 
     from caspar_controller.api.app import app

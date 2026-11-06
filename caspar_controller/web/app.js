@@ -87,6 +87,7 @@ openTab(location.hash.slice(1));
 
 // The server name (from /api/health, open before sign-in) goes in the tab title and header.
 fetch('/api/health').then(r => r.json()).then(h => {
+  document.querySelectorAll('[data-version]').forEach(el => { el.textContent = 'v' + h.version; });
   const name = (h.server_name || '').trim();
   if (!name) return;
   document.title = document.title.replace('Caspar Controller', name);
@@ -148,4 +149,10 @@ function copyText(text, done = 'Copied') {
   try { copied = document.execCommand('copy'); } catch (e) {}
   ta.remove();
   (copied ? ok : fail)();
+}
+
+// A suggested NDI name: this controller's name, then the output's. Characters names can't
+// contain (+ & # and the like, which break trigger URLs) are left out.
+function suggestedNdi(server, name) {
+  return `${server} ${name}`.replace(/[^\w .()'-]/g, '').replace(/\s+/g, ' ').trim();
 }

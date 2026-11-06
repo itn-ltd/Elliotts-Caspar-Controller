@@ -4,7 +4,7 @@
 
 Python 3.10+ on Windows.
 
-```bash
+```bat
 git clone https://github.com/itn-ltd/Elliotts-Caspar-Controller.git
 cd Elliotts-Caspar-Controller
 python -m venv .venv && .venv\Scripts\activate
@@ -14,15 +14,15 @@ pre-commit install               # optional: lint and format on every commit
 
 ## Run it without a real CasparCG
 
-```bash
+```bat
 python tools/preview.py          # http://127.0.0.1:5390, opens your browser
 ```
 
-This runs the app against fake CasparCG servers (`tests/fake_amcp.py`) with a throwaway config in `.home/preview`. You get live and stopped outputs, a clip playing and console lines to work on. Nothing touches `%ProgramData%` or a real CasparCG.
+This runs the app against fake CasparCG servers (`tests/fake_amcp.py`) with a throwaway config in `.home/preview`. You get live and stopped outputs, a clip playing and console lines to work on. It never touches `%ProgramData%` or a real CasparCG: outputs use high free ports, and Stop and Start can't reconnect to or kill any process.
 
 To run the real tray app from source, point it at its own config folder first:
 
-```bash
+```bat
 set CASPAR_CONTROLLER_HOME=%CD%\.home\dev
 python -m caspar_controller
 ```
@@ -31,7 +31,7 @@ python -m caspar_controller
 
 ## Test and lint
 
-```bash
+```bat
 pytest                           # full suite, about 3 min: it launches fake CasparCG processes
 ruff check . && ruff format .    # ruff is the only linter and formatter
 ```

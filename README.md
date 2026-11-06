@@ -34,8 +34,8 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 
 ## Quick start (gallery PCs)
 
-1. **Install Caspar Controller**, with CasparCG Server and the [NDI Runtime](https://ndi.video/tools/). Until it's in Company Portal (#39), run the installer from a release (see [Install](#install)).
-2. **Click the tray icon**, then **Open Caspar Controller**. The setup wizard opens if nothing is set up yet; it's also under **Settings → Setup wizard**.
+1. **Install Caspar Controller**, with CasparCG Server and the [NDI Runtime](https://ndi.video/tools/). Until it's in Company Portal (#39), use the installer (see [Install](#install)); there's no ITN release yet, so build it from source for now ([Building](#building)).
+2. **Click the tray icon**, then **Open Caspar Controller**. On a first run the dashboard takes you to the setup wizard; it's also under **Settings → Setup wizard**.
 3. **Follow the wizard:**
    1. the CasparCG path
    2. your outputs and their NDI names (suggested from the controller's name)
@@ -47,7 +47,7 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 ### Triggering clips from Companion
 
 1. In **Triggers**, pick the media output and clip, then **Copy** the URL. It already has the **trigger key** in it, which can fire clips and nothing else.
-2. In Companion, add a **Generic HTTP → GET** action with that URL. Where a device can send headers, use the `curl` form under it instead, which keeps the key out of the URL.
+2. In Companion, add a **Generic HTTP → GET** action with that URL. To keep the key out of the URL, leave `&api_key=…` off and put the key in the action's header field as `X-API-Key: <key>` (the `curl` line on the Triggers page shows both).
 3. Automator works the same way: it calls the URL.
 
 The URL format is `http://<controller>:5280/api/load?instance=<output>&clip=<clip>&api_key=<key>`, with `&loop=false` to play once. See [Clip triggering](#clip-triggering-companion-panels).
@@ -66,7 +66,7 @@ The URL format is `http://<controller>:5280/api/load?instance=<output>&clip=<cli
 Today's releases are the original per-user installer. The per-machine installer and the CasparCG package are #11 and #10, and Company Portal is #39.
 
 1. Run `CasparControllerSetup.exe`.
-2. Optionally tick **Lite Caspar Server**: the installer downloads a pre-configured CasparCG and extracts it (default `C:\CasparCG`).
+2. **Lite Caspar Server** (the optional CasparCG download) still points at the original author's releases, so it won't work for ITN builds. Install CasparCG yourself for now; #10 replaces this with a proper package.
 3. Launch Caspar Controller from the Start menu.
 
 The app never updates itself: install new versions with the installer.
@@ -269,27 +269,6 @@ All need the key or a signed-in session, except `/api/health`.
 ## Development
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setting up, running against fake CasparCG servers (`python tools/preview.py`), tests and the workflow.
-
-Python **3.10+** on Windows.
-
-```bash
-git clone https://github.com/itn-ltd/Elliotts-Caspar-Controller.git
-cd Elliotts-Caspar-Controller
-python -m venv .venv && .venv\Scripts\activate
-pip install -e ".[dev]"          # add ,ndi for NDI tally
-set CASPAR_CONTROLLER_HOME=%CD%\.home   # optional: keep dev config out of ProgramData
-python -m caspar_controller
-```
-
-| | |
-|---|---|
-| Tests | `pytest` (about 1.5 min; launches fake CasparCG processes) |
-| Lint / format | `ruff check .` and `ruff format .` |
-| Pre-commit hook (optional) | `pre-commit install` |
-
-- **CI** (`.github/workflows/ci.yml`) runs Lint and Test on every pull request and on merges to `master`.
-- **Branches:** branch from `feature/v2-refactor` and open PRs back into it. See [`CLAUDE.md`](CLAUDE.md) and the `code-quality` skill in `.claude/skills/` for conventions.
-- **Tests:** `tests/` pins current behaviour, and `tests/test_known_issues.py` lists known bugs as expected failures, each linked to its issue.
 
 ### Building
 

@@ -38,7 +38,7 @@ VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
 CloseApplications=yes
-CloseApplicationsFilter={#MyAppExeName}
+CloseApplicationsFilter={#MyAppExeName},ElliottsCasparController.exe
 RestartApplications=no
 
 [Languages]
@@ -61,6 +61,12 @@ Source: "..\dist\{#MyAppSlug}\_internal\*"; \
   DestDir: "{app}\_internal"; \
   Flags: ignoreversion recursesubdirs createallsubdirs; \
   Components: main
+
+[InstallDelete]
+; v1.x's exe and its "Elliott's" shortcuts, which an upgrade would otherwise leave behind.
+Type: files; Name: "{app}\ElliottsCasparController.exe"
+Type: files; Name: "{autoprograms}\Elliott's Caspar Controller.lnk"
+Type: files; Name: "{autodesktop}\Elliott's Caspar Controller.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

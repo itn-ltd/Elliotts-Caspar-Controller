@@ -225,6 +225,12 @@ function renderInstances(instances) {
 }
 
 function showStatus(data) {
+  // A first run (nothing set up): go to the setup wizard, once per browser session.
+  if (data.needs_setup && !data.instances.length) {
+    let shown = true;
+    try { shown = sessionStorage.getItem('wizard_shown') === '1'; sessionStorage.setItem('wizard_shown', '1'); } catch (e) {}
+    if (!shown) { location.href = '/welcome'; return; }
+  }
   const running = data.running;
   document.getElementById('setup-banner').style.display = data.needs_setup ? 'block' : 'none';
   document.getElementById('pulse').className = 'pulse ' + (running ? 'pulse-green' : 'pulse-red');
