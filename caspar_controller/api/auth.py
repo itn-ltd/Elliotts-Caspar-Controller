@@ -61,6 +61,7 @@ def _trusted_local(request: Request) -> bool:
     )
 
 
+OPEN_PATHS = ("/login", "/api/health")  # no key or sign-in needed
 _CHANGE_PASSWORD_PATHS = ("/change-password", "/api/password", "/logout")
 # Account control: never with the API key, which lives in panel configs and URLs.
 _SESSION_ONLY_PATHS = ("/api/password", "/api/key", "/api/key/rotate")
@@ -97,7 +98,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in ("/login", "/api/health") or path.startswith(("/static/", "/web/")):
+        if path in OPEN_PATHS or path.startswith(("/static/", "/web/")):
             return await call_next(request)
         cfg = load_config()
         first_run = not cfg["web_password_hash"]
@@ -152,13 +153,14 @@ class _PasswordChange(BaseModel):
 
 @router.get("/api/key")
 def api_key_get():
+    """Both API keys (signed-in browsers only)."""
     cfg = load_config()
     return {"api_key": cfg["api_key"], "trigger_key": cfg["trigger_key"]}
 
 
 @router.post("/api/key/rotate")
 def api_key_rotate(key: Literal["api", "trigger"] = "api"):
-    """?key=trigger rotates the trigger key; otherwise the full API key."""
+    """Make a new key: ?key=trigger for the trigger key, otherwise the full API key."""
     name = f"{key}_key"
     cfg = load_config()
     cfg[name] = new_api_key()
@@ -169,6 +171,7 @@ def api_key_rotate(key: Literal["api", "trigger"] = "api"):
 
 @router.post("/api/password")
 def api_password(req: _PasswordChange, request: Request):
+    """Set or change the web UI password; signs out every other browser."""
     cfg = load_config()
     # The current password is skipped only on first run and the forced first change.
     stored = cfg["web_password_hash"]
@@ -205,6 +208,7 @@ def _check_password(request: Request, password: str, stored: str, wrong: str, st
 
 @router.post("/login")
 def api_login(req: _PasswordRequest, request: Request, response: Response):
+    """Sign in with the web UI password; sets the session cookie."""
     stored = load_config()["web_password_hash"]
     if not stored:
         raise HTTPException(status_code=400, detail="No password is set yet")
@@ -219,6 +223,7 @@ def api_login(req: _PasswordRequest, request: Request, response: Response):
 
 @router.post("/logout")
 def api_logout(request: Request, response: Response):
+    """Sign out this browser."""
     _sessions.pop(request.cookies.get("session", ""), None)
     response.delete_cookie("session")
     return {"ok": True}

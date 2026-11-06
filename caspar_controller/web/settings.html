@@ -207,8 +207,25 @@
   <p class="muted">
     Caspar Controller <span data-version></span>, ITN's build of
     <a href="https://github.com/BlueElliott/Elliotts-Caspar-Controller" target="_blank" rel="noopener">Elliott's Caspar Controller</a>,
-    created by BlueElliott. MIT licence. CasparCG Server is GPL-3.0, by the CasparCG project.
+    created by BlueElliott. MIT licence.
   </p>
+  <p class="muted" style="margin-top:8px">
+    It runs <strong>CasparCG Server</strong>, by the CasparCG project, which is free software under the
+    <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GNU General Public License v3.0</a>.
+    Its source code is at <a href="https://github.com/CasparCG/server" target="_blank" rel="noopener">github.com/CasparCG/server</a>.
+    Caspar Controller starts it as a separate program and doesn't change it.
+  </p>
+  <p class="muted" style="margin-top:8px">The ITV Reem fonts are included for ITN's build of the app.</p>
+</div>
+
+<!-- Diagnostics -->
+<div class="card">
+  <h2 style="margin-bottom:8px">Diagnostics</h2>
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
+    A zip for the service desk: the config without passwords or keys, versions, the event log, this app's log and each instance's CasparCG log.
+    Logs are kept in <code>%ProgramData%\CasparController\logs</code>.
+  </p>
+  <a class="btn btn-secondary" href="/api/diagnostics" download>Download diagnostics</a>
 </div>
 
 <!-- Config Import / Export -->

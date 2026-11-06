@@ -67,6 +67,7 @@ def api_instance_load_clip(inst_id: int, clip: str, loop: bool = True):
 
 @router.get("/api/media")
 def api_media():
+    """The clips in the media folder."""
     cfg = load_config()
     custom_media = cfg.get("media_path", "").strip()
     if custom_media and os.path.isdir(custom_media):

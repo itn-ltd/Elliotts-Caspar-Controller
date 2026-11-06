@@ -21,11 +21,13 @@ LIFETIME = 300  # then end the stream; EventSource reconnects by itself
 
 @router.get("/api/log")
 def api_log():
+    """The event log, oldest first."""
     return {"log": log.entries()}
 
 
 @router.get("/api/tally")
 def api_tally():
+    """Which outputs the vision mixer has on program and preview."""
     return {
         "available": tally.is_available(),
         "tally": tally.get_tally(),
@@ -63,7 +65,7 @@ async def event_stream(request: Request, console: Optional[Console] = None):
 
 @router.get("/api/events")
 def api_events(request: Request, console: Optional[int] = None):
-    """?console=<instance id> adds that instance's CasparCG log lines.
+    """Live status and event log as server-sent events; ?console=<id> adds that output's log.
 
     An id that isn't configured (say, a deleted instance a browser remembers) is ignored, not
     refused: a refused stream makes the page reload, and it would remember the same id.

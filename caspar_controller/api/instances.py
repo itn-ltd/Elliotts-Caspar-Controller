@@ -16,6 +16,7 @@ router = APIRouter()
 
 @router.get("/api/status")
 def api_status():
+    """Every output's state, clip, tally and CasparCG version."""
     return status_payload()
 
 
@@ -68,6 +69,7 @@ def status_payload() -> dict:
 
 @router.post("/api/server/start", status_code=202)
 def api_server_start():
+    """Start All: every output not already running (202, runs in the background)."""
     if not load_config().get("instances", []):
         raise HTTPException(status_code=400, detail="No instances configured")
     instances.manager.start_all()
@@ -76,12 +78,14 @@ def api_server_start():
 
 @router.post("/api/server/stop", status_code=202)
 def api_server_stop():
+    """Stop All (202)."""
     instances.manager.stop_all()
     return {"ok": True, "message": "Stopping all instances..."}
 
 
 @router.post("/api/instance/all/restart", status_code=202)
 def api_instance_restart_all():  # before {inst_id}, which would capture "all"
+    """Restart every output (202)."""
     log_event("Restarting all instances...")
     instances.manager.restart_all()
     return {"ok": True, "message": "Restarting all instances..."}
@@ -89,6 +93,7 @@ def api_instance_restart_all():  # before {inst_id}, which would capture "all"
 
 @router.post("/api/instance/{inst_id}/restart", status_code=202)
 def api_instance_restart(inst_id: int):
+    """Start or restart one output (202)."""
     name = instance_or_404(load_config(), inst_id)["name"]
     log_event(f"Restarting inst {inst_id} ({name})...")
     instances.manager.restart(inst_id)
@@ -97,6 +102,7 @@ def api_instance_restart(inst_id: int):
 
 @router.post("/api/instance/{inst_id}/stop", status_code=202)
 def api_instance_stop(inst_id: int):
+    """Stop one output (202)."""
     name = instance_or_404(load_config(), inst_id)["name"]
     instances.manager.stop(inst_id)
     return {"ok": True, "message": f"Stopping {name}..."}
@@ -115,6 +121,7 @@ def command_or_400(req: CommandRequest) -> str:
 
 @router.post("/api/instance/{inst_id}/amcp")
 def api_instance_amcp(inst_id: int, req: CommandRequest):
+    """Send one raw AMCP command to an output."""
     cfg = load_config()
     inst = instance_or_404(cfg, inst_id)
     command = command_or_400(req)

@@ -195,3 +195,13 @@ def test_the_dashboard_notice_shows_until_dismissed(local_anon, config_dir, tmp_
     assert local_anon.post("/api/v1-notice/dismiss").status_code == 200
     assert "v1_notice" not in local_anon.get("/api/config").json()
     assert saved(config_dir)["migrated_from"] == "1.x"  # still marked for the remediation script
+
+
+def test_a_v1_export_imports(client, config_dir):
+    v1 = json.loads((FIXTURES / "v1_channels_config.json").read_text())
+    v1.update(web_password="from-v1", web_password_enabled=True, amcp_port=6000)
+    assert client.post("/api/config/import", json=v1).status_code == 200
+    cfg = saved(config_dir)
+    assert len(cfg["instances"]) == 7 and "channels" not in cfg
+    assert cfg["amcp_base_port"] == 6000 and "amcp_port" not in cfg and "startup_delay" not in cfg
+    assert "web_password" not in cfg and not cfg["web_password_hash"]  # this PC's, untouched

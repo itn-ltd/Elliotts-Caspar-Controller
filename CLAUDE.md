@@ -19,6 +19,7 @@ pip install -e ".[dev]"
 pytest                          # full suite, ~3 min (Windows: launches real processes)
 ruff check . && ruff format .   # lint + format (ruff is the only formatter)
 pre-commit install              # optional: same checks on every commit
+python tools/api_docs.py        # regenerate docs/API.md after changing an endpoint
 ```
 
 CI (`.github/workflows/ci.yml`) runs Lint (Linux) and Test (Windows) on every PR.

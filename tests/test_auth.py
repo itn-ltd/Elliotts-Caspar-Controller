@@ -81,7 +81,13 @@ def test_bad_api_key_is_401(anon, password_on, key):
 
 
 def test_health_is_open(anon, password_on):
-    assert anon.get("/api/health").json() == {"ok": True, "version": __version__, "server_name": ""}
+    assert anon.get("/api/health").json() == {
+        "ok": True,
+        "version": __version__,
+        "server_name": "",
+        "caspar_versions": [],
+        "instances": [],
+    }
     assert anon.get("/api/healthz").status_code == 401  # exact match only
 
 
