@@ -7,6 +7,7 @@ galleries' build when they are available (see #7).
 
 import json
 import threading
+import types
 
 import pytest
 from conftest import free_port, instance
@@ -180,12 +181,18 @@ CASPAR_23_XML = (
 
 def test_parse_caspar_23_layout():
     assert parse_layer_info("201 INFO OK\r\n" + CASPAR_23_XML) == {
-        "clip": "AMB",
+        "clip": "AMB.mp4",  # the path's name with extension, as 2.0 shows it
         "time": 12.5,
         "duration": 60.0,
         "loop": False,
         "producer": "ffmpeg",
     }
+
+
+def test_parse_caspar_23_repeated_time_elements():
+    xml = CASPAR_23_XML.replace("<time>12.5 60</time>", "<time>12.5</time><time>60</time>")
+    info = parse_layer_info("201 INFO OK\r\n" + xml)
+    assert (info["time"], info["duration"]) == (12.5, 60.0)
 
 
 def test_parse_caspar_23_empty_layer():
@@ -230,7 +237,22 @@ def test_clip_names_with_numeric_suffix_kept():
 )
 def test_tally_matches_exact_local_source(monkeypatch, source, matches):
     monkeypatch.setattr(tally.socket, "gethostname", lambda: "PLAYOUT-PC")
+    monkeypatch.delenv("COMPUTERNAME", raising=False)
     assert tally.is_our_source(source, "PCR3 GFX1") is matches
+
+
+def test_tally_accepts_the_netbios_name(monkeypatch):
+    # Host names over 15 characters: NDI may use the shortened NetBIOS name.
+    monkeypatch.setattr(tally.socket, "gethostname", lambda: "gallery-playout-pc-01")
+    monkeypatch.setenv("COMPUTERNAME", "GALLERY-PLAYOUT")
+    assert tally.is_our_source("GALLERY-PLAYOUT (PCR3 GFX1)", "PCR3 GFX1")
+
+
+def test_html_outputs_are_not_asked_for_clip_info(write_config):
+    with FakeAMCPServer() as s:
+        write_config({"instances": [instance(1, "GFX1", amcp_port=s.port)]})
+        instances.manager.poll_status()
+        assert s.commands == ["VERSION"]
 
 
 # ---------------------------------------------------------------- live events (#7)
@@ -241,8 +263,25 @@ def events_of(body: str) -> list:
     out = []
     for block in body.strip().split("\n\n"):
         fields = dict(line.split(": ", 1) for line in block.splitlines())
-        out.append((fields["event"], json.loads(fields["data"])))
+        if "event" in fields:  # skips the opening "retry:" line
+            out.append((fields["event"], json.loads(fields["data"])))
     return out
+
+
+def test_events_stream_asks_for_a_quick_reconnect(client, write_config):
+    write_config({"instances": []})
+    assert client.get("/api/events").text.startswith("retry: 500\n\n")
+
+
+def test_events_stream_ends_when_the_session_does(write_config, monkeypatch):
+    from caspar_controller.api import auth as api_auth
+
+    write_config({"instances": []})
+    signed_in = types.SimpleNamespace(cookies={"session": "tok"})
+    api_auth._sessions.add("tok")
+    assert api_auth.still_allowed(signed_in) is True
+    api_auth._sessions.discard("tok")  # signed out after the stream opened
+    assert api_auth.still_allowed(signed_in) is False
 
 
 def test_events_stream_sends_status_and_log_once_each(client, write_config):

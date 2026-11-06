@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from caspar_controller import log, tally
+from caspar_controller.api.auth import still_allowed
 from caspar_controller.api.instances import status_payload
 
 router = APIRouter()
@@ -31,8 +32,12 @@ def api_tally():
 async def event_stream(request: Request):
     """Server-sent events: "status" and "log", each sent when it changes."""
     last: dict = {}
-    for _ in range(int(LIFETIME / TICK)):
+    yield "retry: 500\n\n"  # after each planned end, reconnect in 0.5 s, not the browser's 3-5 s
+    for tick in range(int(LIFETIME / TICK)):
         if await request.is_disconnected():
+            return
+        # Auth ran when the stream opened: stop if that sign-in or key has since gone.
+        if tick % 4 == 0 and not still_allowed(request):
             return
         for name, data in (("status", status_payload()), ("log", {"log": log.entries()})):
             if last.get(name) != data:
