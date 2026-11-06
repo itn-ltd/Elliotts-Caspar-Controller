@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     tally.stop_all()
 
 
-app = FastAPI(title="Elliott's Caspar Controller", version=__version__, lifespan=lifespan)
+app = FastAPI(title="Caspar Controller", version=__version__, lifespan=lifespan)
 app.add_middleware(auth.AuthMiddleware)
 ROUTERS = tuple(m.router for m in (auth, config, events, instances_api, media, remotes, pages))
 for router in ROUTERS:

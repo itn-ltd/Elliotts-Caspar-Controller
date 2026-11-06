@@ -1,15 +1,15 @@
-; Elliott's Caspar Controller -- Inno Setup installer script
+; Caspar Controller -- Inno Setup installer script
 ; Build: iscc /DMyAppVersion="2.0.4" setup.iss
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
 
-#define MyAppName      "Elliott's Caspar Controller"
-#define MyAppSlug      "ElliottsCasparController"
-#define MyAppPublisher "BlueElliott"
-#define MyAppURL       "https://github.com/BlueElliott/Elliotts-Caspar-Controller"
-#define MyAppExeName   "ElliottsCasparController.exe"
+#define MyAppName      "Caspar Controller"
+#define MyAppSlug      "CasparController"
+#define MyAppPublisher "ITN"
+#define MyAppURL       "https://github.com/itn-ltd/Elliotts-Caspar-Controller"
+#define MyAppExeName   "CasparController.exe"
 ; Fixed GUID -- no braces here, added at AppId line via {{ escape.
 #define MyAppId "A3F7C2D1-8B4E-4F9A-B2C6-E1D8A3F7C2D1"
 
@@ -72,7 +72,6 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: files; Name: "{app}\elliotts_caspar_config.json"
 Type: files; Name: "{app}\*.config"
 Type: files; Name: "{app}\*.old"
 

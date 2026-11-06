@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up — Caspar Controller</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<header class="topbar" data-page="welcome"></header>
+<div id="toast-container"></div>
+<main class="main">
+<div class="page-head">
+  <div>
+    <h1>Set up Caspar Controller</h1>
+    <p class="page-sub">Five steps to live NDI outputs. Settings has everything else, and you can come back here any time.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="caspar" id="tab-caspar" aria-controls="panel-caspar">1. CasparCG</button>
+    <button class="tab" role="tab" data-tab="outputs" id="tab-outputs" aria-controls="panel-outputs">2. Outputs</button>
+    <button class="tab" role="tab" data-tab="keys" id="tab-keys" aria-controls="panel-keys">3. Keys and triggers</button>
+    <button class="tab" role="tab" data-tab="start" id="tab-start" aria-controls="panel-start">4. Start</button>
+    <button class="tab" role="tab" data-tab="password" id="tab-password" aria-controls="panel-password">5. Password</button>
+  </div>
+  <div class="panel-body">
+
+<div class="tab-panel" data-tab="caspar" id="panel-caspar" role="tabpanel" aria-labelledby="tab-caspar" hidden>
+  <div class="card">
+    <h2 style="margin-bottom:4px">Where is CasparCG?</h2>
+    <p class="muted" style="margin-bottom:16px">
+      The path to <code>casparcg.exe</code>. Don't have it? Download CasparCG Server from
+      <a href="https://github.com/CasparCG/server/releases" target="_blank" rel="noopener">github.com/CasparCG/server/releases</a>
+      and extract it.
+    </p>
+    <div class="form-group">
+      <label for="caspar_exe_path">Path to casparcg.exe</label>
+      <input type="text" id="caspar_exe_path" placeholder="C:\CasparCG\casparcg.exe">
+    </div>
+    <div id="ndi-status" class="muted" style="margin-bottom:16px">Checking for NDI…</div>
+    <button class="btn btn-primary" onclick="saveCaspar()">Save and continue</button>
+  </div>
+</div>
+
+<div class="tab-panel" data-tab="outputs" id="panel-outputs" role="tabpanel" aria-labelledby="tab-outputs" hidden>
+  <div class="card">
+    <h2 style="margin-bottom:4px">Your outputs</h2>
+    <p class="muted" style="margin-bottom:16px">
+      Each output is one CasparCG with its own NDI source. HTML outputs show a web page (graphics);
+      media outputs play clips.
+    </p>
+    <div class="grid-2">
+      <div class="form-group">
+        <label for="server_name">This controller's name <span class="hint">(starts each NDI name, e.g. PCR3)</span></label>
+        <input type="text" id="server_name" oninput="suggestNdiNames()">
+      </div>
+      <div class="form-group">
+        <label for="output-count">How many outputs?</label>
+        <select id="output-count" onchange="renderOutputs()"></select>
+      </div>
+    </div>
+    <div id="output-rows"></div>
+    <button class="btn btn-primary" onclick="saveOutputs()">Save and continue</button>
+  </div>
+</div>
+
+<div class="tab-panel" data-tab="keys" id="panel-keys" role="tabpanel" aria-labelledby="tab-keys" hidden>
+  <div class="card">
+    <h2 style="margin-bottom:4px">Keys for Automator, Companion and panels</h2>
+    <p class="muted" style="margin-bottom:16px">
+      Devices that fire clips need a key. Give Automator and panels the <strong>trigger key</strong>, which can only
+      play clips. The full key is for Companion setups that start and stop outputs, and for other controllers.
+    </p>
+    <div class="form-group">
+      <label for="trigger_key">Trigger key</label>
+      <div style="display:flex;gap:10px">
+        <input type="text" id="trigger_key" readonly style="font-family:Consolas,monospace">
+        <button class="btn btn-secondary" onclick="copyText(document.getElementById('trigger_key').value, 'Trigger key copied')">Copy</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="api_key">Full API key</label>
+      <div style="display:flex;gap:10px">
+        <input type="text" id="api_key" readonly style="font-family:Consolas,monospace">
+        <button class="btn btn-secondary" onclick="copyText(document.getElementById('api_key').value, 'API key copied')">Copy</button>
+      </div>
+    </div>
+    <p class="muted" style="margin-bottom:16px">The <a href="/triggers">Triggers</a> page builds ready-to-use URLs with the key in.</p>
+    <button class="btn btn-primary" onclick="openTab('start')">Continue</button>
+  </div>
+</div>
+
+<div class="tab-panel" data-tab="start" id="panel-start" role="tabpanel" aria-labelledby="tab-start" hidden>
+  <div class="card">
+    <h2 style="margin-bottom:4px">Start the outputs</h2>
+    <p class="muted" style="margin-bottom:16px">
+      They start one at a time, 5 s apart, so receivers lock onto the right NDI source. Watch them come up on the
+      <a href="/">Dashboard</a>.
+    </p>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-primary" onclick="startAll()">Start All</button>
+      <button class="btn btn-secondary" onclick="openTab('password')">Continue</button>
+    </div>
+  </div>
+</div>
+
+<div class="tab-panel" data-tab="password" id="panel-password" role="tabpanel" aria-labelledby="tab-password" hidden>
+  <div class="card">
+    <h2 style="margin-bottom:4px">Set a password</h2>
+    <p class="muted" style="margin-bottom:16px" id="password-intro">
+      Until a password is set, only a browser on this PC can use Caspar Controller. Once it's set, this browser
+      signs in like any other.
+    </p>
+    <div id="password-form">
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="new_password">Password</label>
+          <input type="password" id="new_password">
+        </div>
+        <div class="form-group">
+          <label for="confirm_password">Confirm password</label>
+          <input type="password" id="confirm_password">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="savePassword()">Set password and finish</button>
+    </div>
+    <a href="/" class="btn btn-secondary" id="password-done" hidden>Go to the Dashboard</a>
+  </div>
+</div>
+
+  </div>
+</section>
+</main>
+<script src="/web/app.js"></script>
+<script src="/web/console.js" defer></script>
+<script>
+let _cfg = {instances: []};
+const MAX_OUTPUTS = 8;
+const _ndiEdited = new Set();  // rows whose NDI name was typed: stop suggesting for them
+
+function load() {
+  api('/api/config').then(cfg => {
+    _cfg = cfg;
+    document.getElementById('caspar_exe_path').value = cfg.caspar_exe_path || '';
+    document.getElementById('server_name').value = cfg.server_name || '';
+    const count = document.getElementById('output-count');
+    count.innerHTML = Array.from({length: MAX_OUTPUTS}, (_, i) => `<option>${i + 1}</option>`).join('');
+    count.value = String(Math.min(MAX_OUTPUTS, Math.max(cfg.instances.length, 2)));
+    renderOutputs();
+    if (cfg.password_set) {
+      document.getElementById('password-intro').textContent = 'A password is already set: you can change it in Settings → Security.';
+      document.getElementById('password-form').hidden = true;
+      document.getElementById('password-done').hidden = false;
+    }
+  });
+  api('/api/key').then(k => {
+    document.getElementById('trigger_key').value = k.trigger_key;
+    document.getElementById('api_key').value = k.api_key;
+  }).catch(() => {});
+  api('/api/status').then(s => {
+    document.getElementById('ndi-status').textContent = s.tally_available
+      ? '✓ The NDI Runtime is installed, so tally will work.'
+      : '⚠ NDI wasn\'t found on this PC. CasparCG needs the NDI Runtime to send outputs (ndi.video/tools).';
+  });
+}
+
+function saveCaspar() {
+  const path = document.getElementById('caspar_exe_path').value.trim();
+  api('/api/config', 'POST', {caspar_exe_path: path})
+    .then(() => openTab('outputs'))
+    .catch(e => toast(e.message, 'error'));
+}
+
+function suggestedNdi(name) {
+  const server = document.getElementById('server_name').value.trim();
+  return (server ? server + ' ' : '') + name;
+}
+
+function renderOutputs() {
+  const n = Number(document.getElementById('output-count').value);
+  const rows = document.getElementById('output-rows');
+  const typed = readOutputs();  // keep what's been typed when the count changes
+  rows.innerHTML = Array.from({length: n}, (_, i) => {
+    const inst = typed[i] || _cfg.instances[i] || {};
+    const name = inst.name || (i === n - 1 && n > 1 ? 'MEDIA1' : 'GFX' + (i + 1));
+    const type = inst.type || (name.startsWith('MEDIA') ? 'media' : 'html');
+    const ndi = inst.ndi_name || suggestedNdi(name);
+    return `
+    <div class="ch-edit-card" data-row="${i}">
+      <div class="ch-edit-top" style="flex-wrap:wrap">
+        <span class="hint" style="width:20px">${i + 1}</span>
+        <select class="out-type" style="width:110px" onchange="renderTypeFields(${i})">
+          <option value="html" ${type === 'html' ? 'selected' : ''}>HTML</option>
+          <option value="media" ${type === 'media' ? 'selected' : ''}>Media</option>
+        </select>
+        <input class="out-name" value="${escapeHtml(name)}" placeholder="Name" style="flex:1;min-width:120px" oninput="suggestNdiNames()">
+        <input class="out-ndi" value="${escapeHtml(ndi)}" placeholder="NDI name" style="flex:1;min-width:160px"
+               oninput="_ndiEdited.add(${i})">
+      </div>
+      <div class="ch-edit-source out-url-row" ${type === 'html' ? '' : 'hidden'}>
+        <input class="out-url" value="${escapeHtml(inst.url || '')}" placeholder="Graphics URL (optional), e.g. a Singular.live output">
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderTypeFields(i) {
+  const row = document.querySelector(`[data-row="${i}"]`);
+  row.querySelector('.out-url-row').hidden = row.querySelector('.out-type').value !== 'html';
+}
+
+function suggestNdiNames() {
+  document.querySelectorAll('[data-row]').forEach(row => {
+    if (!_ndiEdited.has(Number(row.dataset.row)))
+      row.querySelector('.out-ndi').value = suggestedNdi(row.querySelector('.out-name').value.trim());
+  });
+}
+
+function readOutputs() {
+  return [...document.querySelectorAll('[data-row]')].map(row => ({
+    name: row.querySelector('.out-name').value.trim(),
+    ndi_name: row.querySelector('.out-ndi').value.trim(),
+    type: row.querySelector('.out-type').value,
+    url: row.querySelector('.out-type').value === 'html' ? row.querySelector('.out-url').value.trim() : '',
+  }));
+}
+
+function saveOutputs() {
+  // Existing outputs keep their ids (and so their ports and Companion URLs); new ones get the next free id.
+  let nextId = Math.max(0, ..._cfg.instances.map(i => i.id)) + 1;
+  const instances = readOutputs().map((out, i) => {
+    const old = _cfg.instances[i];
+    return {...(old || {startup_command: '', amcp_port: 0}), ...out, id: old ? old.id : nextId++};
+  });
+  api('/api/config', 'POST', {server_name: document.getElementById('server_name').value.trim(), instances})
+    .then(() => api('/api/config'))
+    .then(cfg => { _cfg = cfg; toast('Outputs saved', 'success'); openTab('keys'); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function startAll() {
+  api('/api/server/start', 'POST')
+    .then(d => toast(d.message || 'Starting...', 'success'))
+    .catch(e => toast(e.message, 'error'));
+}
+
+function savePassword() {
+  const pw = document.getElementById('new_password').value;
+  if (!pw.trim()) { toast('Enter a password', 'warning'); return; }
+  if (pw !== document.getElementById('confirm_password').value) { toast("Passwords don't match", 'warning'); return; }
+  api('/api/password', 'POST', {password: pw})
+    .then(() => { toast('Password set: please sign in', 'success'); setTimeout(() => { location.href = '/login'; }, 1200); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+load();
+</script>
+</body>
+</html>

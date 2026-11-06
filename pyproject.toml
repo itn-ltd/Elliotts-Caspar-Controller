@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "caspar-controller"
 version = "1.1.1"
-description = "Elliott's Caspar Controller - Desktop app and web UI for managing CasparCG with NDI outputs"
+description = "Caspar Controller: run and control several CasparCG NDI outputs on one PC, from a web UI and an HTTP API"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "BlueElliott", email = "elliott.ramdass10@gmail.com"}
+    {name = "ITN"},
+    {name = "BlueElliott", email = "elliott.ramdass10@gmail.com"},  # original author
 ]
 keywords = ["casparcg", "ndi", "broadcast", "graphics", "control", "singular", "automation"]
 classifiers = [
@@ -57,10 +58,10 @@ build = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/BlueElliott/Elliotts-Casper-Controller"
-Repository = "https://github.com/BlueElliott/Elliotts-Casper-Controller"
-Issues = "https://github.com/BlueElliott/Elliotts-Casper-Controller/issues"
-Documentation = "https://github.com/BlueElliott/Elliotts-Casper-Controller#readme"
+Homepage = "https://github.com/itn-ltd/Elliotts-Caspar-Controller"
+Repository = "https://github.com/itn-ltd/Elliotts-Caspar-Controller"
+Issues = "https://github.com/itn-ltd/Elliotts-Caspar-Controller/issues"
+Documentation = "https://github.com/itn-ltd/Elliotts-Caspar-Controller#readme"
 
 [project.scripts]
 caspar-controller = "caspar_controller.__main__:main"

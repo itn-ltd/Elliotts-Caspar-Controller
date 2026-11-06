@@ -15,7 +15,7 @@ from caspar_controller.api.app import STATIC_DIR, app
 from caspar_controller.log import log_event
 from caspar_controller.settings import load as load_config
 
-TITLE = "Elliott's Caspar Controller"
+TITLE = "Caspar Controller"
 
 
 def _status_text(_item=None) -> str:

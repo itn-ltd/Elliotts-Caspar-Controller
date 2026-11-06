@@ -89,7 +89,7 @@ openTab(location.hash.slice(1));
 fetch('/api/health').then(r => r.json()).then(h => {
   const name = (h.server_name || '').trim();
   if (!name) return;
-  document.title = document.title.replace("Elliott's Caspar Controller", name);
+  document.title = document.title.replace('Caspar Controller', name);
   document.querySelectorAll('[data-server-name]').forEach(el => { el.textContent = name; el.hidden = false; });
 }).catch(() => {});
 

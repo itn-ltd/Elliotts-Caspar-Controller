@@ -42,7 +42,7 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    name='ElliottsCasparController',
+    name='CasparController',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -65,5 +65,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='ElliottsCasparController',
+    name='CasparController',
 )

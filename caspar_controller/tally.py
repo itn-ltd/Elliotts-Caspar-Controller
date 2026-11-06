@@ -130,7 +130,7 @@ def _run_session(ndi_name: str, stop: threading.Event):
         except Exception:
             pass
     recv_create.allow_video_fields = False
-    recv_create.ndi_recv_name = "Elliott's Caspar Controller Tally"
+    recv_create.ndi_recv_name = "Caspar Controller Tally"
 
     recv = ndi.recv_create_v3(recv_create)
     if not recv:
