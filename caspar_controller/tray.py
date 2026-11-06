@@ -59,6 +59,7 @@ def _refresh_menu(icon: pystray.Icon) -> None:
 def run() -> None:
     log.write_files(logs_dir())  # first, so a v1.x import or a bad config is on record
     port = load_config()["web_port"]
+    app.state.web_port = port  # what's listening, until a saved port change takes effect on restart
     url = f"http://127.0.0.1:{port}"
     server = uvicorn.Server(
         uvicorn.Config(

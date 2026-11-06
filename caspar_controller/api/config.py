@@ -34,13 +34,16 @@ def _lan_ip() -> str:
 
 
 @router.get("/api/config")
-def api_config_get():
+def api_config_get(request: Request):
     """The config, without the password hash or any API key."""
     cfg = load_config()
+    # A saved web port only applies once the app restarts: until then, URLs use the live one.
+    running = getattr(request.app.state, "web_port", cfg["web_port"])
     return {
         **without_secrets(cfg),
         "password_set": bool(cfg["web_password_hash"]),
-        "lan_url": f"http://{_lan_ip()}:{cfg['web_port']}",  # for trigger URLs other PCs use
+        "running_port": running,
+        "lan_url": f"http://{_lan_ip()}:{running}",  # the address other PCs use
     }
 
 

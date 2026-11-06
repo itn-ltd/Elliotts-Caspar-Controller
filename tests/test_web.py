@@ -42,6 +42,15 @@ def test_trigger_base_url_uses_web_port(client, write_config):
     assert client.get("/api/config").json()["lan_url"].endswith(":5999")
 
 
+def test_a_saved_port_change_waits_for_a_restart(client, write_config, monkeypatch):
+    # The tray records the port it started on; a new one only listens after a restart.
+    monkeypatch.setattr(client.app.state, "web_port", 5280, raising=False)
+    write_config({"web_port": 5999})
+    cfg = client.get("/api/config").json()
+    assert (cfg["web_port"], cfg["running_port"]) == (5999, 5280)
+    assert cfg["lan_url"].endswith(":5280")  # trigger URLs and the address still work
+
+
 def test_static_files(client):
     r = client.get("/static/esc_icon.png")
     assert r.status_code == 200

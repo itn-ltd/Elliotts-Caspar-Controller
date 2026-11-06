@@ -14,6 +14,10 @@
   <div>
     <h1>Dashboard</h1>
     <p class="page-sub">Every CasparCG output on this PC, and the controllers it watches.</p>
+    <p class="page-sub lan-address" id="lan-address" hidden>
+      Other PCs: <code id="lan-url"></code>
+      <button class="link-btn" onclick="copyText(document.getElementById('lan-url').textContent, 'Address copied')">Copy</button>
+    </p>
   </div>
   <div class="page-actions">
     <button class="btn btn-primary" id="btn-start" onclick="serverAction('start')">Start All</button>
@@ -488,8 +492,11 @@ function sendRemoteAmcp(idx, instId) {
     .catch(() => toast('Remote AMCP failed', 'error'));
 }
 
-function showV1Notice() {
+// From the config: the address other PCs use, and the v1.x import notice if there is one.
+function showConfigInfo() {
   api('/api/config').then(cfg => {
+    setText('lan-url', cfg.lan_url);
+    document.getElementById('lan-address').hidden = false;
     const notice = cfg.v1_notice;
     if (!notice) return;
     setText('v1-outputs', notice.outputs === 1 ? '1 output' : notice.outputs + ' outputs');
@@ -506,7 +513,7 @@ function dismissV1Notice() {
     .catch(e => toast(e.message, 'error'));
 }
 
-showV1Notice();
+showConfigInfo();
 Live.on('status', showStatus);
 Live.on('log', data => showLog(data.log));
 updateRemotes();

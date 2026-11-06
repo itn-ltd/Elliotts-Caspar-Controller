@@ -78,8 +78,9 @@
       <input type="number" id="amcp_base_port" value="5250" oninput="onBasePortChange()">
     </div>
     <div class="form-group">
-      <label>Web UI Port</label>
+      <label>Web UI Port <span class="hint">(takes effect when Caspar Controller restarts)</span></label>
       <input type="number" id="web_port" value="5280">
+      <p class="hint" id="port-pending" hidden style="margin-top:6px;color:var(--warning)"></p>
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
       <input type="checkbox" id="autostart_caspar">
@@ -336,8 +337,19 @@ function saveRemotes() {
     .catch(e => toast(e.message, 'error'));
 }
 
+let _runningPort = null;
+
+// A saved port that isn't the one listening yet: say so, until the app restarts.
+function showPortPending(saved) {
+  const el = document.getElementById('port-pending');
+  el.hidden = saved === _runningPort;
+  el.textContent = `Still on port ${_runningPort}. Quit Caspar Controller from the tray and open it again to move to ${saved}.`;
+}
+
 function loadSettings() {
   api('/api/config').then(cfg => {
+    _runningPort = cfg.running_port;
+    showPortPending(cfg.web_port);
     const exePath = cfg.caspar_exe_path || '';
     document.getElementById('caspar_exe_path').value = exePath;
     document.getElementById('exe-warning').style.display = exePath ? 'none' : 'block';
@@ -516,7 +528,10 @@ function saveSettings() {
   };
   api('/api/config', 'POST', payload).then(() => {
     currentInstances = instances;
-    toast('Settings saved — restart CasparCG to apply', 'success');
+    showPortPending(payload.web_port);
+    toast(payload.web_port === _runningPort
+      ? 'Settings saved. Restart the outputs to apply them.'
+      : `Settings saved. Restart Caspar Controller to use port ${payload.web_port}.`, 'success');
   }).catch(e => toast(e.message, 'error'));
 }
 

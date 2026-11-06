@@ -112,6 +112,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .page-head h1 { font-size: 24px; }
 .page-sub { color: var(--text-muted); margin-top: 6px; font-size: 14px; }
 .page-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.lan-address { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .muted { color: var(--text-muted); }
 
 /* STAT TILES */
