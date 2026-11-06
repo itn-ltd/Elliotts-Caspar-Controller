@@ -60,7 +60,14 @@ def run() -> None:
     port = load_config()["web_port"]
     url = f"http://127.0.0.1:{port}"
     server = uvicorn.Server(
-        uvicorn.Config(app, host="0.0.0.0", port=port, access_log=False, log_config=None)
+        uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=port,
+            access_log=False,
+            log_config=None,
+            timeout_graceful_shutdown=1,  # open dashboard streams don't hold up Quit
+        )
     )
     # uvicorn ends its thread (SystemExit) if it can't bind or start up; this records why.
     server_thread = threading.Thread(target=server.run, daemon=True)

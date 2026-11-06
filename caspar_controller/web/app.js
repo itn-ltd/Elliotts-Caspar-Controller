@@ -37,3 +37,19 @@ fetch('/api/health').then(r => r.json()).then(h => {
   document.title = document.title.replace("Elliott's Caspar Controller", name);
   document.querySelectorAll('[data-server-name]').forEach(el => { el.textContent = name; el.hidden = false; });
 }).catch(() => {});
+
+// Sign-in and change-password forms: submit() is the page's own; Enter calls it.
+function submitPassword(url, password) {
+  fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password})})
+    .then(r => r.json().then(d => ({ok:r.ok, d})))
+    .then(({ok, d}) => { if (ok) location.href = '/'; else document.getElementById('form-error').textContent = d.detail; });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && typeof submit === 'function') submit(); });
+
+// A clip <select>'s options: clips first, then the test patterns, keeping the current choice.
+function clipOptions(clips, current) {
+  const regular = clips.filter(c => !c.startsWith('TEST_'));
+  const tests = clips.filter(c => c.startsWith('TEST_'));
+  return '<option value="">— pick a clip —</option>' + options(regular, current)
+    + (tests.length ? '<option disabled>─── Test Patterns ───</option>' + options(tests, current) : '');
+}

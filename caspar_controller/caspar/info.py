@@ -35,10 +35,15 @@ def _layer(clip, time: float, duration: float, loop: bool, producer: str) -> dic
 
 
 def _from_23(fg: ET.Element) -> dict:
-    """2.3: foreground/file/{name,path,time="elapsed total"}, producer as text."""
+    """2.3: foreground/file/{path,name,time}, producer as text.
+
+    time is "elapsed total" in one element, or the two as repeated <time> elements.
+    """
     file = fg.find("file")
-    elapsed, _, total = (file.findtext("time") or "").partition(" ")
-    clip = file.findtext("name") or _clip_name(file.findtext("path") or "")
+    times = [t.text or "" for t in file.findall("time")]
+    elapsed, total = ((times[0].split() if len(times) == 1 else times) + ["", ""])[:2]
+    # The path's file name, as 2.0 shows it (2.3's <name> drops the extension).
+    clip = _clip_name(file.findtext("path") or "") or file.findtext("name")
     return _layer(
         clip, _num(elapsed), _num(total), _truthy(fg.findtext("loop")), fg.findtext("producer", "")
     )
