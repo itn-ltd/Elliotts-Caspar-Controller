@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from caspar_controller import instances, log, tally
-from caspar_controller.api import instance_or_404
+from caspar_controller.api.auth import still_allowed
 from caspar_controller.api.instances import status_payload
 from caspar_controller.log import Console
 from caspar_controller.settings import load as load_config
@@ -43,26 +43,33 @@ async def event_stream(request: Request, console: Optional[Console] = None):
     """
     last: dict = {}
     seen = 0
-    for _ in range(int(LIFETIME / TICK)):
+    yield "retry: 500\n\n"  # after each planned end, reconnect in 0.5 s, not the browser's 3-5 s
+    for tick in range(int(LIFETIME / TICK)):
         if await request.is_disconnected():
+            return
+        # Auth ran when the stream opened: stop if that sign-in or key has since gone.
+        if tick % 4 == 0 and not still_allowed(request):
             return
         for name, data in (("status", status_payload()), ("log", {"log": log.entries()})):
             if last.get(name) != data:
                 last[name] = data
                 yield _event(name, data)
-        if console and (lines := console.since(seen)):
-            seen = console.count
-            yield _event("console", {"lines": lines})
+        if console:
+            lines, seen = console.since(seen)
+            if lines:
+                yield _event("console", {"lines": lines})
         await asyncio.sleep(TICK)
 
 
 @router.get("/api/events")
 def api_events(request: Request, console: Optional[int] = None):
-    """?console=<instance id> adds that instance's CasparCG output."""
-    output = None
-    if console is not None:
-        instance_or_404(load_config(), console)
-        output = instances.manager.console(console)
+    """?console=<instance id> adds that instance's CasparCG log lines.
+
+    An id that isn't configured (say, a deleted instance a browser remembers) is ignored, not
+    refused: a refused stream makes the page reload, and it would remember the same id.
+    """
+    known = any(i["id"] == console for i in load_config().get("instances", []))
+    output = instances.manager.console(console) if known else None
     return StreamingResponse(
         event_stream(request, output),
         media_type="text/event-stream",

@@ -3,6 +3,7 @@
 import threading
 import time
 from collections import deque
+from itertools import islice
 
 MAX_LOG = 200
 _log: list = []
@@ -35,8 +36,8 @@ class Console:
             self._lines.append(line)
             self.count += 1
 
-    def since(self, seen: int) -> list:
-        """Lines added after the first ``seen``, as many as are still held."""
+    def since(self, seen: int) -> tuple[list, int]:
+        """(lines added after the first ``seen``, as many as are still held; the new count)."""
         with self._lock:
             new = min(self.count - seen, len(self._lines))
-            return list(self._lines)[-new:] if new > 0 else []
+            return list(islice(self._lines, len(self._lines) - max(new, 0), None)), self.count

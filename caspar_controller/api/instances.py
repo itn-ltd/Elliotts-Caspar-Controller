@@ -123,19 +123,6 @@ def api_instance_amcp(inst_id: int, req: CommandRequest):
     return {"ok": True, "response": res}
 
 
-@router.post("/api/instance/{inst_id}/console")
-def api_instance_console(inst_id: int, req: CommandRequest):
-    """Type into CasparCG's own console. Signed-in operators only (see auth.py)."""
-    instance_or_404(load_config(), inst_id)
-    command = command_or_400(req)
-    try:
-        instances.manager.send_console(inst_id, command)
-    except OSError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from None
-    log_event(f"Inst {inst_id} console: {command[:60]}")
-    return {"ok": True}
-
-
 class AutoRestartRequest(BaseModel):
     auto_restart: Literal["on", "off", "inherit"]
 
@@ -144,7 +131,8 @@ class AutoRestartRequest(BaseModel):
 def api_instance_auto_restart(inst_id: int, req: AutoRestartRequest):
     """The card's quick toggle: this instance's override of the global setting."""
     cfg = load_config()
-    instance_or_404(cfg, inst_id)["auto_restart"] = req.auto_restart
+    inst = instance_or_404(cfg, inst_id)
+    inst["auto_restart"] = req.auto_restart
     save_config(cfg)
     log_event(f"Inst {inst_id} auto-restart: {req.auto_restart}")
-    return {"ok": True, "auto_restart": auto_restart_on(cfg, instance_or_404(cfg, inst_id))}
+    return {"ok": True, "auto_restart": auto_restart_on(cfg, inst)}

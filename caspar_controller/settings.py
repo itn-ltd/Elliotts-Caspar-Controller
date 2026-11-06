@@ -214,7 +214,7 @@ DEFAULT_CONFIG = {
 def auto_restart_on(cfg: dict, inst: dict) -> bool:
     """The instance's own on/off, or the global setting if it inherits."""
     choice = inst.get("auto_restart", "inherit")
-    return choice == "on" or (choice == "inherit" and cfg.get("auto_restart", True))
+    return choice == "on" or (choice == "inherit" and cfg["auto_restart"])
 
 
 def instance_amcp_port(cfg: dict, inst: dict) -> int:

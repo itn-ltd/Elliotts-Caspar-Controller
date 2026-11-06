@@ -1,17 +1,13 @@
 """Launch, monitor, and stop the CasparCG server process."""
 
 import os
-import re
 import subprocess
-import threading
 import time
-from typing import Callable, Optional
+from typing import Optional
 
 import psutil
 
 from caspar_controller.caspar.amcp import AMCPClient
-
-_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")  # colour codes in CasparCG's console output
 
 
 class _AdoptedProcess:
@@ -43,12 +39,10 @@ class CasparProcessManager:
         exe_path: str,
         amcp_port: int = 5250,
         config_filename: str = "casparcg.config",
-        on_output: Optional[Callable[[str], None]] = None,
     ):
         self.exe_path = exe_path
         self.amcp_port = amcp_port
         self.config_filename = config_filename
-        self.on_output = on_output or (lambda line: None)  # each line CasparCG prints
         self._process: Optional[subprocess.Popen] = None
         self._client = AMCPClient(port=amcp_port)
 
@@ -58,17 +52,16 @@ class CasparProcessManager:
             return True
         # No shell: names never reach a command line. Full path: works even where
         # NoDefaultCurrentDirectoryInExePath stops the current folder being searched.
+        # No pipes either: CasparCG keeps running when this app quits (the console reads its
+        # log files instead, see logtail.py).
         self._process = subprocess.Popen(
             [os.path.abspath(self.exe_path), self.config_filename],
             cwd=self._exe_dir(),
             creationflags=subprocess.CREATE_NO_WINDOW,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        threading.Thread(
-            target=self._read_output, args=(self._process.stdout,), daemon=True
-        ).start()
         # 90 s covers slow cold starts; galleries take under 60 s.
         deadline = time.time() + 90
         while time.time() < deadline:
@@ -96,21 +89,11 @@ class CasparProcessManager:
             self._kill_tree(self._process.pid)
         self._process = None
 
-    def _read_output(self, pipe) -> None:
-        # Always drained, even with nobody watching: a full pipe would stall CasparCG.
-        for raw in iter(pipe.readline, b""):
-            self.on_output(_ANSI.sub("", raw.decode(errors="replace")).rstrip())
-
-    def send_console(self, command: str) -> None:
-        """Type a command into CasparCG's console. Raises OSError if this app didn't start it."""
-        stdin = getattr(self._process, "stdin", None)
-        if not stdin:
-            raise OSError("No console: this CasparCG was already running when the app started")
-        stdin.write((command + "\r\n").encode())
-        stdin.flush()
-
     def exit_code(self) -> Optional[int]:
-        return self._process.poll() if self._process else None
+        """The exit code, or None if unknown (still running, or reconnected to, not launched)."""
+        if not self._process or isinstance(self._process, _AdoptedProcess):
+            return None
+        return self._process.poll()
 
     def alive(self) -> bool:
         """True while OUR process hasn't exited, whether or not AMCP answers."""
