@@ -126,20 +126,19 @@ function fmtTime(s) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-// The clip line on a card: name, time and progress. Remote cards use it too.
+// The clip section of a card's status box: name, time left and progress. Remote cards use it too.
 function layerHtml(inst) {
   const li = inst.layer || {};
   if (inst.status !== 'live' || !li.clip) return '';
   const time = Number(li.time) || 0, duration = Number(li.duration) || 0;
-  const timeLabel = li.loop
-    ? `<span title="Looping">↻ ${fmtTime(time)}</span>`
-    : duration > 0
-      ? `${fmtTime(time)} / ${fmtTime(duration)} &nbsp;<span class="clip-remaining">-${fmtTime(duration - time)}</span>`
-      : fmtTime(time);
-  const bar = duration > 0 && !li.loop
+  const timed = duration > 0 && !li.loop;
+  const right = li.loop ? '<span class="clip-loop" title="Looping">↻</span>'
+    : timed ? `<span class="clip-remaining">-${fmtTime(duration - time)}</span>` : '';
+  const bar = timed
     ? `<div class="clip-progress"><div class="clip-progress-bar" style="width:${Math.min(100, time / duration * 100).toFixed(1)}%"></div></div>`
     : '';
-  return `<div class="clip-info"><span class="clip-name">${escapeHtml(li.clip)}</span> &nbsp;${timeLabel}</div>${bar}`;
+  return `<div class="clip-head"><span class="clip-name">${escapeHtml(li.clip)}</span>${right}</div>${bar}
+    <div class="clip-time">${fmtTime(time)}${timed ? ' / ' + fmtTime(duration) : ''}</div>`;
 }
 
 function tallyClass(inst) {
@@ -151,19 +150,19 @@ function tallyBadge(inst) {
     : inst.on_preview ? '<span class="tally-badge-preview">◐ PVW</span>' : '';
 }
 
-function stateHtml(inst) {
-  const live = inst.status === 'live';
-  // Auto-restart at work (crashed/hung/restarting (n/5)) is amber; stopped, crashed, failed red.
-  const badge = live ? 'badge-success' : /\(\d+\/\d+\)$/.test(inst.status) ? 'badge-warning' : 'badge-error';
-  const auto = inst.auto_restart;
-  return `<div style="display:flex;gap:4px;align-items:center">
-      <span class="badge ${badge}">${escapeHtml(inst.status)}</span>
-      <button class="btn btn-secondary btn-sm auto-restart-toggle" style="margin-left:auto"
-              title="Restart this instance if it crashes or hangs" onclick="setAutoRestart(${inst.id}, ${!auto})">↻ Auto ${auto ? 'on' : 'off'}</button>
-      <button class="btn btn-secondary btn-sm auto-restart-toggle" onclick="Console.open(${inst.id})">Console</button>
-    </div>` + (live
-    ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="stopInstance(${inst.id})">■ Stop</button>`
-    : `<button class="btn btn-success btn-sm" style="width:100%" onclick="startInstance(${inst.id})">▶ Start</button>`);
+// live: green; auto-restart at work (crashed/hung/restarting (n/5)): amber; stopped: plain; else red.
+function stateClass(inst) {
+  const s = inst.status;
+  return 'ch-state ' + (s === 'live' ? 'state-live' : /\(\d+\/\d+\)$/.test(s) ? 'state-warning'
+    : s === 'stopped' ? '' : 'state-error');
+}
+
+// The status row of a card: dot, state and Start/Stop. onStart/onStop are JS call strings.
+function stateHtml(inst, onStart, onStop) {
+  const label = inst.status.charAt(0).toUpperCase() + inst.status.slice(1);
+  return `<span class="state-label"><span class="state-dot"></span>${escapeHtml(label)}</span>` + (inst.status === 'live'
+    ? `<button class="btn btn-sm btn-outline" onclick="${onStop}">■ Stop</button>`
+    : `<button class="btn btn-sm btn-primary" onclick="${onStart}">▶ Start</button>`);
 }
 
 function setAutoRestart(id, on) {
@@ -180,43 +179,61 @@ function setHtml(id, html) {
   }
 }
 
+// A card's fixed parts; live parts go in the p+'tally_', p+'state_', p+'layer_' elements.
+// p is '' for this PC's cards and 'r' for a remote's, whose key is idx_id.
+function cardHtml(inst, p, key, media, foot) {
+  const isHtml = inst.type === 'html' || !inst.type;
+  const mediaRows = isHtml ? '' : `
+    <div class="ch-media">
+      <select id="${p}media_${key}" onchange="${media.select}"><option value="">— pick a clip —</option></select>
+      <div class="input-group">
+        <input type="text" id="${p}amcp_${key}" placeholder='PLAY 1-1 "CLIP" LOOP'>
+        <button class="btn btn-secondary" onclick="${media.send}">Send</button>
+      </div>
+    </div>`;
+  return `
+    <div class="channel-card" id="${p}card_${key}">
+      <div class="ch-head">
+        <span class="ch-num">Instance ${inst.id} · :${inst.amcp_port}</span>
+        <span class="ch-tags"><span id="${p}tally_${key}"></span>
+          <span class="type-pill ${isHtml ? '' : 'type-media'}">${isHtml ? 'HTML5' : 'Media'}</span></span>
+      </div>
+      <div>
+        <div class="ch-name">${escapeHtml(inst.name)}</div>
+        <div class="ch-ndi"><span class="ndi-tag">NDI</span>${escapeHtml(inst.ndi_name)}</div>
+      </div>
+      <div class="ch-state" id="${p}statebox_${key}">
+        <div class="ch-state-row" id="${p}state_${key}"></div>
+        <div class="ch-clip" id="${p}layer_${key}"></div>
+      </div>
+      ${mediaRows}
+      ${foot}
+    </div>`;
+}
+
 // Cards are built once per set of instances. Updates only touch their live parts, so an
 // open clip dropdown or a half-typed AMCP command is never reset.
 function buildCards(instances) {
   Object.keys(_shown).forEach(k => delete _shown[k]);
-  document.getElementById('instance-grid').innerHTML = instances.map(inst => {
-    const isHtml = inst.type === 'html' || !inst.type;
-    const typeBadge = isHtml
-      ? '<span class="badge badge-neutral" style="font-size:10px">HTML5</span>'
-      : '<span class="badge badge-warning" style="font-size:10px">Media</span>';
-    const amcpRow = !isHtml ? `
-      <div style="display:flex;gap:4px;margin-top:4px">
-        <select id="media_${inst.id}"
-                style="flex:1;font-size:11px;padding:5px 8px;min-width:0"
-                onchange="onMediaSelect(${inst.id})">
-          <option value="">— pick a clip —</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:4px;margin-top:4px">
-        <input type="text" id="amcp_${inst.id}" placeholder='PLAY 1-1 "CLIP" LOOP'
-               style="flex:1;font-size:11px;padding:5px 8px;min-width:0">
-        <button class="btn btn-secondary btn-sm" style="padding:0 10px;flex-shrink:0"
-                onclick="sendAmcp(${inst.id})">Send</button>
-      </div>` : '';
-    return `
-    <div class="channel-card" id="card_${inst.id}">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--text-muted);font-size:10px">:${inst.amcp_port}</span></div>
-        <div style="display:flex;gap:4px;align-items:center"><span id="tally_${inst.id}"></span>${typeBadge}</div>
-      </div>
-      <div class="ch-name">${escapeHtml(inst.name)}</div>
-      <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
-      <div id="layer_${inst.id}"></div>
-      <div id="state_${inst.id}" style="display:contents"></div>
-      ${amcpRow}
-    </div>`;
-  }).join('');
+  document.getElementById('instance-grid').innerHTML = instances.map(inst => cardHtml(inst, '', inst.id,
+    {select: `onMediaSelect(${inst.id})`, send: `sendAmcp(${inst.id})`}, `
+      <div class="ch-foot">
+        <label class="switch" title="Restart this instance if it crashes or hangs">
+          <input type="checkbox" id="auto_${inst.id}" onchange="setAutoRestart(${inst.id}, this.checked)">
+          <span class="switch-track"></span>Auto Restart
+        </label>
+        <button class="link-btn" onclick="Console.open(${inst.id})"><span class="mono">&gt;_</span> Console</button>
+      </div>`)).join('');
   loadMediaClips(true);
+}
+
+// The live parts of a card, local or remote.
+function updateCard(p, key, inst, onStart, onStop) {
+  document.getElementById(p + 'card_' + key).className = 'channel-card ' + tallyClass(inst);
+  document.getElementById(p + 'statebox_' + key).className = stateClass(inst);
+  setHtml(p + 'tally_' + key, tallyBadge(inst));
+  setHtml(p + 'state_' + key, stateHtml(inst, onStart, onStop));
+  setHtml(p + 'layer_' + key, layerHtml(inst));
 }
 
 function renderInstances(instances) {
@@ -227,10 +244,8 @@ function renderInstances(instances) {
     _cardsKey = key;
   }
   instances.forEach(inst => {
-    document.getElementById('card_' + inst.id).className = 'channel-card ' + tallyClass(inst);
-    setHtml('tally_' + inst.id, tallyBadge(inst));
-    setHtml('layer_' + inst.id, layerHtml(inst));
-    setHtml('state_' + inst.id, stateHtml(inst));
+    updateCard('', inst.id, inst, `startInstance(${inst.id})`, `stopInstance(${inst.id})`);
+    document.getElementById('auto_' + inst.id).checked = inst.auto_restart;
     if (_waitingLive.has(inst.id)) {
       if (inst.status === 'live') toast(inst.name + ' is live', 'success');
       else if (Date.now() - _waitingLive.get(inst.id) > START_WARNING_MS) toast(inst.name + ' took too long — check the log', 'warning');
@@ -350,42 +365,10 @@ function remoteInst(raw) {
   return {...raw, id: Number(raw.id) || 0, amcp_port: Number(raw.amcp_port) || 0, status: String(raw.status || '')};
 }
 
-// The parts of a remote card that never change; live parts go in rtally_/rlayer_/rstate_.
 function remoteCardShell(idx, inst) {
   const key = idx + '_' + inst.id;
-  const mediaRow = inst.type === 'media' ? `
-    <div style="display:flex;gap:4px;margin-top:4px">
-      <select id="rmedia_${key}"
-              style="flex:1;font-size:11px;padding:5px 8px;min-width:0"
-              onchange="onRemoteMediaSelect(${idx},${inst.id})">
-        <option value="">— pick a clip —</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:4px;margin-top:4px">
-      <input type="text" id="ramcp_${key}" placeholder='PLAY 1-1 "CLIP" LOOP'
-             style="flex:1;font-size:11px;padding:5px 8px;min-width:0">
-      <button class="btn btn-secondary btn-sm" style="padding:0 10px;flex-shrink:0"
-              onclick="sendRemoteAmcp(${idx},${inst.id})">Send</button>
-    </div>` : '';
-  return `
-  <div class="channel-card" id="rcard_${key}">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--text-muted);font-size:10px">:${inst.amcp_port}</span></div>
-      <span id="rtally_${key}"></span>
-    </div>
-    <div class="ch-name">${escapeHtml(inst.name)}</div>
-    <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
-    <div id="rlayer_${key}"></div>
-    <div id="rstate_${key}" style="display:contents"></div>
-    ${mediaRow}
-  </div>`;
-}
-
-function remoteStateHtml(idx, inst) {
-  const live = inst.status === 'live';
-  return `<span class="badge ${live ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>` + (live
-    ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="remoteInstanceAction(${idx}, ${inst.id}, 'stop')">■ Stop</button>`
-    : `<button class="btn btn-success btn-sm" style="width:100%" onclick="remoteInstanceAction(${idx}, ${inst.id}, 'restart')">▶ Start</button>`);
+  return cardHtml(inst, 'r', key,
+    {select: `onRemoteMediaSelect(${idx},${inst.id})`, send: `sendRemoteAmcp(${idx},${inst.id})`}, '');
 }
 
 function remoteHeaderHtml(rem, status) {
@@ -453,11 +436,8 @@ function renderRemotes(remotes) {
     setHtml('rhd_' + rem.idx, remoteHeaderHtml(rem, statusOf(rem)));
     setHtml('rmsg_' + rem.idx, remoteMessageHtml(rem, statusOf(rem)));
     instsOf(rem).forEach(inst => {
-      const key = rem.idx + '_' + inst.id;
-      document.getElementById('rcard_' + key).className = 'channel-card ' + tallyClass(inst);
-      setHtml('rtally_' + key, tallyBadge(inst));
-      setHtml('rlayer_' + key, layerHtml(inst));
-      setHtml('rstate_' + key, remoteStateHtml(rem.idx, inst));
+      const act = action => `remoteInstanceAction(${rem.idx}, ${inst.id}, '${action}')`;
+      updateCard('r', rem.idx + '_' + inst.id, inst, act('restart'), act('stop'));
     });
   });
 }
