@@ -71,7 +71,7 @@ def api_config_export():
     return Response(
         content=content,
         media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=elliotts_caspar_config.json"},
+        headers={"Content-Disposition": "attachment; filename=caspar_controller_config.json"},
     )
 
 

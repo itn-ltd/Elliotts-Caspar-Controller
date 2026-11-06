@@ -12,6 +12,7 @@ PAGES = {
     "/triggers": "triggers",
     "/login": "login",
     "/change-password": "change-password",
+    "/welcome": "welcome",  # the first-run setup wizard
 }
 
 router = APIRouter()

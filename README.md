@@ -1,9 +1,11 @@
-# Elliott's Caspar Controller
+# Caspar Controller
 
 > Run and control several CasparCG NDI outputs from one Windows PC, from a web UI and an HTTP API.
 
 [![CI](https://github.com/itn-ltd/Elliotts-Caspar-Controller/actions/workflows/ci.yml/badge.svg)](https://github.com/itn-ltd/Elliotts-Caspar-Controller/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+ITN's build of [Elliott's Caspar Controller](https://github.com/BlueElliott/Elliotts-Caspar-Controller), created by BlueElliott.
 
 > **Being refactored for company-wide release via Intune.** The plan is in [`docs/REVIEW.md`](docs/REVIEW.md) and the work is tracked as [issues](https://github.com/itn-ltd/Elliotts-Caspar-Controller/issues) labelled `phase-0` to `phase-4`. Behaviour that a planned ticket will change is marked below.
 
@@ -30,6 +32,28 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 
 ---
 
+## Quick start (gallery PCs)
+
+1. **Install Caspar Controller**, with CasparCG Server and the [NDI Runtime](https://ndi.video/tools/). Until it's in Company Portal (#39), use the installer (see [Install](#install)); there's no ITN release yet, so build it from source for now ([Building](#building)).
+2. **Click the tray icon**, then **Open Caspar Controller**. On a first run the dashboard takes you to the setup wizard; it's also under **Settings → Setup wizard**.
+3. **Follow the wizard:**
+   1. the CasparCG path
+   2. your outputs and their NDI names (suggested from the controller's name)
+   3. the keys for Automator, Companion and panels
+   4. **Start All**
+   5. a password, so other devices can use it
+4. **That's it:** the Dashboard shows each output going live.
+
+### Triggering clips from Companion
+
+1. In **Triggers**, pick the media output and clip, then **Copy** the URL. It already has the **trigger key** in it, which can fire clips and nothing else.
+2. In Companion, add a **Generic HTTP → GET** action with that URL. To keep the key out of the URL, leave `&api_key=…` off and put the key in the action's header field as `X-API-Key: <key>` (the `curl` line on the Triggers page shows both).
+3. Automator works the same way: it calls the URL.
+
+The URL format is `http://<controller>:5280/api/load?instance=<output>&clip=<clip>&api_key=<key>`, with `&loop=false` to play once. See [Clip triggering](#clip-triggering-companion-panels).
+
+---
+
 ## Install
 
 ### Requirements
@@ -39,30 +63,27 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 
 ### Installer
 
-Releases include two files:
+Today's releases are the original per-user installer. The per-machine installer and the CasparCG package are #11 and #10, and Company Portal is #39.
 
-| File | What it is |
-|---|---|
-| `ElliottsCasparControllerSetup.exe` | Installer for the controller |
-| `LiteCasparServer.zip` | A pre-configured CasparCG Server (~500 MB) |
+1. Run `CasparControllerSetup.exe`.
+2. **Lite Caspar Server** (the optional CasparCG download) still points at the original author's releases, so it won't work for ITN builds. Install CasparCG yourself for now; #10 replaces this with a proper package.
+3. Launch Caspar Controller from the Start menu.
 
-1. Run `ElliottsCasparControllerSetup.exe`. It installs for the current user (no admin rights) into `%LOCALAPPDATA%\Programs\Elliott's Caspar Controller`.
-2. Optionally tick **Lite Caspar Server**. The installer then downloads `LiteCasparServer.zip` and extracts it (default `C:\CasparCG`). Otherwise, extract the zip yourself.
-3. Launch the controller from the Start menu or desktop shortcut.
-
-> Releases are currently published on the original author's repository, and the installer's optional CasparCG download comes from there. Moving to Intune is planned in #10 and #11. The app no longer updates itself; install new versions with the installer (Intune, once #11 is done).
+The app never updates itself: install new versions with the installer.
 
 ---
 
-## First-time setup
+## Setting up by hand
 
-1. **Open the web UI on the controller PC itself:** click **Open Web UI** in the desktop app, or browse to `http://127.0.0.1:5280`.
-2. **Set a password:** **Settings → Web UI Password**. Until you do, other devices can't use the UI. You can also have one set automatically: see [Default password](#default-password-for-new-installs).
-3. **Point it at CasparCG:** **Settings → CasparCG Executable**, for example `C:\CasparCG\casparcg.exe`, then **Save Path**. It must be an existing file called `casparcg.exe`, since the app runs it.
+The wizard covers this. Everything it sets, and more, is in **Settings**:
+
+1. **Open the web UI on the controller PC itself:** click the tray icon, or browse to `http://127.0.0.1:5280`.
+2. **Set a password:** **Settings → Security**. Until you do, other devices can't use the UI. You can also have one set automatically: see [Default password](#default-password-for-new-installs).
+3. **Point it at CasparCG:** **Settings → Outputs → CasparCG Executable**, for example `C:\CasparCG\casparcg.exe`, then **Save Path**. It must be an existing file called `casparcg.exe`, since the app runs it.
 4. **Choose the video mode** (default 1080p 25fps).
 5. **Add your outputs** under **Instances**, with **+ Add Instance** for each one:
    - **Name**: shown on the dashboard, and used in clip-trigger URLs
-   - **NDI Name**: how the output appears on the network
+   - **NDI Name**: how the output appears on the network (new ones start with the controller's name)
    - **Type**: `HTML5` for web graphics (enter the URL) or `Media` for clips (optionally a startup AMCP command)
    - **AMCP Port**: blank to auto-assign (base port + instance number - 1, so reordering never changes it)
 6. Click **Save & Regenerate Configs**, then **Start All** on the dashboard.
@@ -250,33 +271,14 @@ All need the key or a signed-in session, except `/api/health`.
 
 ## Development
 
-Python **3.10+** on Windows.
-
-```bash
-git clone https://github.com/itn-ltd/Elliotts-Caspar-Controller.git
-cd Elliotts-Caspar-Controller
-python -m venv .venv && .venv\Scripts\activate
-pip install -e ".[dev]"          # add ,ndi for NDI tally
-set CASPAR_CONTROLLER_HOME=%CD%\.home   # optional: keep dev config out of ProgramData
-python -m caspar_controller
-```
-
-| | |
-|---|---|
-| Tests | `pytest` (about 1.5 min; launches fake CasparCG processes) |
-| Lint / format | `ruff check .` and `ruff format .` |
-| Pre-commit hook (optional) | `pre-commit install` |
-
-- **CI** (`.github/workflows/ci.yml`) runs Lint and Test on every pull request and on merges to `master`.
-- **Branches:** branch from `feature/v2-refactor` and open PRs back into it. See [`CLAUDE.md`](CLAUDE.md) and the `code-quality` skill in `.claude/skills/` for conventions.
-- **Tests:** `tests/` pins current behaviour, and `tests/test_known_issues.py` lists known bugs as expected failures, each linked to its issue.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setting up, running against fake CasparCG servers (`python tools/preview.py`), tests and the workflow.
 
 ### Building
 
 ```bash
 pip install -e ".[build]"
-pyinstaller ElliottsCasparController.spec        # dist\ElliottsCasparController\
-iscc /DMyAppVersion="1.2.3" installer\setup.iss  # installer\Output\ElliottsCasparControllerSetup.exe
+pyinstaller CasparController.spec        # dist\CasparController\
+iscc /DMyAppVersion="1.2.3" installer\setup.iss  # installer\Output\CasparControllerSetup.exe
 ```
 
 `build.yml` builds and publishes a release when a `v*.*.*` tag is pushed (or run manually).

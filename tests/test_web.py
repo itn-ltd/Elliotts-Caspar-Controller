@@ -16,6 +16,7 @@ from caspar_controller import log, settings
         ("/", "Dashboard"),
         ("/settings", "Settings"),
         ("/triggers", "Triggers"),
+        ("/welcome", "Set up Caspar Controller"),
         ("/login", "Password"),
     ],
 )
@@ -89,7 +90,7 @@ def test_post_config_rejects_wrong_types(client):
 def test_export_config(client, write_config):
     write_config({"server_name": "Studio A"})
     r = client.get("/api/config/export")
-    assert r.headers["content-disposition"] == "attachment; filename=elliotts_caspar_config.json"
+    assert r.headers["content-disposition"] == "attachment; filename=caspar_controller_config.json"
     assert r.json()["server_name"] == "Studio A"
 
 

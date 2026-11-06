@@ -310,6 +310,7 @@ def _read() -> dict:
             {
                 "id": ch.get("number", i + 1),
                 "name": ch.get("name", f"CH{i + 1}"),
+                # v1.x's own default, so migrated outputs keep their NDI names
                 "ndi_name": ch.get("ndi_name", f"PCR3 CH{i + 1}"),
                 "type": ch.get("type", "html"),
                 "url": ch.get("url", ""),

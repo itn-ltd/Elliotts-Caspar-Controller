@@ -16,7 +16,7 @@ The plan is `docs/REVIEW.md`; the work is tracked as GitHub issues labelled `pha
 ```bash
 python -m venv .venv && .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest                          # full suite, ~1.5 min (Windows: launches real processes)
+pytest                          # full suite, ~3 min (Windows: launches real processes)
 ruff check . && ruff format .   # lint + format (ruff is the only formatter)
 pre-commit install              # optional: same checks on every commit
 ```

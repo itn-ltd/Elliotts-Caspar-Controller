@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settings — Elliott's Caspar Controller</title>
+<title>Settings — Caspar Controller</title>
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
@@ -15,6 +15,7 @@
     <h1>Settings</h1>
     <p class="page-sub">How this controller runs its CasparCG outputs and who can use it.</p>
   </div>
+  <div class="page-actions"><a href="/welcome" class="btn btn-secondary">Setup wizard</a></div>
 </div>
 
 <div id="password-warning" class="notice-warning" style="display:none">
@@ -173,7 +174,7 @@
 <div class="card">
   <h2 style="margin-bottom:8px">Remote Controllers</h2>
   <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">
-    Add other Elliott's Caspar Controller instances to monitor and control from the dashboard.
+    Add other Caspar Controllers to monitor and control from the dashboard.
     Use the full URL including port, e.g. <code>http://192.168.1.101:5280</code>.
     The server name is pulled automatically from each remote.
   </p>
@@ -195,6 +196,16 @@
     </div>
     <button class="btn btn-primary" onclick="saveServerName()" style="flex-shrink:0">Save</button>
   </div>
+</div>
+
+<!-- About -->
+<div class="card">
+  <h2 style="margin-bottom:8px">About</h2>
+  <p class="muted">
+    Caspar Controller <span data-version></span>, ITN's build of
+    <a href="https://github.com/BlueElliott/Elliotts-Caspar-Controller" target="_blank" rel="noopener">Elliott's Caspar Controller</a>,
+    created by BlueElliott. MIT licence. CasparCG Server is GPL-3.0, by the CasparCG project.
+  </p>
 </div>
 
 <!-- Config Import / Export -->
@@ -440,7 +451,9 @@ function addInstance() {
   currentInstances = getFormInstances();
   const n = currentInstances.length + 1;
   const id = Math.max(0, ...currentInstances.map(i => i.id)) + 1;  // ids are never reused
-  currentInstances.push({ id, name: 'INST' + n, ndi_name: 'PCR3 INST' + n,
+  // The NDI name starts with this controller's server name, not a hard-coded site.
+  const server = document.getElementById('server_name').value.trim();
+  currentInstances.push({ id, name: 'INST' + n, ndi_name: suggestedNdi(server, 'INST' + n),
                            type: 'html', url: '', startup_command: '', amcp_port: 0 });
   renderInstanceTable(currentInstances);
 
@@ -542,7 +555,7 @@ function exportConfig() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'elliotts_caspar_config.json';
+      a.download = 'caspar_controller_config.json';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

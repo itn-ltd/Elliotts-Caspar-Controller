@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard — Elliott's Caspar Controller</title>
+<title>Dashboard — Caspar Controller</title>
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
@@ -27,9 +27,9 @@
     <h2>Setup Required</h2>
   </div>
   <p style="margin-bottom:12px">
-    CasparCG is not configured yet. Go to <strong style="color:var(--text-strong)">Settings</strong> to set the path to <code>casparcg.exe</code> and add your output instances.
+    CasparCG isn't set up yet. The setup wizard takes you through the path to <code>casparcg.exe</code>, your outputs and their NDI names, in a few steps.
   </p>
-  <a href="/settings" class="btn btn-warning">Go to Settings →</a>
+  <a href="/welcome" class="btn btn-warning">Open the setup wizard →</a>
 </div>
 
 <div id="failed-banner" class="banner banner-error" hidden>
@@ -225,6 +225,12 @@ function renderInstances(instances) {
 }
 
 function showStatus(data) {
+  // A first run (nothing set up): go to the setup wizard, once per browser session.
+  if (data.needs_setup && !data.instances.length) {
+    let shown = true;
+    try { shown = sessionStorage.getItem('wizard_shown') === '1'; sessionStorage.setItem('wizard_shown', '1'); } catch (e) {}
+    if (!shown) { location.href = '/welcome'; return; }
+  }
   const running = data.running;
   document.getElementById('setup-banner').style.display = data.needs_setup ? 'block' : 'none';
   document.getElementById('pulse').className = 'pulse ' + (running ? 'pulse-green' : 'pulse-red');
