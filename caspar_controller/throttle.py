@@ -28,12 +28,20 @@ class Throttle:
         now = time.monotonic()
         with self._lock:
             recent = [t for t in self._failures.get(address, []) if t > now - self.window] + [now]
+            self._prune(now)
             if len(recent) < self.limit:
                 self._failures[address] = recent
                 return False
             self._failures.pop(address, None)
             self._blocked_until[address] = now + self.block
             return True
+
+    def _prune(self, now: float) -> None:
+        """Forget addresses whose failures and blocks have all run out."""
+        for address in [a for a, times in self._failures.items() if times[-1] <= now - self.window]:
+            del self._failures[address]
+        for address in [a for a, until in self._blocked_until.items() if until <= now]:
+            del self._blocked_until[address]
 
     def succeeded(self, address: str) -> None:
         with self._lock:

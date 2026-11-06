@@ -74,7 +74,7 @@ def fresh_core_state(monkeypatch):
     monkeypatch.setattr(log, "_log", [])
     monkeypatch.setattr(api_auth, "_sessions", {})
     monkeypatch.setattr(api_auth, "_sign_in_failures", Throttle())
-    monkeypatch.setattr(api_auth, "_key_failures", Throttle())
+    monkeypatch.setattr(api_auth, "_wrong_key_log", Throttle())
     monkeypatch.setattr(remotes, "_remote_name_cache", {})
     yield
     manager.wait()

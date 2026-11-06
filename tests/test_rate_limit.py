@@ -1,10 +1,11 @@
-"""Guessing is throttled and sessions expire on the server (#22)."""
+"""Password guessing is throttled, wrong-key logging is limited, sessions expire (#22)."""
 
 import types
 
 import pytest
 from conftest import API_KEY, instance
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from caspar_controller import log, settings, throttle
 from caspar_controller.api import auth as api_auth
@@ -16,9 +17,9 @@ OPERATOR = ("10.66.0.10", 50000)
 
 @pytest.fixture
 def clock(monkeypatch):
-    """One fake clock for the throttle (monotonic) and sessions (wall time)."""
+    """One fake monotonic clock for the throttle and sessions."""
     now = [1000.0]
-    fake = types.SimpleNamespace(monotonic=lambda: now[0], time=lambda: now[0])
+    fake = types.SimpleNamespace(monotonic=lambda: now[0])
     monkeypatch.setattr(throttle, "time", fake)
     monkeypatch.setattr(api_auth, "time", fake)
     return now
@@ -98,20 +99,45 @@ def test_wrong_current_password_on_change_is_throttled(password, clock):
 # ---------------------------------------------------------------- API keys
 
 
-def test_wrong_api_keys_are_throttled_even_for_the_right_key(password, clock):
-    attacker = device(ATTACKER)
-    codes = [
-        attacker.get("/api/status", headers={"X-API-Key": f"guess{n}"}).status_code
-        for n in range(5)
-    ]
-    assert codes == [401] * 5
-    r = attacker.get("/api/status", headers={"X-API-Key": API_KEY})
-    assert (r.status_code, r.json()["detail"]) == (
-        429,
-        "Too many wrong API keys: try again in 60 s",
-    )
-    assert device(OPERATOR).get("/api/status", headers={"X-API-Key": API_KEY}).status_code == 200
-    assert sum("Too many wrong API keys from 10.66.0.9" in line for line in log._log) == 1
+def wrong_keys(client: TestClient, count: int, **where) -> list:
+    return [client.get("/api/status", **where).status_code for _ in range(count)]
+
+
+def refusals(host: str) -> int:
+    return sum(f"from {host}: Invalid or missing API key" in line for line in log._log)
+
+
+def test_the_right_key_works_during_a_wrong_key_flood(password, clock):
+    pc = device(ATTACKER)  # say a Remote Controller with an old key, and Companion
+    assert wrong_keys(pc, 20, headers={"X-API-Key": "old"}) == [401] * 20
+    assert pc.get("/api/status", headers={"X-API-Key": API_KEY}).status_code == 200
+
+
+def test_wrong_key_logging_pauses_for_a_minute(password, clock):
+    pc = device(ATTACKER)
+    wrong_keys(pc, 20, headers={"X-API-Key": "old"})
+    assert refusals("10.66.0.9") == 4
+    assert sum("Repeated wrong API keys from 10.66.0.9" in line for line in log._log) == 1
+    clock[0] += 61
+    wrong_keys(pc, 1, headers={"X-API-Key": "old"})
+    assert refusals("10.66.0.9") == 5  # logging again
+
+
+@pytest.mark.parametrize(
+    "where",
+    [{"params": {"api_key": "old"}}, {"headers": {"X-API-Key": "old"}}],
+    ids=["query", "header"],
+)
+def test_wrong_keys_are_counted_however_sent(password, clock, where):
+    wrong_keys(device(ATTACKER), 6, **where)
+    assert refusals("10.66.0.9") == 4
+
+
+def test_wrong_trigger_keys_are_counted(password, clock):
+    trigger = device(ATTACKER, headers={"X-API-Key": "old-trigger"})
+    for _ in range(6):
+        assert trigger.post("/api/load", json={}).status_code == 401
+    assert refusals("10.66.0.9") == 4
 
 
 def test_no_key_at_all_isnt_counted(password, clock):
@@ -139,6 +165,22 @@ def test_sessions_expire_after_30_days(password, clock):
     clock[0] += 2 * 86400  # 31 days old: a copied token stops working too
     assert operator.get("/api/config").status_code == 401
     assert api_auth._sessions == {}  # forgotten, not just refused
+
+
+def test_a_stream_ends_when_its_session_expires(password, clock):
+    sign_in(device(OPERATOR), "right")
+    (token,) = api_auth._sessions
+    scope = {"type": "http", "headers": [(b"cookie", f"session={token}".encode())]}
+    assert api_auth.still_allowed(Request(scope))
+    clock[0] += api_auth.SESSION_MAX + 1
+    assert not api_auth.still_allowed(Request(scope))
+
+
+def test_old_sessions_are_pruned_on_sign_in(password, clock):
+    sign_in(device(OPERATOR), "right")
+    clock[0] += api_auth.SESSION_MAX + 1
+    sign_in(device(OPERATOR), "right")
+    assert len(api_auth._sessions) == 1
 
 
 def test_session_cookie_matches_the_server_limit(password):

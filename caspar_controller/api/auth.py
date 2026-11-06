@@ -22,9 +22,12 @@ router = APIRouter()
 
 SESSION_MAX = 30 * 86400  # seconds a sign-in lasts, on the server as in the cookie
 _sessions: dict = {}  # session token -> when it was created
-# Guessing from one address: 5 failures in a minute, then refused for a minute.
-_sign_in_failures = Throttle()  # wrong passwords
-_key_failures = Throttle()  # wrong API keys
+# Wrong passwords from one address: 5 in a minute, then that address is refused for a minute.
+_sign_in_failures = Throttle()
+# Wrong API keys only limit logging. Keys are 256-bit random, so guessing isn't the risk; a
+# stale saved key is (a Remote Controller still has a rotated key), and blocking its address
+# would lock out every other device there, Companion with the right key included.
+_wrong_key_log = Throttle()
 
 
 def _session_ok(token: str) -> bool:
@@ -32,7 +35,7 @@ def _session_ok(token: str) -> bool:
     created = _sessions.get(token)
     if created is None:
         return False
-    if time.time() - created > SESSION_MAX:
+    if time.monotonic() - created > SESSION_MAX:  # monotonic: a clock change can't expire them
         _sessions.pop(token, None)
         return False
     return True
@@ -40,14 +43,6 @@ def _session_ok(token: str) -> bool:
 
 def _host(request: Request) -> str:
     return request.client.host if request.client else ""
-
-
-def _too_many(what: str, wait: int) -> JSONResponse:
-    return JSONResponse(
-        {"detail": f"Too many wrong {what}: try again in {wait} s"},
-        status_code=429,
-        headers={"Retry-After": str(wait)},
-    )
 
 
 def _host_name(request: Request) -> str:
@@ -93,8 +88,7 @@ _TRIGGER_PATH = re.compile(r"/api/(load|instance/\d+/load)")
 
 
 def _refuse(request: Request, reason: str, status: int = 403) -> JSONResponse:
-    host = request.client.host if request.client else "?"
-    log_event(f"Refused {request.url.path} from {host}: {reason}")  # never the key itself
+    log_event(f"Refused {request.url.path} from {_host(request) or '?'}: {reason}")  # never the key
     return JSONResponse({"detail": reason}, status_code=status)
 
 
@@ -118,16 +112,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path.startswith("/api/"):
             supplied = _supplied_key(request)
             host = _host(request)
-            # While an address is blocked even the right key is refused, so guessing can't go on.
-            if supplied and (wait := _key_failures.blocked(host)):
-                return _too_many("API keys", wait)
             full = key_matches(supplied, cfg["api_key"])
             if path in _SESSION_ONLY_PATHS or not supplied:
                 return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
             if not (full or key_matches(supplied, cfg["trigger_key"])):
-                if _key_failures.failed(host):
-                    log_event(f"Too many wrong API keys from {host}: refusing it for a minute.")
-                return _refuse(request, "Invalid or missing API key", 401)  # never logs the key
+                if not _wrong_key_log.blocked(host):  # quiet for a minute after 5
+                    if _wrong_key_log.failed(host):
+                        log_event(
+                            f"Repeated wrong API keys from {host}: not logging more for a minute."
+                        )
+                    else:
+                        return _refuse(request, "Invalid or missing API key", 401)
+                return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
             if not clients.allowed(host, cfg["api_clients"]):
                 return _refuse(request, "This address isn't allowed to use the API keys")
             if not full and not _TRIGGER_PATH.fullmatch(path):
@@ -175,9 +171,10 @@ def api_password(req: _PasswordChange, request: Request):
     save_config(cfg)
     # Sign out every other session: the old password may have leaked.
     token = request.cookies.get("session", "")
-    kept = {token: _sessions[token]} if token in _sessions else {}
-    _sessions.clear()
-    _sessions.update(kept)
+    for other in [
+        t for t in _sessions if t != token
+    ]:  # in place: this browser's never goes missing
+        del _sessions[other]
     log_event("Web UI password changed.")
     return {"ok": True}
 
@@ -205,8 +202,10 @@ def api_login(req: _PasswordRequest, request: Request, response: Response):
     if not stored:
         raise HTTPException(status_code=400, detail="No password is set yet")
     _check_password(request, req.password, stored, "Incorrect password", 401)
+    for old in [t for t, created in _sessions.items() if time.monotonic() - created > SESSION_MAX]:
+        del _sessions[old]  # browsers that never came back
     token = secrets.token_urlsafe(32)
-    _sessions[token] = time.time()
+    _sessions[token] = time.monotonic()
     response.set_cookie("session", token, httponly=True, samesite="strict", max_age=SESSION_MAX)
     return {"ok": True}
 
