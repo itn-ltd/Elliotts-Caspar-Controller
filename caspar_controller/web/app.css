@@ -61,6 +61,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }  /* a class's display must never override hidden */
 body {
   background: var(--background);
   color: var(--foreground);
@@ -140,7 +141,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .panel-body { padding: 20px 24px 24px; }
 .panel .card { background: var(--surface-glass); border-radius: var(--radius-lg); }
 .panel .card:last-child { margin-bottom: 0; }
-.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--divider); overflow-x: auto; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--divider); }
 .tab-panel { overflow-x: auto; }  /* the instance rows are wider than a phone */
 .tab {
   display: inline-flex; align-items: center; gap: 8px; padding: 16px 14px 14px; margin-bottom: -1px; white-space: nowrap;
