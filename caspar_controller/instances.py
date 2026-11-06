@@ -283,20 +283,28 @@ class InstanceManager:
 
     # ------------------------------------------------------------ status
 
-    def _probe(self, port: int) -> Probe:
+    def _probe(self, port: int, media: bool) -> Probe:
         client = self._client(port)
         reply = client.send("VERSION")  # liveness: INFO can fail on a live server
         if not reply.startswith("201"):
             return OFF
         version = reply.partition("\n")[2].strip()
-        return Probe(True, parse_layer_info(client.info_layer()), version)
+        # Only media outputs play clips, so HTML outputs skip INFO: half the AMCP traffic.
+        layer = parse_layer_info(client.info_layer()) if media else dict(EMPTY_LAYER)
+        return Probe(True, layer, version)
 
     def poll_status(self) -> None:
         """Ask every instance whether it's live and what's playing, then publish one snapshot."""
         cfg = load_config()
         insts = cfg.get("instances", [])
         with ThreadPoolExecutor(max_workers=max(len(insts), 1)) as ex:
-            results = list(ex.map(self._probe, [self.port(cfg, i) for i in insts]))
+            results = list(
+                ex.map(
+                    self._probe,
+                    [self.port(cfg, i) for i in insts],
+                    [i.get("type") == "media" for i in insts],
+                )
+            )
         # A new dict, swapped in whole: readers never see a half-built poll.
         self._status = {i["id"]: r for i, r in zip(insts, results, strict=True)}
 

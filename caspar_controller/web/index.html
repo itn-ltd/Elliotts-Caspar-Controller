@@ -50,24 +50,15 @@
 <script src="/web/console.js" defer></script>
 <script>
 let lastRunning = null;
-let _mediaClips = [];
+let _clipsKey = '';  // the clip list last written, so an unchanged list doesn't touch the dropdowns
 
-
-function loadMediaClips() {
+function loadMediaClips(force) {
   api('/api/media').then(data => {
-    _mediaClips = data.clips || [];
-    const regular = _mediaClips.filter(c => !c.startsWith('TEST_'));
-    const tests   = _mediaClips.filter(c =>  c.startsWith('TEST_'));
-    document.querySelectorAll('[id^="media_"]').forEach(sel => {
-      const current = sel.value;
-      let html = '<option value="">— pick a clip —</option>';
-      html += options(regular, current);
-      if (tests.length) {
-        html += '<option disabled>─── Test Patterns ───</option>';
-        html += options(tests, current);
-      }
-      sel.innerHTML = html;
-    });
+    const clips = data.clips || [];
+    const key = JSON.stringify(clips);
+    if (!force && key === _clipsKey) return;
+    _clipsKey = key;
+    document.querySelectorAll('[id^="media_"]').forEach(sel => { sel.innerHTML = clipOptions(clips, sel.value); });
   });
 }
 
@@ -81,7 +72,8 @@ let _instanceNames = {};
 let _cardsKey = '';
 const _shown = {};  // element id -> HTML last written, so unchanged parts aren't touched
 const _lastStatus = {};  // inst id -> status, to alert once when one fails
-const _waitingLive = new Set();  // started from this page: say so when they go live
+const _waitingLive = new Map();  // inst id -> when it was started from this page
+const START_WARNING_MS = 120000;  // not live by then: say so
 
 function fmtTime(s) {
   s = Math.max(0, Math.floor(Number(s) || 0));
@@ -177,7 +169,7 @@ function buildCards(instances) {
       ${amcpRow}
     </div>`;
   }).join('');
-  loadMediaClips();
+  loadMediaClips(true);
 }
 
 function renderInstances(instances) {
@@ -192,10 +184,15 @@ function renderInstances(instances) {
     setHtml('tally_' + inst.id, tallyBadge(inst));
     setHtml('layer_' + inst.id, layerHtml(inst));
     setHtml('state_' + inst.id, stateHtml(inst));
-    if (inst.status === 'live' && _waitingLive.delete(inst.id)) toast(inst.name + ' is live', 'success');
     if (inst.status === 'failed' && _lastStatus[inst.id] && _lastStatus[inst.id] !== 'failed')
       toast(inst.name + ' failed: auto-restart gave up. Start it to try again.', 'error');
     _lastStatus[inst.id] = inst.status;
+    if (_waitingLive.has(inst.id)) {
+      if (inst.status === 'live') toast(inst.name + ' is live', 'success');
+      else if (Date.now() - _waitingLive.get(inst.id) > START_WARNING_MS) toast(inst.name + ' took too long — check the log', 'warning');
+      else return;
+      _waitingLive.delete(inst.id);
+    }
   });
 }
 
@@ -242,7 +239,7 @@ function serverAction(action) {
 
 function startInstance(id) {
   const name = _instanceNames[id];
-  _waitingLive.add(id);
+  _waitingLive.set(id, Date.now());
   api('/api/instance/' + id + '/restart', 'POST')
     .then(d => toast(d.message || (name + ' starting...'), 'info'))
     .catch(() => { _waitingLive.delete(id); toast('Failed to start ' + name, 'error'); });
@@ -266,153 +263,149 @@ function sendAmcp(id) {
 
 // ── Remote Controllers ─────────────────────────────────────────
 
-const _remoteStatusCache = {};  // idx -> last known status object
+const _remoteStatusCache = {};  // idx -> last known status, shown while a remote is offline
+let _remotesKey = '';
 
 function _remoteCollapseKey(idx) { return 'remote_collapsed_' + idx; }
 
 function _isCollapsed(idx) {
-  return localStorage.getItem(_remoteCollapseKey(idx)) === '1';
+  try { return localStorage.getItem(_remoteCollapseKey(idx)) === '1'; } catch (e) { return false; }
 }
 
 function toggleRemote(idx) {
   const header = document.getElementById('rh_' + idx);
   const body   = document.getElementById('rb_' + idx);
   if (!header || !body) return;
-  const collapsed = body.classList.contains('hidden');
-  if (collapsed) {
-    body.classList.remove('hidden');
-    header.classList.remove('collapsed');
-    localStorage.removeItem(_remoteCollapseKey(idx));
-  } else {
-    body.classList.add('hidden');
-    header.classList.add('collapsed');
-    localStorage.setItem(_remoteCollapseKey(idx), '1');
-  }
+  const collapse = !body.classList.contains('hidden');
+  body.classList.toggle('hidden', collapse);
+  header.classList.toggle('collapsed', collapse);
+  try {
+    if (collapse) localStorage.setItem(_remoteCollapseKey(idx), '1');
+    else localStorage.removeItem(_remoteCollapseKey(idx));
+  } catch (e) {}
 }
 
-function remoteInstanceCard(rem, remoteInst) {
-  // Another controller's data: force numbers, escape text.
-  const inst = {...remoteInst, id: Number(remoteInst.id) || 0, amcp_port: Number(remoteInst.amcp_port) || 0};
-  const isLive = inst.status === 'live';
-  const isMedia = inst.type === 'media';
-  const actionBtn = isLive
-    ? `<button class="btn btn-danger btn-sm" style="width:100%"
-         onclick="remoteInstanceAction(${rem.idx}, ${inst.id}, 'stop')">■ Stop</button>`
-    : `<button class="btn btn-success btn-sm" style="width:100%"
-         onclick="remoteInstanceAction(${rem.idx}, ${inst.id}, 'restart')">▶ Start</button>`;
-  const mediaRow = isMedia ? `
+// Another controller's data: force numbers, escape text.
+function remoteInst(raw) {
+  return {...raw, id: Number(raw.id) || 0, amcp_port: Number(raw.amcp_port) || 0, status: String(raw.status || '')};
+}
+
+// The parts of a remote card that never change; live parts go in rtally_/rlayer_/rstate_.
+function remoteCardShell(idx, inst) {
+  const key = idx + '_' + inst.id;
+  const mediaRow = inst.type === 'media' ? `
     <div style="display:flex;gap:4px;margin-top:4px">
-      <select id="rmedia_${rem.idx}_${inst.id}"
+      <select id="rmedia_${key}"
               style="flex:1;font-size:11px;padding:5px 8px;min-width:0;background:var(--input-bg);color:var(--muted);border:1px solid var(--border);border-radius:6px"
-              onchange="onRemoteMediaSelect(${rem.idx},${inst.id})">
+              onchange="onRemoteMediaSelect(${idx},${inst.id})">
         <option value="">— pick a clip —</option>
       </select>
     </div>
     <div style="display:flex;gap:4px;margin-top:4px">
-      <input type="text" id="ramcp_${rem.idx}_${inst.id}" placeholder='PLAY 1-1 "CLIP" LOOP'
+      <input type="text" id="ramcp_${key}" placeholder='PLAY 1-1 "CLIP" LOOP'
              style="flex:1;font-size:11px;padding:5px 8px;min-width:0">
       <button class="btn btn-secondary btn-sm" style="padding:0 10px;flex-shrink:0"
-              onclick="sendRemoteAmcp(${rem.idx},${inst.id})">Send</button>
+              onclick="sendRemoteAmcp(${idx},${inst.id})">Send</button>
     </div>` : '';
   return `
-  <div class="channel-card ${tallyClass(inst)}">
+  <div class="channel-card" id="rcard_${key}">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
-      ${tallyBadge(inst)}
+      <span id="rtally_${key}"></span>
     </div>
     <div class="ch-name">${escapeHtml(inst.name)}</div>
     <div class="ch-ndi">NDI: ${escapeHtml(inst.ndi_name)}</div>
-    ${layerHtml(inst)}
-    <span class="badge ${isLive ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>
-    ${actionBtn}
+    <div id="rlayer_${key}"></div>
+    <div id="rstate_${key}" style="display:contents"></div>
     ${mediaRow}
   </div>`;
 }
 
+function remoteStateHtml(idx, inst) {
+  const live = inst.status === 'live';
+  return `<span class="badge ${live ? 'badge-success' : 'badge-error'}">${escapeHtml(inst.status)}</span>` + (live
+    ? `<button class="btn btn-danger btn-sm" style="width:100%" onclick="remoteInstanceAction(${idx}, ${inst.id}, 'stop')">■ Stop</button>`
+    : `<button class="btn btn-success btn-sm" style="width:100%" onclick="remoteInstanceAction(${idx}, ${inst.id}, 'restart')">▶ Start</button>`);
+}
+
+function remoteHeaderHtml(rem, status) {
+  const badge = rem.online
+    ? '<span class="badge badge-success" style="font-size:11px;white-space:nowrap">● Online</span>'
+    : '<span class="badge badge-error" style="font-size:11px;white-space:nowrap">● Offline</span>';
+  if (!status) return badge;
+  const live = status.instances.filter(i => i.status === 'live').length;
+  return badge + `
+    <span style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:20px;
+                 padding:4px 12px;font-size:13px;color:var(--success);white-space:nowrap;font-weight:600">${live}/${status.instances.length} live</span>
+    <span style="background:var(--input-bg);border:1px solid var(--border);border-radius:20px;
+                 padding:4px 12px;font-size:12px;color:var(--muted);white-space:nowrap">v${escapeHtml(status.version || '?')}</span>`;
+}
+
+function remoteMessageHtml(rem, status) {
+  const msg = text => `<div class="remote-offline-msg" style="grid-column:1/-1;margin-top:8px">${text}</div>`;
+  if (status && status.instances.length)
+    return rem.online ? '' : msg('⚠ Controller offline — showing last known state. Start All will attempt to reconnect.');
+  if (rem.auth_error) return msg("⚠ API key rejected. Check this remote's key in Settings.");
+  if (rem.online) return msg('No instances configured on this controller.');
+  return msg(`Cannot reach ${escapeHtml(rem.url)} — check that the controller is running and the URL is correct.`);
+}
+
+// Like the local cards: built when the set of remotes or their instances changes, then only
+// the live parts update, so an open clip dropdown or a typed AMCP command is never reset.
 function renderRemotes(remotes) {
   const sec = document.getElementById('remotes-section');
-  if (!sec) return;
-  if (!remotes || remotes.length === 0) { sec.innerHTML = ''; return; }
+  remotes = (remotes || []).filter(Boolean);
+  remotes.forEach(rem => { if (rem.online && rem.status) _remoteStatusCache[rem.idx] = rem.status; });
+  const statusOf = rem => rem.online ? rem.status : _remoteStatusCache[rem.idx];
+  const instsOf = rem => (statusOf(rem) || {instances: []}).instances.map(remoteInst);
 
-  // Build a header row if we don't have one yet
-  let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-    <h2 style="color:var(--muted);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Remote Controllers</h2>
-  </div>`;
+  const key = JSON.stringify(remotes.map(rem => [rem.idx, rem.display_name,
+    instsOf(rem).map(i => [i.id, i.name, i.ndi_name, i.type, i.amcp_port])]));
+  if (key !== _remotesKey) {
+    _remotesKey = key;
+    Object.keys(_shown).filter(k => k.startsWith('r')).forEach(k => delete _shown[k]);
+    sec.innerHTML = !remotes.length ? '' : `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h2 style="color:var(--muted);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Remote Controllers</h2>
+    </div>` + remotes.map(rem => {
+      const collapsed = _isCollapsed(rem.idx);
+      return `
+      <div class="remote-section">
+        <div class="remote-header ${collapsed ? 'collapsed' : ''}" id="rh_${rem.idx}"
+             onclick="toggleRemote(${rem.idx})" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
+            <span class="remote-chevron">▼</span>
+            <span style="font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(rem.display_name)}</span>
+            <span id="rhd_${rem.idx}" style="display:contents"></span>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px" onclick="event.stopPropagation()">
+            <button class="btn btn-success btn-sm" onclick="remoteServerAction(${rem.idx},'start')">Start All</button>
+            <button class="btn btn-danger btn-sm" onclick="remoteServerAction(${rem.idx},'stop')">Stop All</button>
+          </div>
+        </div>
+        <div class="remote-body ${collapsed ? 'hidden' : ''}" id="rb_${rem.idx}">
+          ${instsOf(rem).map(inst => remoteCardShell(rem.idx, inst)).join('')}
+          <div id="rmsg_${rem.idx}" style="display:contents"></div>
+        </div>
+      </div>`;
+    }).join('');
+    remotes.forEach(rem => populateRemoteMediaDropdowns(rem.idx, true));
+  }
 
   remotes.forEach(rem => {
-    if (!rem) return;
-    const collapsed = _isCollapsed(rem.idx);
-    // Cache status when online so we can show stale data when offline
-    if (rem.online && rem.status) _remoteStatusCache[rem.idx] = rem.status;
-    const effectiveStatus = rem.online ? rem.status : _remoteStatusCache[rem.idx];
-
-    const liveCount = effectiveStatus
-      ? effectiveStatus.instances.filter(i => i.status === 'live').length : 0;
-    const total = effectiveStatus ? effectiveStatus.instances.length : 0;
-
-    const statusBadge = rem.online
-      ? `<span class="badge badge-success" style="font-size:11px;white-space:nowrap">● Online</span>`
-      : `<span class="badge badge-error"   style="font-size:11px;white-space:nowrap">● Offline</span>`;
-
-    const liveChip = effectiveStatus
-      ? `<span style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:20px;
-                      padding:4px 12px;font-size:13px;color:var(--success);white-space:nowrap;font-weight:600">
-           ${liveCount}/${total} live
-         </span>` : '';
-
-    const versionChip = effectiveStatus
-      ? `<span style="background:var(--input-bg);border:1px solid var(--border);border-radius:20px;
-                      padding:4px 12px;font-size:12px;color:var(--muted);white-space:nowrap">
-           v${escapeHtml(effectiveStatus.version || '?')}
-         </span>` : '';
-
-    // Always show Start All so instances can be restarted even when CasparCG is stopped
-    // (the web UI on the remote is still running even when CasparCG instances are stopped)
-    const actionBtns = `
-      <button class="btn btn-success btn-sm"
-        onclick="event.stopPropagation();remoteServerAction(${rem.idx},'start')">Start All</button>
-      ${rem.online ? `<button class="btn btn-danger btn-sm"
-        onclick="event.stopPropagation();remoteServerAction(${rem.idx},'stop')">Stop All</button>` : ''}`;
-
-    html += `
-    <div class="remote-section">
-      <div class="remote-header ${collapsed ? 'collapsed' : ''}" id="rh_${rem.idx}"
-           onclick="toggleRemote(${rem.idx})"
-           style="justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
-          <span class="remote-chevron">▼</span>
-          <span style="font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(rem.display_name)}</span>
-          ${statusBadge}
-          ${liveChip}
-          ${versionChip}
-        </div>
-        <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px" onclick="event.stopPropagation()">
-          ${actionBtns}
-        </div>
-      </div>
-      <div class="remote-body ${collapsed ? 'hidden' : ''}" id="rb_${rem.idx}">
-        ${effectiveStatus && effectiveStatus.instances.length
-          ? effectiveStatus.instances.map(inst => remoteInstanceCard(rem, inst)).join('')
-            + (!rem.online ? '<div class="remote-offline-msg" style="grid-column:1/-1;margin-top:8px">⚠ Controller offline — showing last known state. Start All will attempt to reconnect.</div>' : '')
-          : rem.auth_error
-            ? '<div class="remote-offline-msg">⚠ API key rejected. Check this remote\'s key in Settings.</div>'
-          : rem.online
-            ? '<div class="remote-offline-msg">No instances configured on this controller.</div>'
-            : `<div class="remote-offline-msg">Cannot reach ${escapeHtml(rem.url)} — check that the controller is running and the URL is correct.</div>`
-        }
-      </div>
-    </div>`;
-  });
-
-  sec.innerHTML = html;
-  // Populate clip dropdowns for media instances on each online remote
-  remotes.forEach(rem => {
-    if (rem && rem.online && rem.status) populateRemoteMediaDropdowns(rem.idx, rem.status.instances);
+    setHtml('rhd_' + rem.idx, remoteHeaderHtml(rem, statusOf(rem)));
+    setHtml('rmsg_' + rem.idx, remoteMessageHtml(rem, statusOf(rem)));
+    instsOf(rem).forEach(inst => {
+      const key = rem.idx + '_' + inst.id;
+      document.getElementById('rcard_' + key).className = 'channel-card ' + tallyClass(inst);
+      setHtml('rtally_' + key, tallyBadge(inst));
+      setHtml('rlayer_' + key, layerHtml(inst));
+      setHtml('rstate_' + key, remoteStateHtml(rem.idx, inst));
+    });
   });
 }
 
 function updateRemotes() {
-  api('/api/remotes').then(data => renderRemotes(data.remotes || []));
+  api('/api/remotes').then(data => renderRemotes(data.remotes));
 }
 
 function remoteServerAction(idx, action) {
@@ -428,32 +421,16 @@ function remoteInstanceAction(idx, instId, action) {
     .catch(() => toast('Remote action failed', 'error'));
 }
 
-const _remoteClips = {};
-function loadRemoteClips(idx) {
-  if (_remoteClips[idx]) return Promise.resolve(_remoteClips[idx]);
-  return api('/api/remote/' + idx + '/media').then(data => {
-    _remoteClips[idx] = data.clips || [];
-    return _remoteClips[idx];
-  });
-}
-
-function populateRemoteMediaDropdowns(idx, instances) {
-  const mediaInsts = instances.filter(i => i.type === 'media');
-  if (!mediaInsts.length) return;
-  loadRemoteClips(idx).then(clips => {
-    const regular = clips.filter(c => !c.startsWith('TEST_'));
-    const tests   = clips.filter(c =>  c.startsWith('TEST_'));
-    mediaInsts.forEach(inst => {
-      const sel = document.getElementById('rmedia_' + idx + '_' + inst.id);
-      if (!sel) return;
-      let html = '<option value="">— pick a clip —</option>';
-      html += options(regular);
-      if (tests.length) {
-        html += '<option disabled>─── Test Patterns ───</option>';
-        html += options(tests);
-      }
-      sel.innerHTML = html;
-    });
+const _remoteClipsKey = {};  // idx -> clip list last written, so unchanged lists don't touch the dropdowns
+function populateRemoteMediaDropdowns(idx, force) {
+  const selects = document.querySelectorAll(`[id^="rmedia_${idx}_"]`);
+  if (!selects.length) return;
+  api('/api/remote/' + idx + '/media').then(data => {
+    const clips = data.clips || [];
+    const key = JSON.stringify(clips);
+    if (!force && key === _remoteClipsKey[idx]) return;
+    _remoteClipsKey[idx] = key;
+    document.querySelectorAll(`[id^="rmedia_${idx}_"]`).forEach(sel => { sel.innerHTML = clipOptions(clips, sel.value); });
   });
 }
 
@@ -476,10 +453,15 @@ function sendRemoteAmcp(idx, instId) {
 const events = new EventSource('/api/events');
 events.addEventListener('status', e => showStatus(JSON.parse(e.data)));
 events.addEventListener('log', e => showLog(JSON.parse(e.data).log));
-// A stream that can't connect may mean the session ended: api() goes to the sign-in page.
-events.onerror = () => api('/api/log').catch(() => {});
+// Closed (not reconnecting) means the server refused the stream: reload, and sign in if asked.
+events.onerror = () => { if (events.readyState === EventSource.CLOSED) location.reload(); };
 updateRemotes();
-setInterval(updateRemotes, 3000);  // other controllers are still polled (#9 gives them an explicit API)
+setInterval(updateRemotes, 3000);  // other controllers are still polled; there's no cross-agent stream
+// New clips copied into a media folder appear without a reload (unchanged lists aren't rewritten).
+setInterval(() => {
+  loadMediaClips();
+  Object.keys(_remoteStatusCache).forEach(idx => populateRemoteMediaDropdowns(idx));
+}, 15000);
 </script>
 </body>
 </html>

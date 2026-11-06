@@ -18,11 +18,5 @@
 </div>
 <script src="/web/app.js"></script>
 <script>
-function submitPassword(url, password) {
-  fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password})})
-    .then(r => r.json().then(d => ({ok:r.ok, d})))
-    .then(({ok, d}) => { if (ok) location.href = '/'; else document.getElementById('form-error').textContent = d.detail; });
-}
-document.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
 function submit() { submitPassword('/login', document.getElementById('pw').value); }</script>
 </body></html>

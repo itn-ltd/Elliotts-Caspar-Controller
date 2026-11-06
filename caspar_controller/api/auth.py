@@ -46,6 +46,22 @@ def _session_only(path: str) -> bool:
     )
 
 
+def _supplied_key(request: Request) -> str | None:
+    return request.headers.get("x-api-key") or request.query_params.get("api_key")
+
+
+def still_allowed(request: Request) -> bool:
+    """For a long-lived stream: is the sign-in or key it opened with still good?"""
+    token = request.cookies.get("session")
+    if token:
+        return token in _sessions  # sign-out and password changes end sessions
+    cfg = load_config()
+    supplied = _supplied_key(request)
+    if supplied:
+        return key_matches(supplied, cfg["api_key"])
+    return not cfg["web_password_hash"] and _trusted_local(request)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """API needs a key or session; pages need a session (or this PC, until a password is set)."""
 
@@ -64,7 +80,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if first_run and _trusted_local(request):
             return await call_next(request)
         if path.startswith("/api/"):
-            supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
+            supplied = _supplied_key(request)
             if not _session_only(path) and key_matches(supplied, cfg["api_key"]):
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
