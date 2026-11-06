@@ -1,6 +1,7 @@
 """Run Caspar Controller against fake CasparCG servers, for working on the app without one.
 
     python tools/preview.py            # http://127.0.0.1:5390, opens your browser
+    python tools/preview.py --v1       # also shows the "Imported from v1.x" notice
 
 Uses a throwaway config in .home/preview (git-ignored), never ProgramData or a real CasparCG:
 two live HTML outputs, a media output playing a clip, one stopped output, and sample
@@ -78,6 +79,12 @@ def main() -> None:
         caspar_exe_path=str(caspar / "casparcg.exe"),
         instances=instances,
     )
+    if "--v1" in sys.argv:
+        kept["v1_notice"] = {
+            "source": str(root / "elliotts_caspar_config.json"),
+            "outputs": 4,
+            "password": True,
+        }
     config.write_text(json.dumps(kept, indent=2), encoding="utf-8")
 
     os.environ["CASPAR_CONTROLLER_HOME"] = str(home)

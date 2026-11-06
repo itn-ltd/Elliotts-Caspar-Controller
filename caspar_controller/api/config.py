@@ -43,6 +43,14 @@ def api_config_get():
     }
 
 
+@router.post("/api/v1-notice/dismiss")
+def api_v1_notice_dismiss():
+    cfg = load_config()
+    if cfg.pop("v1_notice", None):
+        save_config(cfg)
+    return {"ok": True}
+
+
 @router.post("/api/config")
 def api_config_post(update: dict):
     cfg = load_config()
@@ -67,7 +75,8 @@ def api_config_post(update: dict):
 
 @router.get("/api/config/export")
 def api_config_export():
-    content = json.dumps(without_secrets(load_config()), indent=2).encode("utf-8")
+    cfg = {k: v for k, v in without_secrets(load_config()).items() if k not in MACHINE_KEYS}
+    content = json.dumps(cfg, indent=2).encode("utf-8")
     return Response(
         content=content,
         media_type="application/json",
@@ -91,7 +100,8 @@ async def api_config_import(request: Request):
         body.get("remote_controllers", []), current["remote_controllers"]
     )
     # This PC's allowed addresses too: another gallery's would lock out this one's Automator.
-    body.update({k: current[k] for k in (*MACHINE_KEYS, "api_clients")})
+    kept = (*MACHINE_KEYS, "api_clients", "keyless_trigger_clients")
+    body.update({k: current[k] for k in kept if k in current})
     save_config(body)
     regenerate_all_instance_configs(load_config())  # fills defaults the import left out
     log_event("Config imported via web UI.")

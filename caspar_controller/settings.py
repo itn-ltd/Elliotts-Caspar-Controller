@@ -1,6 +1,7 @@
 """Read, validate and save the app config."""
 
 import copy
+import glob
 import ipaddress
 import json
 import logging
@@ -30,16 +31,22 @@ log = logging.getLogger(__name__)
 
 SECRET_KEYS = ("api_key", "trigger_key", "web_password_hash")
 # Belong to this machine: config imports and profiles never change them.
-MACHINE_KEYS = (*SECRET_KEYS, "password_change_required")
+MACHINE_KEYS = (*SECRET_KEYS, "password_change_required", "migrated_from", "v1_notice")
 V1_PASSWORD_KEYS = ("web_password", "web_password_enabled")
 # Seeds the first web UI password (e.g. set by Intune); users must change it on first sign-in.
 INITIAL_PASSWORD_ENV = "CASPAR_CONTROLLER_INITIAL_PASSWORD"
 HOME_ENV = "CASPAR_CONTROLLER_HOME"  # overrides %ProgramData%\CasparController, for development
-# v1.x kept its config next to the exe (or the repo, from source), in either spelling.
+# v1.x kept its config next to its exe, in either spelling: each user's install, C:\CasparCG,
+# or beside this app (the repo, from source).
 LEGACY_DIR = os.path.dirname(
     sys.executable if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 )
 LEGACY_NAMES = ("elliotts_caspar_config.json", "elliotts_casper_config.json")
+_DRIVE = os.environ.get("SYSTEMDRIVE", "C:") + os.sep
+USERS_DIR = os.path.join(_DRIVE, "Users")
+V1_INSTALL = os.path.join("AppData", "Local", "Programs", "Elliott's Caspar Controller")
+V1_CASPAR_DIR = os.path.join(_DRIVE, "CasparCG")
+V1_BACKUP = "config.v1-backup.json"
 
 
 def home_dir() -> str:
@@ -69,6 +76,16 @@ def _client_address(value: str) -> str:
         raise ValueError(f"{value!r} isn't an exact IP address or subnet (e.g. 10.0.0.0/24)")
     if len(value) > 253 or not re.fullmatch(rf"{_HOST_LABEL}(\.{_HOST_LABEL})*", value):
         raise ValueError(f"{value!r} isn't an IP address, subnet or host name")
+    return value
+
+
+def _network(value: str) -> str:
+    """An exact IP address or subnet; no host names."""
+    value = _client_address(value)
+    try:
+        ipaddress.ip_network(value)
+    except ValueError:
+        raise ValueError(f"{value!r} is a host name: use its IP address") from None
     return value
 
 
@@ -162,6 +179,9 @@ class Settings(_Model):
     remote_controllers: list[Remote] = []
     # Addresses allowed to use either API key; empty: any. Signed-in browsers aren't affected.
     api_clients: list[Annotated[str, AfterValidator(_client_address)]] = []
+    # v1.x changeover: these addresses may fire triggers with no key, each one logged. Empty
+    # once Automator and the panels send the trigger key.
+    keyless_trigger_clients: list[Annotated[str, AfterValidator(_network)]] = []
 
     @field_validator("instances")
     @classmethod
@@ -263,18 +283,63 @@ def load() -> dict:
         return copy.deepcopy(_cache)
 
 
+def v1_configs() -> list[str]:
+    """The v1.x config files on this PC, newest first."""
+    dirs = [
+        LEGACY_DIR,
+        V1_CASPAR_DIR,
+        *glob.glob(os.path.join(glob.escape(USERS_DIR), "*", V1_INSTALL)),
+    ]
+    found = [os.path.join(d, name) for d in dirs for name in LEGACY_NAMES]
+    return sorted(filter(os.path.isfile, found), key=os.path.getmtime, reverse=True)
+
+
+def _from_v1(stored: dict, source: str) -> dict:
+    """A v1.x config made ready for this version, after backing up the original."""
+    _backup_v1(stored)
+    cfg = _upgrade(stored)
+    exe = cfg.get("caspar_exe_path") or ""
+    exe = os.path.join(os.path.dirname(source), exe) if exe else ""  # v1.x allowed relative paths
+    cfg["caspar_exe_path"] = exe if os.path.isfile(exe) else ""
+    cfg["auto_restart"] = True
+    cfg["migrated_from"] = "1.x"  # tells the remediation script v1.x can go
+    cfg["v1_notice"] = {
+        "source": source,
+        "outputs": len(cfg.get("instances", [])),
+        "password": bool(_v1_password(stored)),
+    }
+    log_event(f"Imported the v1.x config from {source}.")
+    return cfg
+
+
+def _backup_v1(stored: dict) -> None:
+    """Save config.v1-backup.json, minus the plaintext password; ProgramData is readable by all."""
+    path = os.path.join(home_dir(), V1_BACKUP)
+    try:
+        os.makedirs(home_dir(), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in stored.items() if k != "web_password"}, f, indent=2)
+    except OSError as e:  # the import matters more than its backup; the original stays anyway
+        log_event(f"Couldn't save {path}: {e}")
+
+
 def _first_run_config() -> dict:
-    """A v1.x config copied from next to the exe, else a profile.json seed, else defaults."""
+    """A v1.x config, else a profile.json seed, else defaults."""
     # A bad seed file is logged and skipped: it must never stop the app starting.
-    for name in LEGACY_NAMES:
-        legacy = os.path.join(LEGACY_DIR, name)
-        if os.path.isfile(legacy):
-            try:
-                stored = _read_object(legacy)
-                log_event(f"Copied the config from {legacy}.")  # the original stays for v1.x
-                return stored
-            except (OSError, ValueError) as e:
-                log_event(f"Ignored {legacy}: {e}")
+    try:
+        found = v1_configs()
+    except OSError as e:  # e.g. one deleted while looking
+        log_event(f"Couldn't look for v1.x configs: {e}")
+        found = []
+    for i, legacy in enumerate(found):
+        try:
+            cfg = _from_v1(_read_object(legacy), legacy)
+        except Exception as e:  # any wrong shape: a v1.x file is never checked by hand
+            log_event(f"Ignored {legacy}: {e}")
+            continue
+        for other in found[i + 1 :]:
+            log_event(f"Also found the older {other}: not imported.")
+        return cfg
     profile = os.path.join(home_dir(), "profile.json")
     if os.path.isfile(profile):
         try:
@@ -302,36 +367,7 @@ def _read() -> dict:
     else:
         stored = _first_run_config()
         first_run = True
-    config = {**DEFAULT_CONFIG, **stored}
-
-    # --- Migrate old single-server channel config to multi-instance ---
-    if "channels" in config and "instances" not in config:
-        config["instances"] = [
-            {
-                "id": ch.get("number", i + 1),
-                "name": ch.get("name", f"CH{i + 1}"),
-                # v1.x's own default, so migrated outputs keep their NDI names
-                "ndi_name": ch.get("ndi_name", f"PCR3 CH{i + 1}"),
-                "type": ch.get("type", "html"),
-                "url": ch.get("url", ""),
-                "startup_command": ch.get("startup_command", ""),
-            }
-            for i, ch in enumerate(config["channels"])
-        ]
-        del config["channels"]
-
-    # Migrate amcp_port → amcp_base_port
-    if "amcp_port" in config and "amcp_base_port" not in config:
-        config["amcp_base_port"] = config["amcp_port"]
-    config.pop("amcp_port", None)
-    config.pop("startup_delay", None)  # v1.x setting that was never used
-
-    # Backfill per-instance fields
-    for inst in config.get("instances", []):
-        inst.setdefault("type", "html")
-        inst.setdefault("startup_command", "")
-        inst.setdefault("url", "")
-
+    config = {**DEFAULT_CONFIG, **_upgrade(stored)}
     try:
         validate_config(config)
     except ValueError as e:
@@ -345,6 +381,34 @@ def _read() -> dict:
             # Read-only config folder: run with what we have rather than refuse to start.
             log.warning("Couldn't save %s: %s", cfg_file, e)
     return config
+
+
+def _upgrade(stored: dict) -> dict:
+    """``stored`` in today's format. Checks what was saved, before the defaults are merged in."""
+    cfg = dict(stored)
+    channels = cfg.pop("channels", None)  # v1.0: one CasparCG with several channels
+    if channels is not None and "instances" not in cfg:
+        cfg["instances"] = [
+            {
+                "id": ch.get("number", i + 1),
+                "name": ch.get("name", f"CH{i + 1}"),
+                # v1.x's own default, so migrated outputs keep their NDI names
+                "ndi_name": ch.get("ndi_name", f"PCR3 CH{i + 1}"),
+                "type": ch.get("type", "html"),
+                "url": ch.get("url", ""),
+                "startup_command": ch.get("startup_command", ""),
+            }
+            for i, ch in enumerate(channels)
+        ]
+    port = cfg.pop("amcp_port", None)
+    if port is not None:
+        cfg.setdefault("amcp_base_port", port)
+    cfg.pop("startup_delay", None)  # v1.x setting that was never used
+    for inst in cfg.get("instances", []):
+        inst.setdefault("type", "html")
+        inst.setdefault("startup_command", "")
+        inst.setdefault("url", "")
+    return cfg
 
 
 def save(config: dict) -> None:
@@ -383,14 +447,22 @@ def set_password(config: dict, password: str, must_change: bool = False) -> None
     config["password_change_required"] = must_change
 
 
+def _v1_password(config: dict) -> str:
+    """The v1.x password, if it was switched on and isn't blank."""
+    password = config.get("web_password")
+    on = config.get("web_password_enabled") and isinstance(password, str) and password.strip()
+    return password if on else ""
+
+
 def _secure_secrets(config: dict) -> bool:
     """Hash v1 passwords, apply the initial password and create the API key. True if changed."""
     changed = False
-    plaintext = config.pop("web_password", None)
-    enabled = config.pop("web_password_enabled", None)
-    if plaintext is not None or enabled is not None:
+    plaintext = _v1_password(config)
+    if {"web_password", "web_password_enabled"} & config.keys():
         changed = True
-        if enabled and plaintext and plaintext.strip() and not config["web_password_hash"]:
+        config.pop("web_password", None)
+        config.pop("web_password_enabled", None)
+        if plaintext and not config["web_password_hash"]:
             config["web_password_hash"] = hash_password(plaintext)
     initial = os.environ.get(INITIAL_PASSWORD_ENV, "")
     if initial.strip() and not config["web_password_hash"]:
