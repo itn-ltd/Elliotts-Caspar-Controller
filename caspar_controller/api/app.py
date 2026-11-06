@@ -17,6 +17,7 @@ from caspar_controller.api import (
     pages,
     remotes,
 )
+from caspar_controller.api.instances import status_payload
 from caspar_controller.settings import load as load_config
 
 
@@ -46,5 +47,16 @@ app.mount("/web", StaticFiles(directory=pages.WEB_DIR), name="web")
 
 @app.get("/api/health")
 def api_health():
-    # Open without sign-in: the login page shows the server name too.
-    return {"ok": True, "version": __version__, "server_name": load_config()["server_name"]}
+    """For monitoring, the sign-in page and Remote Controllers: open, so nothing sensitive.
+
+    The server name is shown before sign-in anyway; outputs are by id only, with no names,
+    URLs, ports or settings.
+    """
+    insts = status_payload()["instances"]
+    return {
+        "ok": True,
+        "version": __version__,
+        "server_name": load_config()["server_name"],
+        "caspar_versions": sorted({i["caspar_version"] for i in insts if i["caspar_version"]}),
+        "instances": [{"id": i["id"], "state": i["status"]} for i in insts],
+    }

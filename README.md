@@ -209,7 +209,8 @@ All need the key or a signed-in session, except `/api/health`.
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/health` | Version, server name and up/down, no auth |
+| GET | `/api/health` | For monitoring, no auth: app and CasparCG versions, server name, and each output's state by id (`live`, `stopped`, `crashed (1/5)`, `hung (1/5)`, `restarting (1/5)` or `failed`). No output names, URLs or settings |
+| GET | `/api/diagnostics` | The diagnostics zip (full key or sign-in) |
 | GET | `/api/status` | All outputs: status, tally, current clip |
 | GET | `/api/events` | The same status plus the event log, pushed as server-sent events when they change |
 | POST | `/api/server/start`, `/api/server/stop` | Start All / Stop All (`202`, runs in the background) |
