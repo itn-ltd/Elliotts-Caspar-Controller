@@ -71,9 +71,9 @@ body {
 ::selection { background: var(--selection); color: var(--background); }
 a { color: var(--primary-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1 { font-size: 24px; font-weight: 500; color: var(--text-strong); }
-h2 { font-size: 18px; font-weight: 500; color: var(--text-strong); }
-h3 { font-size: 15px; font-weight: 500; color: var(--text-secondary); }
+h1 { font-size: 24px; font-weight: 400; color: var(--text-strong); }
+h2 { font-size: 18px; font-weight: 400; color: var(--text-strong); }
+h3 { font-size: 15px; font-weight: 400; color: var(--text-secondary); }
 code { background: var(--surface-glass); border-radius: var(--radius-xs); padding: 1px 5px; color: var(--text-secondary); }
 
 /* HEADER: as the company apps. Logo and name, nav, then server name and Sign out on the right */
@@ -92,7 +92,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .brand-name { font-size: 22px; font-weight: 500; }
 .topnav { display: flex; gap: 4px; flex-wrap: wrap; }
 .topnav a {
-  padding: 8px 16px; border-radius: var(--radius-md); font-weight: 500; font-size: 15px;
+  padding: 8px 16px; border-radius: var(--radius-md); font-weight: 400; font-size: 15px;
   color: var(--text-secondary); transition: background 0.15s, color 0.15s;
 }
 .topnav a:hover { color: var(--text-strong); background: var(--surface-glass); text-decoration: none; }
@@ -101,7 +101,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .topbar-server { color: var(--text-muted); font-weight: 500; }
 .signout {
   display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer;
-  color: var(--text-secondary); font: 500 15px 'ITVReem', sans-serif;
+  color: var(--text-secondary); font: 400 15px 'ITVReem', sans-serif;
 }
 .signout:hover { color: var(--text-strong); }
 
@@ -118,7 +118,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .stat {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 20px;
 }
-.stat-label { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 500; color: var(--text-strong); }
+.stat-label { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 400; color: var(--text-strong); }
 .stat-icon {
   display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
   border-radius: var(--radius-full); background: var(--surface-glass);
@@ -144,7 +144,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .tab {
   display: inline-flex; align-items: center; gap: 8px; padding: 18px 16px 16px; margin-bottom: -1px;
   background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
-  color: var(--text-muted); font: 500 15px 'ITVReem', sans-serif;
+  color: var(--text-muted); font: 400 15px 'ITVReem', sans-serif;
 }
 .tab:hover { color: var(--text-strong); }
 .tab.active { color: var(--text-strong); border-bottom-color: var(--primary); }
