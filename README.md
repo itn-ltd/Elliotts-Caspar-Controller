@@ -148,6 +148,9 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
   - Query string, for devices that can only call a URL, such as Automator: `?api_key=<key>`
 - **Allowed addresses** (optional): list IPs, subnets or host names, and a key only works from those, so a key copied from a URL is useless elsewhere. Signed-in browsers aren't affected. Other controllers that use this one as a Remote Controller call it with a key, so list them too. Subnets must be exact (`10.0.0.0/24`, not `10.0.0.5/24`). Host names are looked up when the list is saved, at start-up and every 5 minutes in the background; a name that stops resolving keeps its last known address. Imports never change this PC's list. Refused calls are logged with the caller's address, never the key.
 - **Rotating** creates a new key straight away. Every device using the old one stops working until it's updated.
+- **Password guessing is throttled:** after 5 wrong passwords from one address within a minute, that address is refused (`429`) for a minute, even with the right one, and the event log notes it once. On a shared address (an office NAT, a jump host), one person's typos can briefly lock out the others there.
+- **Wrong API keys are logged, not blocked:** keys are random and too long to guess, and blocking would let one device with an old key lock out the rest on its PC. After 5 wrong keys from an address in a minute, the log goes quiet for that address for a minute.
+- **Sign-ins last 30 days,** enforced by the server as well as the browser.
 - **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**. Saved remote keys are never shown again; leave the field blank to keep the saved one.
 
 ### Upgrading from an older version

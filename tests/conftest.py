@@ -19,6 +19,7 @@ from caspar_controller import instances, log, remotes, settings, tally
 from caspar_controller.api import auth as api_auth, events
 from caspar_controller.api.app import app
 from caspar_controller.caspar.process import CasparProcessManager
+from caspar_controller.throttle import Throttle
 
 TESTS_DIR = Path(__file__).parent
 FAKE_CASPAR = TESTS_DIR / "fake_caspar.py"
@@ -71,7 +72,9 @@ def fresh_core_state(monkeypatch):
     manager = instances.InstanceManager()
     monkeypatch.setattr(instances, "manager", manager)
     monkeypatch.setattr(log, "_log", [])
-    monkeypatch.setattr(api_auth, "_sessions", set())
+    monkeypatch.setattr(api_auth, "_sessions", {})
+    monkeypatch.setattr(api_auth, "_sign_in_failures", Throttle())
+    monkeypatch.setattr(api_auth, "_wrong_key_log", Throttle())
     monkeypatch.setattr(remotes, "_remote_name_cache", {})
     yield
     manager.wait()
