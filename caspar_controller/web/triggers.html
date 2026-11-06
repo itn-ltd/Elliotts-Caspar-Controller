@@ -96,39 +96,24 @@ function build() {
   const instance = document.getElementById('gen-instance').value;
   const clip = document.getElementById('gen-clip').value;
   const output = document.getElementById('gen-output');
-  if (!instance || !clip) { output.style.display = 'none'; return; }
+  // Wait for the key too: a copy before it loads would end in "api_key=".
+  if (!instance || !clip || !_apiKey) { output.style.display = 'none'; return; }
 
   let url = _base + '/api/load?instance=' + encodeURIComponent(instance) + '&clip=' + encodeURIComponent(clip);
   if (document.getElementById('gen-loop').value === 'false') url += '&loop=false';
   const key = encodeURIComponent(_apiKey);
-  const shown = document.getElementById('show-key').checked ? key : '••••••••';
-
   _copy.url = url + '&api_key=' + key;
-  _copy.curl = `curl -H "X-API-Key: ${_apiKey}" "${url}"`;
-  document.getElementById('gen-url').textContent = url + '&api_key=' + shown;
-  document.getElementById('gen-curl').textContent = `curl -H "X-API-Key: ${shown}" "${url}"`;
+  // Single quotes: bash would expand a ! in a clip name inside double quotes.
+  _copy.curl = `curl -H 'X-API-Key: ${_apiKey}' '${url}'`;
+  const show = text => document.getElementById('show-key').checked ? text
+    : text.replaceAll(key, '••••••••').replaceAll(_apiKey, '••••••••');
+  document.getElementById('gen-url').textContent = show(_copy.url);
+  document.getElementById('gen-curl').textContent = show(_copy.curl);
   output.style.display = 'block';
 }
 
 function copy(which) {
-  const text = _copy[which];
-  const done = () => toast('Copied', 'success');
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
-  } else {
-    fallbackCopy(text, done);
-  }
-}
-
-function fallbackCopy(text, cb) {  // plain HTTP from another PC: no clipboard API
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); cb(); } catch (e) {}
-  document.body.removeChild(ta);
+  copyText(_copy[which]);
 }
 
 loadData();

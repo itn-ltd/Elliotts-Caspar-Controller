@@ -205,7 +205,7 @@ All need the key or a signed-in session, except `/api/health`.
 - **Add other controllers** in **Settings → Remote Controllers**, with each one's URL and its API key. Save, then **Test** checks the saved remote: that it answers (`/api/health`) and accepts its key.
 - **URLs** must be plain `http(s)://host:port`, for example `http://192.168.1.101:5280`, with no path or user name.
 - **On the dashboard,** each remote appears with its outputs, clip and time remaining, Start All / Stop All and clip controls. If its key is wrong, the dashboard says so.
-- **Only fixed actions reach a remote:** status, media, Start/Stop All, start/stop one output and AMCP, each through its own route (`/api/remote/{n}/...`). No route takes a URL or path, so a remote's key can't be sent anywhere else.
+- **Only fixed actions reach a remote:** status, media, Start/Stop All, restart or stop one output and AMCP, each through its own route (`/api/remote/{n}/...`). No route takes a URL or path, so a remote's key can't be sent anywhere else.
 
 ---
 

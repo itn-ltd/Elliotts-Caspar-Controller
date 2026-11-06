@@ -3,7 +3,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
-import requests
 from fastapi import APIRouter, HTTPException
 
 from caspar_controller import remotes
@@ -26,8 +25,8 @@ def _relay(call, *args):
         return call(*args)
     except remotes.RemoteKeyRejected:
         raise HTTPException(status_code=502, detail="Remote rejected its API key") from None
-    except (requests.RequestException, ValueError) as e:
-        raise HTTPException(status_code=502, detail=f"Remote unreachable: {e}") from None
+    except remotes.ERRORS as e:
+        raise HTTPException(status_code=502, detail=f"Remote failed: {e}") from None
 
 
 @router.get("/api/remotes")
@@ -44,7 +43,7 @@ def api_remote_media(idx: int):
     remote = _get_remote(idx)
     try:
         return remotes.media(remote)
-    except (remotes.RemoteKeyRejected, requests.RequestException, ValueError):
+    except remotes.ERRORS:
         return {"clips": [], "error": "Could not reach remote"}
 
 
@@ -54,14 +53,11 @@ def api_remote_test(idx: int):
     remote = _get_remote(idx)
     try:
         info = remotes.health(remote)
-    except (requests.RequestException, ValueError):
-        return {"online": False}
-    try:
-        remotes.media(remote)  # any keyed call: health alone needs no key
+        remotes.media(remote)  # a keyed call: health alone needs no key
         authorised = True
-    except remotes.RemoteKeyRejected:
-        authorised = False
-    except (requests.RequestException, ValueError):
+    except remotes.RemoteKeyRejected:  # from either: e.g. a proxy that wants a key for health
+        info, authorised = {}, False
+    except remotes.ERRORS:
         return {"online": False}
     return {
         "online": True,

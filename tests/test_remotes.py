@@ -28,6 +28,8 @@ class FakeRemote:
         self.posts = []
         self.keys_seen = []
         self.redirect_to = None  # set to a URL to answer every GET with a redirect there
+        self.post_reply = ({"ok": True, "message": "done"}, 200)  # what every POST answers
+        self.health_needs_key = False
         remote = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -50,7 +52,9 @@ class FakeRemote:
                 return False
 
             def do_GET(self):
-                if self.path == "/api/health":  # open, like the real one
+                if (
+                    self.path == "/api/health" and not remote.health_needs_key
+                ):  # open, like the real one
                     return self._json({"ok": True, "version": "1.1.1", "server_name": "Studio B"})
                 if not self._authorised():
                     return
@@ -71,7 +75,7 @@ class FakeRemote:
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length)) if length else None
                 remote.posts.append((self.path, body))
-                self._json({"ok": True, "message": "done"})
+                self._json(*remote.post_reply)
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self._server.server_address[1]}"
@@ -242,3 +246,25 @@ def test_saved_remote_test_uses_health_and_its_key(client, write_config, remote,
     assert client.post("/api/remote/1/test").json()["authorised"] is False
     assert client.post("/api/remote/2/test").json() == {"online": False}
     assert client.post("/api/remote/9/test").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        ({"detail": "Instance 7 not found"}, 404),
+        ({"detail": "boom"}, 500),
+        (["not", "a", "dict"], 200),
+    ],
+)
+def test_remote_errors_are_not_reported_as_success(client, remotes_config, remote, reply):
+    # Used to come back as 200, so the dashboard said "stop OK" when nothing stopped.
+    remote.post_reply = reply
+    assert client.post("/api/remote/0/instance/7/stop").status_code == 502
+
+
+def test_remote_test_when_health_wants_a_key(client, write_config, remote):
+    remote.health_needs_key = True
+    write_config({"remote_controllers": [{"url": remote.url, "api_key": "wrong"}]})
+    r = client.post("/api/remote/0/test")
+    assert r.status_code == 200
+    assert r.json()["authorised"] is False
