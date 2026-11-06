@@ -54,6 +54,10 @@ def home_dir() -> str:
     return os.environ.get(HOME_ENV) or default
 
 
+def logs_dir() -> str:
+    return os.path.join(home_dir(), "logs")
+
+
 def _config_file() -> str:
     return os.path.join(home_dir(), "config.json")
 

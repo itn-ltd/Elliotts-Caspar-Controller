@@ -10,10 +10,10 @@ import pystray
 import uvicorn
 from PIL import Image
 
-from caspar_controller import instances
+from caspar_controller import instances, log
 from caspar_controller.api.app import STATIC_DIR, app
 from caspar_controller.log import log_event
-from caspar_controller.settings import load as load_config
+from caspar_controller.settings import load as load_config, logs_dir
 
 TITLE = "Caspar Controller"
 
@@ -57,6 +57,7 @@ def _refresh_menu(icon: pystray.Icon) -> None:
 
 
 def run() -> None:
+    log.write_files(logs_dir())  # first, so a v1.x import or a bad config is on record
     port = load_config()["web_port"]
     url = f"http://127.0.0.1:{port}"
     server = uvicorn.Server(

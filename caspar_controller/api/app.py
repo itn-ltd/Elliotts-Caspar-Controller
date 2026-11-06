@@ -10,6 +10,7 @@ from caspar_controller import __version__, clients, instances, tally
 from caspar_controller.api import (
     auth,
     config,
+    diagnostics,
     events,
     instances as instances_api,
     media,
@@ -31,7 +32,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Caspar Controller", version=__version__, lifespan=lifespan)
 app.add_middleware(auth.AuthMiddleware)
-ROUTERS = tuple(m.router for m in (auth, config, events, instances_api, media, remotes, pages))
+ROUTERS = tuple(
+    m.router for m in (auth, config, diagnostics, events, instances_api, media, remotes, pages)
+)
 for router in ROUTERS:
     app.include_router(router)
 

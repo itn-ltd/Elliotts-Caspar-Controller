@@ -256,6 +256,7 @@ All need the key or a signed-in session, except `/api/health`.
 |---|---|
 | **File** | `%ProgramData%\CasparController\config.json` |
 | **From source** | The same, unless `CASPAR_CONTROLLER_HOME` points somewhere else |
+| **Logs** | `logs\` in the same folder: `events.log` (the dashboard's event log, reloaded on start) and `agent.log` (the app's own log, including errors). Each rotates at 1 MB, keeping 5. CasparCG keeps its own logs beside `casparcg.exe`. **Settings → General → Download diagnostics** zips them all with the config, minus passwords and keys, for the service desk. |
 | **First run** | Imports a v1.x config (see [Upgrading from v1.x](#upgrading-from-v1x)), keeping the original. With none, `profile.json` in the same folder (e.g. deployed by Intune) supplies the instances and other settings. |
 
 - **Editing:** Settings is easier. The app reads the file once and caches it, so edit it by hand only while the app isn't running.
