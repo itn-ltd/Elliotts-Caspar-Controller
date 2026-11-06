@@ -35,6 +35,8 @@ function api(url, method='GET', body=null) {
 const NAV = [['dashboard', '/', 'Dashboard'], ['triggers', '/triggers', 'Triggers'], ['settings', '/settings', 'Settings']];
 const SIGN_OUT_ICON = '<svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">'
   + '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>';
+const CONSOLE_ICON = '<svg class="icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
+  + '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg>';
 const topbar = document.querySelector('header.topbar');
 if (topbar) {
   topbar.innerHTML = `
@@ -45,6 +47,7 @@ if (topbar) {
     <div class="topbar-right">
       <span class="topbar-server" data-server-name hidden></span>
       <button class="signout" id="sign-out" hidden>${SIGN_OUT_ICON}Sign out</button>
+      <button class="icon-btn" id="console-toggle" title="Console" aria-label="Console" hidden>${CONSOLE_ICON}</button>
     </div>`;
   document.getElementById('sign-out').onclick = () =>
     fetch('/logout', {method: 'POST'}).then(() => { location.href = '/login'; });

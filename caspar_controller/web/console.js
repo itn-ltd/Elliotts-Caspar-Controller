@@ -10,7 +10,6 @@ const Console = (() => {
   const seen = {};  // inst id -> console line count already read
 
   document.body.insertAdjacentHTML('beforeend', `
-    <button id="console-toggle" class="btn btn-secondary btn-sm">Console</button>
     <aside id="console-panel" hidden>
       <div class="console-bar">
         <div id="console-tabs"></div>
@@ -27,6 +26,8 @@ const Console = (() => {
     </aside>`);
   const $ = id => document.getElementById(id);
   const panel = $('console-panel');
+  const toggle = $('console-toggle') || document.createElement('button');  // the header's; none: no header
+  toggle.hidden = false;  // only pages with this panel show it
 
   function visible() {
     const q = $('console-search').value.toLowerCase();
@@ -91,7 +92,8 @@ const Console = (() => {
 
   function setOpen(open) {
     panel.hidden = !open;
-    $('console-toggle').hidden = open;
+    toggle.classList.toggle('active', open);
+    toggle.setAttribute('aria-pressed', String(open));
     store.set('open', open ? '1' : '');
     if (open) {
       listen();
@@ -107,7 +109,7 @@ const Console = (() => {
     store.set('pinned', pinned ? '1' : '');
   }
 
-  $('console-toggle').onclick = () => setOpen(true);
+  toggle.onclick = () => setOpen(panel.hidden);
   $('console-close').onclick = () => setOpen(false);
   $('console-tabs').onclick = e => { const tab = e.target.closest('.console-tab'); if (tab) select(Number(tab.dataset.id)); };
   $('console-search').oninput = render;

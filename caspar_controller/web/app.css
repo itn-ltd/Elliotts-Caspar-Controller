@@ -105,6 +105,13 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
   color: var(--text-secondary); font: 400 14px 'ITVReem', sans-serif;
 }
 .signout:hover { color: var(--text-strong); }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer;
+  color: var(--text-secondary); transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover, .icon-btn.active { color: var(--text-strong); background: var(--surface-glass); }
+.icon-btn:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 
 /* PAGE */
 .main { max-width: 1440px; margin: 0 auto; padding: 36px 32px 64px; }
@@ -461,7 +468,6 @@ label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size:
 
 /* Console side panel (console.js) */
 /* Above the sticky header (100), below toasts (9999) */
-#console-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 150; }
 #console-panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100vw); z-index: 200;
   display: flex; flex-direction: column; gap: 8px; padding: 12px;
