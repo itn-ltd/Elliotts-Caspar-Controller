@@ -402,7 +402,7 @@ Only PCR3 runs v1.x (4.13). The streaming VMs are new installs, but may already 
 - **Network:** not isolated. PCR3 can be reached from anywhere on the corporate network. That moves three things forward:
   - a trigger-only key and an optional list of allowed client addresses, so Automator's key can only fire clips and only from Automator (Phase 2)
   - sign-in rate limiting (Phase 3)
-  - a firewall rule scoped to each site's operator PC and Automator (Phase 3)
+  - a firewall rule scoped to each site's operator PC and Automator (Phase 5)
 
   TLS stays optional, pending a decision.
 
@@ -482,12 +482,10 @@ Done in #4, #5 and #6. Instance IDs stayed integers rather than UUIDs, so existi
 - [ ] **Trigger-only key and allowed client addresses** (4.2, 4.13). *Done when:* the trigger key can call `/api/load` but gets 403 on `/api/config`, and key calls from unlisted addresses are refused.
 - [ ] **CasparCG template outputs** (4.14). *Done when:* a template with escaped field data plays from a Triggers-page URL and from the dashboard.
 
-### Phase 3: Deployment
+### Phase 3: Deployment groundwork
 
-- [ ] **CasparCG package from CI** (4.8). *Done when:* CI outputs a versioned `.intunewin` with SHA-256 and licence notice.
-- [ ] **Signed per-machine installer**; downloader and updater removed. *Done when:* a silent SYSTEM install lands in Program Files, signatures verify, uninstall is clean.
-- [ ] **Intune apps, dependencies, detection, supersedence.** *Done when:* a clean machine installs from Company Portal with no manual steps.
-- [ ] **Tray auto-start, mutex, firewall rule** scoped per site (4.13). *Done when:* the tray appears at sign-in, a second launch focuses the first, and remote browsers connect.
+The packaging and Intune work moved to Phase 5, which needs Intune access and a site PC.
+
 - [ ] **Rate-limit sign-in, expire sessions.** *Done when:* repeated wrong passwords from one address are refused, and old sessions are rejected.
 - [ ] **v1.x migration** (4.12). *Done when:* fixture tests pass and a real v1.x machine keeps its config, media and triggers, with v1.x removed.
 - [ ] **Wizard and new README.** *Done when:* a new user reaches live NDI outputs from the README alone.
@@ -499,8 +497,16 @@ Done in #4, #5 and #6. Instance IDs stayed integers rather than UUIDs, so existi
 - [ ] **`/api/health`.** *Done when:* monitoring can read it without auth and it exposes nothing sensitive.
 - [ ] **Docs and licensing** (4.11). *Done when:* docs reviewed and CasparCG GPL notices included.
 
+### Phase 5: Intune and site rollout
+
+- [ ] **CasparCG package from CI** (4.8). *Done when:* CI outputs a versioned `.intunewin` with SHA-256 and licence notice.
+- [ ] **Signed per-machine installer**; downloader and updater removed. *Done when:* a silent SYSTEM install lands in Program Files, signatures verify, uninstall is clean.
+- [ ] **Intune apps, dependencies, detection, supersedence.** *Done when:* a clean machine installs from Company Portal with no manual steps.
+- [ ] **Tray auto-start, mutex, firewall rule** scoped per site (4.13). *Done when:* the tray appears at sign-in, a second launch focuses the first, and remote browsers connect.
+- [ ] **On-site checks** on a playout PC during the pilot. *Done when:* every check passes or has a ticket.
+
 ### Backlog
 
 - [ ] **Optional TLS.** Decide before company release whether it's required (4.13). *Done when:* the UI and API work over HTTPS with the configured certificate.
 - [ ] **Central dashboard** (option B) on top of the agent API, if one URL for all galleries is wanted.
-- [ ] **Upgrade CasparCG** to a newer release, done separately from the Phase 3 packaging, which keeps the version galleries run today.
+- [ ] **Upgrade CasparCG** to a newer release, done separately from the Phase 5 packaging, which keeps the version galleries run today.

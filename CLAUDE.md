@@ -2,7 +2,7 @@
 
 Windows app that runs several CasparCG servers on one PC, one NDI output each, controlled from a web UI and an HTTP API (Companion, hardware panels). Being refactored for company-wide release via Intune.
 
-The plan is `docs/REVIEW.md`; the work is tracked as GitHub issues labelled `phase-0` to `phase-4` and `backlog`.
+The plan is `docs/REVIEW.md`; the work is tracked as GitHub issues labelled `phase-0` to `phase-5` and `backlog`.
 
 ## Workflow
 

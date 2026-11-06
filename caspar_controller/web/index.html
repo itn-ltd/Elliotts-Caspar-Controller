@@ -32,6 +32,22 @@
   <a href="/welcome" class="btn btn-warning">Open the setup wizard →</a>
 </div>
 
+<div id="v1-banner" class="banner banner-warning" hidden>
+  <h2 style="margin-bottom:8px">Imported from v1.x</h2>
+  <p style="margin-bottom:8px">
+    Settings and <span id="v1-outputs"></span> came from <code id="v1-source"></code>.
+    That file is untouched, and a copy is in <code>config.v1-backup.json</code>.
+    <span id="v1-password">Your v1.x password still works.</span> Auto-restart is now on.
+  </p>
+  <p style="margin-bottom:12px">
+    <strong style="color:var(--text-strong)">Triggers now need a key.</strong>
+    Add <code>&amp;api_key=<span id="v1-key"></span></code> to every Automator, Companion and panel URL, or copy new ones from Triggers.
+    To keep a PC working while you change it over, list it under Settings → API Keys → Changeover.
+  </p>
+  <a href="/triggers" class="btn btn-warning">Open Triggers →</a>
+  <button class="btn btn-secondary" onclick="dismissV1Notice()">Dismiss</button>
+</div>
+
 <div id="failed-banner" class="banner banner-error" hidden>
   <strong>Auto-restart gave up on: <span id="failed-names"></span></strong>
   <p>Each crashed or hung 5 times in 10 minutes. Check its Console, then Start it to try again.</p>
@@ -491,6 +507,26 @@ function sendRemoteAmcp(idx, instId) {
     .catch(() => toast('Remote AMCP failed', 'error'));
 }
 
+function showV1Notice() {
+  api('/api/config').then(cfg => {
+    const notice = cfg.v1_notice;
+    if (!notice) return;
+    const setText = (id, text) => { document.getElementById(id).textContent = text; };
+    setText('v1-outputs', notice.outputs === 1 ? '1 output' : notice.outputs + ' outputs');
+    setText('v1-source', notice.source);
+    document.getElementById('v1-password').hidden = !notice.password;
+    api('/api/key').then(k => setText('v1-key', k.trigger_key)).catch(() => setText('v1-key', '<trigger key>'));
+    document.getElementById('v1-banner').hidden = false;
+  }).catch(() => {});
+}
+
+function dismissV1Notice() {
+  api('/api/v1-notice/dismiss', 'POST')
+    .then(() => { document.getElementById('v1-banner').hidden = true; })
+    .catch(e => toast(e.message, 'error'));
+}
+
+showV1Notice();
 Live.on('status', showStatus);
 Live.on('log', data => showLog(data.log));
 updateRemotes();

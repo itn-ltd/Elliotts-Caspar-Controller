@@ -108,6 +108,7 @@ def test_import_replaces_everything_except_secrets(client, write_config, config_
         "instances": [],
         "remote_controllers": [],
         "api_clients": [],  # this PC's, kept like the keys
+        "keyless_trigger_clients": [],  # this PC's too (#12)
         "api_key": API_KEY,
         "trigger_key": trigger_key,  # this machine's, like the API key (#25)
         "web_password_hash": "scrypt$aa$bb",

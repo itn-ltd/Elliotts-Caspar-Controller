@@ -24,7 +24,6 @@ def test_missing_file_gives_defaults_plus_api_key():
 
 
 def test_v1_channels_file_loads_other_settings(config_dir):
-    # The channels/amcp_port migrations themselves never run: see test_known_issues.py.
     shutil.copy(FIXTURES / "v1_channels_config.json", config_dir / "config.json")
     cfg = settings.load()
     assert cfg["autostart_caspar"] is True

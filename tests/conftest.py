@@ -94,6 +94,8 @@ def config_dir(tmp_path, monkeypatch):
     monkeypatch.setenv(settings.HOME_ENV, str(d))
     # Never pick up the real v1.x config beside the repo (it holds a real API key).
     monkeypatch.setattr(settings, "LEGACY_DIR", str(tmp_path / "legacy"))
+    monkeypatch.setattr(settings, "USERS_DIR", str(tmp_path / "Users"))
+    monkeypatch.setattr(settings, "V1_CASPAR_DIR", str(tmp_path / "CasparCG"))
     monkeypatch.setattr(settings, "_cache", None)
     return d
 

@@ -196,3 +196,56 @@ def test_import_keeps_this_pcs_allowed_addresses(client, clips):
 )
 def test_bad_entries_are_rejected(client, bad):
     assert client.post("/api/config", json={"api_clients": [bad]}).status_code == 400
+
+
+# ---------------------------------------------------------------- v1.x changeover (#12)
+
+
+def changeover(client, addresses: list) -> None:
+    assert (
+        client.post("/api/config", json={"keyless_trigger_clients": addresses}).status_code == 200
+    )
+
+
+def test_listed_addresses_fire_triggers_with_no_key(client, clips):
+    changeover(client, ["10.20.30.0/24"])
+    assert (
+        device().get("/api/load", params={"instance": "Clipplayer", "clip": "AMB"}).status_code
+        == 200
+    )
+    assert device().get("/api/instance/1/load", params={"clip": "AMB"}).status_code == 200
+    assert len(clips.commands) == 2
+    warning = "Trigger from 10.20.30.40 with no key, allowed for the v1.x changeover."
+    assert sum(line.endswith(warning) for line in log._log) == 2  # one per request
+
+
+@pytest.mark.parametrize(
+    ("address", "path"),
+    [(AUTOMATOR, "/api/config"), (("10.99.0.1", 50000), "/api/load")],
+    ids=["not a trigger", "not listed"],
+)
+def test_only_triggers_from_listed_addresses(client, clips, address, path):
+    changeover(client, ["10.20.30.40"])
+    assert (
+        device(address).get(path, params={"instance": "Clipplayer", "clip": "AMB"}).status_code
+        == 401
+    )
+
+
+def test_off_by_default(clips):
+    assert settings.load()["keyless_trigger_clients"] == []
+    assert (
+        device().get("/api/load", params={"instance": "Clipplayer", "clip": "AMB"}).status_code
+        == 401
+    )
+
+
+@pytest.mark.parametrize("bad", ["automator.example", "10.0.5", "10.0.0.5/8"])
+def test_changeover_takes_addresses_only(client, bad):
+    assert client.post("/api/config", json={"keyless_trigger_clients": [bad]}).status_code == 400
+
+
+def test_import_keeps_this_pcs_changeover_list(client, clips):
+    changeover(client, ["10.20.30.40"])
+    client.post("/api/config/import", json={"keyless_trigger_clients": ["10.0.0.0/8"]})
+    assert settings.load()["keyless_trigger_clients"] == ["10.20.30.40"]

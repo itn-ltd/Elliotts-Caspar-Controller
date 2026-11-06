@@ -174,11 +174,16 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
 - **Sign-ins last 30 days,** enforced by the server as well as the browser.
 - **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**. Saved remote keys are never shown again; leave the field blank to keep the saved one.
 
-### Upgrading from an older version
+### Upgrading from v1.x
 
-- **If a password was enabled,** it's kept (now hashed), and users sign in with the same password.
-- **If no password was enabled,** the controller starts in first-run mode.
-- **Either way, existing Companion and panel URLs need `&api_key=<key>` added.**
+On its first start, with no config of its own yet, the controller takes over a v1.x config:
+
+- **Where it looks:** each user's v1.x install (`%LOCALAPPDATA%\Programs\Elliott's Caspar Controller`), `C:\CasparCG`, and beside the app. If it finds several, it uses the newest and logs the others.
+- **What carries over:** every setting, the outputs with the same ids and AMCP ports, the media path, and the CasparCG path if that file still exists. Auto-restart is turned on.
+- **Password:** if one was enabled, it's kept (now hashed), and users sign in with the same password. If not, the controller starts in first-run mode.
+- **Nothing is lost:** the v1.x file is left as it is, and a copy is saved as `config.v1-backup.json` beside the new config.
+- **Triggers need a key now.** A dashboard notice shows the trigger key to add (`&api_key=<key>`) to every Automator, Companion and panel URL. To keep a PC working while you update it, list its address under **Settings → API Keys → Changeover**: those addresses may fire triggers without a key, and each one is logged. Clear the list once they all send the key.
+- **Removing v1.x:** `installer\remove-v1.ps1` uninstalls it from every user profile, but only once the new config says it was imported (`"migrated_from": "1.x"`). Run it as an admin, with `-WhatIf` first to see what it would do.
 
 ---
 
@@ -251,7 +256,7 @@ All need the key or a signed-in session, except `/api/health`.
 |---|---|
 | **File** | `%ProgramData%\CasparController\config.json` |
 | **From source** | The same, unless `CASPAR_CONTROLLER_HOME` points somewhere else |
-| **First run** | Copies a v1.x `elliotts_caspar_config.json` (or `casper` spelling) from beside the app or the repo, keeping the original. With none, `profile.json` in the same folder (e.g. deployed by Intune) supplies the instances and other settings. |
+| **First run** | Imports a v1.x config (see [Upgrading from v1.x](#upgrading-from-v1x)), keeping the original. With none, `profile.json` in the same folder (e.g. deployed by Intune) supplies the instances and other settings. |
 
 - **Editing:** Settings is easier. The app reads the file once and caches it, so edit it by hand only while the app isn't running.
 - **Saving:** atomic (a temp file, then a swap), so a crash mid-save can't leave half a file.

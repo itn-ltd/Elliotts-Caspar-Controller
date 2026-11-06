@@ -54,18 +54,29 @@ def refresh_in_background(entries: list) -> None:
     threading.Thread(target=run, daemon=True, name="api-clients").start()
 
 
+def _address(host: str):
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    return ip.ipv4_mapped if ip.version == 6 and ip.ipv4_mapped else ip  # ::ffff:10.0.0.5
+
+
+def listed(host: str, networks: list) -> bool:
+    """True if ``host`` is in one of ``networks`` (IP addresses and subnets only)."""
+    ip = _address(host)
+    return ip is not None and any(ip in ipaddress.ip_network(n) for n in networks)
+
+
 def allowed(host: str, entries: list) -> bool:
     """True if ``host`` (the caller's address) may use a key. An empty list allows any."""
     if not entries:
         return True
     if _cache["entries"] != entries or time.monotonic() - _cache["at"] > RESOLVE_EVERY:
         refresh_in_background(entries)
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
+    ip = _address(host)
+    if ip is None:
         return False
-    if ip.version == 6 and ip.ipv4_mapped:  # ::ffff:10.0.0.5 is 10.0.0.5
-        ip = ip.ipv4_mapped
     for entry in entries:
         networks = [_literal(entry)] if _literal(entry) else _cache["names"].get(entry, [])
         if any(ip in network for network in networks):

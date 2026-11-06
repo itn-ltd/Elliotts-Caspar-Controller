@@ -166,7 +166,10 @@
   </div>
   <label>Allowed addresses <span class="hint">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
   <textarea id="api_clients" rows="3" style="width:100%;font-family:Consolas,monospace" placeholder="e.g. the Automator PC"></textarea>
-  <button class="btn btn-primary btn-sm" onclick="saveApiClients()" style="margin-top:8px">Save addresses</button>
+  <button class="btn btn-primary btn-sm" onclick="saveAddresses('api_clients', 'Allowed addresses saved', 'Any address may use the keys')" style="margin-top:8px">Save addresses</button>
+  <label style="margin-top:16px">Changeover: triggers with no key <span class="hint">(one IP or subnet per line. While v1.x Automator and panel URLs are updated, these may fire triggers without a key; each one is logged. Leave blank once they send the trigger key.)</span></label>
+  <textarea id="keyless_trigger_clients" rows="2" style="width:100%;font-family:Consolas,monospace" placeholder="Blank: every trigger needs a key"></textarea>
+  <button class="btn btn-primary btn-sm" onclick="saveAddresses('keyless_trigger_clients', 'Changeover addresses saved', 'Every trigger now needs a key')" style="margin-top:8px">Save changeover</button>
 </div>
 </div>
 <div class="tab-panel" data-tab="remotes" id="panel-remotes" role="tabpanel" aria-labelledby="tab-remotes" hidden>
@@ -325,7 +328,9 @@ function loadSettings() {
     document.getElementById('amcp_base_port').value = cfg.amcp_base_port || 5250;
     document.getElementById('web_port').value = cfg.web_port || 5280;
     document.getElementById('autostart_caspar').checked = !!cfg.autostart_caspar;
-    document.getElementById('api_clients').value = (cfg.api_clients || []).join('\n');
+    for (const field of ['api_clients', 'keyless_trigger_clients']) {
+      document.getElementById(field).value = (cfg[field] || []).join('\n');
+    }
     document.getElementById('auto_restart').checked = cfg.auto_restart !== false;
     document.getElementById('hang_timeout').value = cfg.hang_timeout || 30;
     document.getElementById('media_path').value = cfg.media_path || '';
@@ -541,10 +546,10 @@ function rotateKey(which) {
   }).catch(() => toast('Failed to rotate', 'error'));
 }
 
-function saveApiClients() {
-  const entries = document.getElementById('api_clients').value.split('\n').map(s => s.trim()).filter(Boolean);
-  api('/api/config', 'POST', {api_clients: entries})
-    .then(() => toast(entries.length ? 'Allowed addresses saved' : 'Any address may use the keys', 'success'))
+function saveAddresses(field, saved, empty) {
+  const entries = document.getElementById(field).value.split('\n').map(s => s.trim()).filter(Boolean);
+  api('/api/config', 'POST', {[field]: entries})
+    .then(() => toast(entries.length ? saved : empty, 'success'))
     .catch(e => toast(e.message, 'error'));
 }
 

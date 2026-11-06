@@ -113,6 +113,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             supplied = _supplied_key(request)
             host = _host(request)
             full = key_matches(supplied, cfg["api_key"])
+            if (
+                not supplied
+                and _TRIGGER_PATH.fullmatch(path)
+                and clients.listed(host, cfg["keyless_trigger_clients"])
+            ):
+                log_event(f"Trigger from {host} with no key, allowed for the v1.x changeover.")
+                return await call_next(request)
             if path in _SESSION_ONLY_PATHS or not supplied:
                 return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
             if not (full or key_matches(supplied, cfg["trigger_key"])):
