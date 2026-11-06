@@ -17,22 +17,20 @@
   </div>
 </div>
 
-
-
-
-
-
-
+<div id="password-warning" class="notice-warning" style="display:none">
+  ⚠ No password set. Other devices can't use the web UI until you set one.
+  <a href="#security" onclick="openTab('security')">Set one in Security</a>.
+</div>
 
 <section class="panel">
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="outputs"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Outputs</button>
-    <button class="tab" role="tab" data-tab="security"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Security</button>
-    <button class="tab" role="tab" data-tab="remotes"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Remote Controllers</button>
-    <button class="tab" role="tab" data-tab="general"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>General</button>
+    <button class="tab" role="tab" data-tab="outputs" id="tab-outputs" aria-controls="panel-outputs"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Outputs</button>
+    <button class="tab" role="tab" data-tab="security" id="tab-security" aria-controls="panel-security"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Security</button>
+    <button class="tab" role="tab" data-tab="remotes" id="tab-remotes" aria-controls="panel-remotes"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Remote Controllers</button>
+    <button class="tab" role="tab" data-tab="general" id="tab-general" aria-controls="panel-general"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>General</button>
   </div>
   <div class="panel-body">
-<div class="tab-panel" data-tab="outputs" hidden>
+<div class="tab-panel" data-tab="outputs" id="panel-outputs" role="tabpanel" aria-labelledby="tab-outputs" hidden>
 <!-- CasparCG Executable -->
 <div class="card" id="exe-card">
   <h2 style="margin-bottom:4px">CasparCG Executable</h2>
@@ -75,7 +73,7 @@
       </select>
     </div>
     <div class="form-group">
-      <label>Base AMCP Port <span style="color:var(--text-muted);font-size:11px">(instances get base, base+1, base+2…)</span></label>
+      <label>Base AMCP Port <span class="hint">(instances get base, base+1, base+2…)</span></label>
       <input type="number" id="amcp_base_port" value="5250" oninput="onBasePortChange()">
     </div>
     <div class="form-group">
@@ -83,25 +81,23 @@
       <input type="number" id="web_port" value="5280">
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
-      <input type="checkbox" id="autostart_caspar"
-             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);cursor:pointer">
+      <input type="checkbox" id="autostart_caspar">
       <label for="autostart_caspar" style="margin:0;color:var(--foreground);cursor:pointer">
         Auto-start CasparCG when the app launches
       </label>
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:4px">
-      <input type="checkbox" id="auto_restart"
-             style="width:18px;height:18px;flex-shrink:0;accent-color:var(--primary);cursor:pointer">
+      <input type="checkbox" id="auto_restart">
       <label for="auto_restart" style="margin:0;color:var(--foreground);cursor:pointer">
         Auto-restart instances that crash or hang
       </label>
     </div>
     <div class="form-group">
-      <label>Hang timeout <span style="color:var(--text-muted);font-size:11px">(seconds without an AMCP reply before restarting, 5-600)</span></label>
+      <label>Hang timeout <span class="hint">(seconds without an AMCP reply before restarting, 5-600)</span></label>
       <input type="number" id="hang_timeout" value="30" min="5" max="600">
     </div>
     <div class="form-group" style="grid-column:1/-1">
-      <label>Media Folder Path <span style="color:var(--text-muted);font-size:11px">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
+      <label>Media Folder Path <span class="hint">(leave blank to use <code>media\</code> next to casparcg.exe)</span></label>
       <input type="text" id="media_path" placeholder="e.g. D:\Media or leave blank for default">
     </div>
   </div>
@@ -130,20 +126,17 @@
   </p>
 </div>
 </div>
-<div class="tab-panel" data-tab="security" hidden>
+<div class="tab-panel" data-tab="security" id="panel-security" role="tabpanel" aria-labelledby="tab-security" hidden>
 <!-- Web UI Password -->
 <div class="card">
   <h2 style="margin-bottom:12px">Web UI Password</h2>
-  <div id="password-warning" class="notice-warning" style="display:none">
-    ⚠ No password set. Other devices can't use the web UI until you set one.
-  </div>
   <div style="display:flex;gap:10px;align-items:flex-end">
     <div class="form-group" id="current-password-group" style="flex:1;margin:0">
       <label>Current password</label>
       <input type="password" id="current_password">
     </div>
     <div class="form-group" style="flex:1;margin:0">
-      <label>New password <span style="color:var(--text-muted);font-size:11px">(required, everyone signs in with it)</span></label>
+      <label>New password <span class="hint">(required, everyone signs in with it)</span></label>
       <input type="password" id="web_password">
     </div>
     <button class="btn btn-primary" onclick="savePassword()" style="flex-shrink:0">Save</button>
@@ -158,24 +151,24 @@
     Devices send a key as an <code>X-API-Key</code> header or <code>?api_key=</code>.
     Rotating a key breaks every device using the old one.
   </p>
-  <label>Trigger key <span style="color:var(--text-muted);font-size:11px">(fires clips and nothing else: give this one to Automator and panels)</span></label>
+  <label>Trigger key <span class="hint">(fires clips and nothing else: give this one to Automator and panels)</span></label>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <input type="text" id="trigger_key" readonly style="flex:1;font-family:Consolas,monospace">
     <button class="btn btn-secondary" onclick="copyKey('trigger')" style="flex-shrink:0">Copy</button>
     <button class="btn btn-danger" onclick="rotateKey('trigger')" style="flex-shrink:0">Rotate</button>
   </div>
-  <label>Full API key <span style="color:var(--text-muted);font-size:11px">(everything: for Companion setups and other controllers)</span></label>
+  <label>Full API key <span class="hint">(everything: for Companion setups and other controllers)</span></label>
   <div style="display:flex;gap:10px;margin-bottom:14px">
     <input type="text" id="api_key" readonly style="flex:1;font-family:Consolas,monospace">
     <button class="btn btn-secondary" onclick="copyKey('api')" style="flex-shrink:0">Copy</button>
     <button class="btn btn-danger" onclick="rotateKey('api')" style="flex-shrink:0">Rotate</button>
   </div>
-  <label>Allowed addresses <span style="color:var(--text-muted);font-size:11px">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
+  <label>Allowed addresses <span class="hint">(one per line: IP, subnet such as 10.0.0.0/24, or host name. Blank: any. Only calls using a key are checked, not signed-in browsers.)</span></label>
   <textarea id="api_clients" rows="3" style="width:100%;font-family:Consolas,monospace" placeholder="e.g. the Automator PC"></textarea>
   <button class="btn btn-primary btn-sm" onclick="saveApiClients()" style="margin-top:8px">Save addresses</button>
 </div>
 </div>
-<div class="tab-panel" data-tab="remotes" hidden>
+<div class="tab-panel" data-tab="remotes" id="panel-remotes" role="tabpanel" aria-labelledby="tab-remotes" hidden>
 <!-- Remote Controllers -->
 <div class="card">
   <h2 style="margin-bottom:8px">Remote Controllers</h2>
@@ -191,13 +184,13 @@
   </div>
 </div>
 </div>
-<div class="tab-panel" data-tab="general" hidden>
+<div class="tab-panel" data-tab="general" id="panel-general" role="tabpanel" aria-labelledby="tab-general" hidden>
 <!-- Server Identity -->
 <div class="card">
   <h2 style="margin-bottom:16px">Server Identity</h2>
   <div style="display:flex;gap:10px;align-items:flex-end">
     <div class="form-group" style="flex:1;margin:0">
-      <label>Server Name <span style="color:var(--text-muted);font-size:11px">(shown in the nav bar and browser tab)</span></label>
+      <label>Server Name <span class="hint">(shown in the nav bar and browser tab)</span></label>
       <input type="text" id="server_name" placeholder="e.g. GFX PC, Studio A, Backup">
     </div>
     <button class="btn btn-primary" onclick="saveServerName()" style="flex-shrink:0">Save</button>
@@ -327,6 +320,7 @@ function loadSettings() {
     document.getElementById('media_path').value = cfg.media_path || '';
     document.getElementById('server_name').value = cfg.server_name || '';
     document.getElementById('password-warning').style.display = cfg.password_set ? 'none' : 'block';
+    showSignOut(cfg.password_set);
     document.getElementById('current-password-group').style.display = cfg.password_set ? '' : 'none';
     _passwordSet = cfg.password_set;
     _remotes = (cfg.remote_controllers || []);

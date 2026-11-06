@@ -1,7 +1,7 @@
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Regular.ttf'); font-weight: 400; }
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Light.ttf');   font-weight: 300; }
 @font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Medium.ttf');  font-weight: 500; }
-@font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Bold.ttf');    font-weight: 500; }
+@font-face { font-family: 'ITVReem'; src: url('/static/ITV Reem-Bold.ttf');    font-weight: 700; }
 
 /* Company theme: the shared tokens, as other company apps use them. Pages set <html class="dark">. */
 .dark {
@@ -92,7 +92,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .brand-name { font-size: 19px; font-weight: 400; }
 .topnav { display: flex; gap: 4px; flex-wrap: wrap; }
 .topnav a {
-  padding: 7px 14px; border-radius: var(--radius-md); font-weight: 400; font-size: 14px;
+  padding: 7px 14px; border-radius: var(--radius-md);
   color: var(--text-secondary); transition: background 0.15s, color 0.15s;
 }
 .topnav a:hover { color: var(--text-strong); background: var(--surface-glass); text-decoration: none; }
@@ -133,29 +133,31 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 /* PANELS: the big rounded containers, with a header row or a tab row */
 .panel {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
-  margin-bottom: 20px; overflow: hidden;
+  margin-bottom: 20px;
 }
 .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 24px 0; }
 .panel-head p { margin-top: 4px; font-size: 13px; }
 .panel-body { padding: 20px 24px 24px; }
-.panel .card { background: var(--surface-glass); border-color: var(--border); border-radius: var(--radius-lg); }
+.panel .card { background: var(--surface-glass); border-radius: var(--radius-lg); }
 .panel .card:last-child { margin-bottom: 0; }
-.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--divider); }
+.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--divider); overflow-x: auto; }
+.tab-panel { overflow-x: auto; }  /* the instance rows are wider than a phone */
 .tab {
-  display: inline-flex; align-items: center; gap: 8px; padding: 16px 14px 14px; margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 8px; padding: 16px 14px 14px; margin-bottom: -1px; white-space: nowrap;
   background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer;
   color: var(--text-muted); font: 400 14px 'ITVReem', sans-serif;
 }
 .tab:hover { color: var(--text-strong); }
 .tab.active { color: var(--text-strong); border-bottom-color: var(--primary); }
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
-.icon { flex-shrink: 0; }
+.icon { flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 @media (max-width: 800px) {
   .topbar { height: auto; flex-wrap: wrap; gap: 12px; padding: 12px 16px; }
   .topbar-right { margin-left: 0; }
   .main { padding: 24px 16px 48px; }
   .page-head { flex-direction: column; }
+  #toast-container { top: auto; bottom: 64px; }
 }
 
 /* CARDS */
@@ -163,12 +165,8 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-xl); padding: 20px; margin-bottom: 16px;
 }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 /* Sign-in, change-password and setup pages */
 .card-sign-in { width: 380px; max-width: calc(100vw - 32px); padding: 32px; border-radius: var(--radius-2xl); }
-.brand-title {
-  background: var(--brand-gradient); -webkit-background-clip: text; background-clip: text; color: transparent;
-}
 
 /* BUTTONS */
 .btn {
@@ -180,7 +178,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
 .btn:disabled { cursor: not-allowed; opacity: 0.45; }
 .btn-primary   { background: var(--primary); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
-/* The page's main action (Start All, Sign In): the CTA gradient */
+/* A sign-in page's main action: the CTA gradient */
 .btn-cta       { background: var(--cta-gradient); color: #fff; border-radius: var(--radius-lg); }
 .btn-cta:hover:not(:disabled) { filter: brightness(1.1); }
 .btn-danger    { background: var(--error-bg); color: var(--error); border-color: rgb(251 113 133 / 0.35); }
@@ -350,11 +348,6 @@ label { display: block; margin-bottom: 6px; color: var(--text-muted); font-size:
 .remote-offline-msg {
   grid-column: 1 / -1; color: var(--text-muted); font-size: 13px; padding: 8px 0;
 }
-.chip {
-  border-radius: var(--radius-full); padding: 4px 12px; font-size: 12px; white-space: nowrap;
-  background: var(--surface-glass); border: 1px solid var(--border-strong); color: var(--text-muted);
-}
-.chip-success { background: var(--success-bg); border-color: rgb(110 231 183 / 0.3); color: var(--success); font-weight: 500; }
 
 /* Console side panel (console.js) */
 /* Above the sticky header (100), below toasts (9999) */
