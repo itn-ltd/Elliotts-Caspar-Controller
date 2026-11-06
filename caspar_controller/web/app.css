@@ -89,7 +89,7 @@ code { background: var(--surface-glass); border-radius: var(--radius-xs); paddin
   border: 2px solid var(--text-strong); border-radius: var(--radius-full);
   font-size: 11px; font-weight: 500; letter-spacing: 0.5px;
 }
-.brand-name { font-size: 19px; font-weight: 500; }
+.brand-name { font-size: 19px; font-weight: 400; }
 .topnav { display: flex; gap: 4px; flex-wrap: wrap; }
 .topnav a {
   padding: 7px 14px; border-radius: var(--radius-md); font-weight: 400; font-size: 14px;
