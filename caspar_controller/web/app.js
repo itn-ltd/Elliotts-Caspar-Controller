@@ -30,7 +30,62 @@ function api(url, method='GET', body=null) {
   });
 }
 
-// The server name (from /api/health, open before sign-in) goes in the tab title, nav and heading.
+// The header every page shares, as in the other company apps: logo, app name and nav on the
+// left; this controller's server name and Sign out on the right.
+const NAV = [['dashboard', '/', 'Dashboard'], ['triggers', '/triggers', 'Triggers'], ['settings', '/settings', 'Settings']];
+const SIGN_OUT_ICON = '<svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">'
+  + '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>';
+const topbar = document.querySelector('header.topbar');
+if (topbar) {
+  topbar.innerHTML = `
+    <a class="brand" href="/"><span class="itn-logo">ITN</span><span class="brand-name">Caspar Controller</span></a>
+    <nav class="topnav">${NAV.map(([key, href, label]) =>
+      key === topbar.dataset.page ? `<a href="${href}" class="active" aria-current="page">${label}</a>`
+        : `<a href="${href}">${label}</a>`).join('')}</nav>
+    <div class="topbar-right">
+      <span class="topbar-server" data-server-name hidden></span>
+      <button class="signout" id="sign-out" hidden>${SIGN_OUT_ICON}Sign out</button>
+    </div>`;
+  document.getElementById('sign-out').onclick = () =>
+    fetch('/logout', {method: 'POST'}).then(() => { location.href = '/login'; });
+}
+
+// Sign out shows only once a password is set: before that there's no sign-in to leave.
+// Settings passes what it already loaded; other pages ask.
+function showSignOut(passwordSet) {
+  const button = document.getElementById('sign-out');
+  if (button) button.hidden = !passwordSet;
+}
+if (topbar && topbar.dataset.page !== 'settings')
+  api('/api/config').then(cfg => showSignOut(cfg.password_set)).catch(() => {});
+
+// Tabs (Settings): the open tab is kept in the URL, so a reload or a link returns to it.
+function openTab(key) {
+  const tabs = [...document.querySelectorAll('.tab[data-tab]')];
+  if (!tabs.length) return;
+  if (!tabs.some(t => t.dataset.tab === key)) key = tabs[0].dataset.tab;
+  tabs.forEach(t => {
+    const on = t.dataset.tab === key;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', on);
+    t.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('.tab-panel[data-tab]').forEach(panel => { panel.hidden = panel.dataset.tab !== key; });
+  history.replaceState(null, '', '#' + key);
+}
+document.querySelectorAll('.tab[data-tab]').forEach((t, i, tabs) => {
+  t.onclick = () => openTab(t.dataset.tab);
+  t.onkeydown = e => {  // Left/Right move between tabs, as screen-reader users expect
+    const step = {ArrowRight: 1, ArrowLeft: -1}[e.key];
+    if (!step) return;
+    const next = tabs[(i + step + tabs.length) % tabs.length];
+    openTab(next.dataset.tab);
+    next.focus();
+  };
+});
+openTab(location.hash.slice(1));
+
+// The server name (from /api/health, open before sign-in) goes in the tab title and header.
 fetch('/api/health').then(r => r.json()).then(h => {
   const name = (h.server_name || '').trim();
   if (!name) return;

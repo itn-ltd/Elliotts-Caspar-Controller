@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,48 +7,74 @@
 <link rel="stylesheet" href="/web/app.css">
 </head>
 <body>
-<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="active">Dashboard</a><a href="/triggers" class="">Triggers</a><a href="/settings" class="">Settings</a></nav>
+<header class="topbar" data-page="dashboard"></header>
 <div id="toast-container"></div>
 <main class="main">
-<h1 style="margin-bottom:24px;color:#fff">Dashboard<span class="h1-server" data-server-name hidden></span></h1>
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="page-sub">Every CasparCG output on this PC, and the controllers it watches.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" id="btn-start" onclick="serverAction('start')">Start All</button>
+    <button class="btn btn-danger" onclick="serverAction('stop')">Stop All</button>
+  </div>
+</div>
 
-<div id="setup-banner" style="display:none;background:rgba(245,158,11,0.12);border:2px solid var(--warning);border-radius:12px;padding:20px 24px;margin-bottom:16px">
+<div id="setup-banner" class="banner banner-warning" style="display:none">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
     <span style="font-size:22px">⚙</span>
-    <h2 style="color:var(--warning)">Setup Required</h2>
+    <h2>Setup Required</h2>
   </div>
-  <p style="color:var(--muted);margin-bottom:12px">
-    CasparCG is not configured yet. Go to <strong style="color:var(--text)">Settings</strong> to set the path to <code>casparcg.exe</code> and add your output instances.
+  <p style="margin-bottom:12px">
+    CasparCG is not configured yet. Go to <strong style="color:var(--text-strong)">Settings</strong> to set the path to <code>casparcg.exe</code> and add your output instances.
   </p>
   <a href="/settings" class="btn btn-warning">Go to Settings →</a>
 </div>
 
-<div id="failed-banner" hidden style="background:rgba(239,68,68,0.12);border:2px solid var(--error);border-radius:12px;padding:16px 24px;margin-bottom:16px">
-  <strong style="color:var(--error)">Auto-restart gave up on: <span id="failed-names"></span></strong>
-  <p style="color:var(--muted);margin-top:6px">Each crashed or hung 5 times in 10 minutes. Check its Console, then Start it to try again.</p>
+<div id="failed-banner" class="banner banner-error" hidden>
+  <strong>Auto-restart gave up on: <span id="failed-names"></span></strong>
+  <p>Each crashed or hung 5 times in 10 minutes. Check its Console, then Start it to try again.</p>
 </div>
 
-<div class="card">
-  <div class="card-header">
-    <div style="display:flex;align-items:center">
-      <span class="pulse" id="pulse"></span>
-      <span id="server-status-label">Checking...</span>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-success" id="btn-start" onclick="serverAction('start')">Start All</button>
-      <button class="btn btn-danger"  onclick="serverAction('stop')">Stop All</button>
-    </div>
+<div class="stats">
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-success"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>Outputs live</div>
+    <div class="stat-value"><span class="pulse" id="pulse"></span><span id="stat-live">–</span></div>
+    <div class="stat-sub" id="stat-live-sub">Checking…</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-error"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/></svg></span>On air</div>
+    <div class="stat-value" id="stat-air">–</div>
+    <div class="stat-sub" id="stat-air-sub">on program in the gallery</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-warning"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>Auto-restart</div>
+    <div class="stat-value" id="stat-restart">–</div>
+    <div class="stat-sub" id="stat-restart-sub">outputs crashed, hung or failed</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label"><span class="stat-icon icon-primary"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg></span>CasparCG</div>
+    <div class="stat-value" id="stat-version">–</div>
+    <div class="stat-sub" id="stat-version-sub">version</div>
   </div>
 </div>
 
-<div id="instance-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px"></div>
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Outputs</h2><p class="muted">Each CasparCG instance on this PC and its NDI output.</p></div>
+  </div>
+  <div class="panel-body"><div id="instance-grid" class="card-grid"></div></div>
+</section>
 
 <div id="remotes-section"></div>
 
-<div class="card">
-  <h3 style="margin-bottom:10px">Event Log</h3>
-  <div class="log-box" id="log-box"></div>
-</div>
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>Event log</h2><p class="muted">What this controller has done, newest first.</p></div>
+  </div>
+  <div class="panel-body"><div class="log-box" id="log-box"></div></div>
+</section>
 
 </main>
 <script src="/web/app.js"></script>
@@ -92,7 +118,7 @@ function layerHtml(inst) {
   const timeLabel = li.loop
     ? `<span title="Looping">↻ ${fmtTime(time)}</span>`
     : duration > 0
-      ? `${fmtTime(time)} / ${fmtTime(duration)} &nbsp;<span style="color:var(--error)">-${fmtTime(duration - time)}</span>`
+      ? `${fmtTime(time)} / ${fmtTime(duration)} &nbsp;<span class="clip-remaining">-${fmtTime(duration - time)}</span>`
       : fmtTime(time);
   const bar = duration > 0 && !li.loop
     ? `<div class="clip-progress"><div class="clip-progress-bar" style="width:${Math.min(100, time / duration * 100).toFixed(1)}%"></div></div>`
@@ -150,7 +176,7 @@ function buildCards(instances) {
     const amcpRow = !isHtml ? `
       <div style="display:flex;gap:4px;margin-top:4px">
         <select id="media_${inst.id}"
-                style="flex:1;font-size:11px;padding:5px 8px;min-width:0;background:var(--input-bg);color:var(--muted);border:1px solid var(--border);border-radius:6px"
+                style="flex:1;font-size:11px;padding:5px 8px;min-width:0"
                 onchange="onMediaSelect(${inst.id})">
           <option value="">— pick a clip —</option>
         </select>
@@ -164,7 +190,7 @@ function buildCards(instances) {
     return `
     <div class="channel-card" id="card_${inst.id}">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
+        <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--text-muted);font-size:10px">:${inst.amcp_port}</span></div>
         <div style="display:flex;gap:4px;align-items:center"><span id="tally_${inst.id}"></span>${typeBadge}</div>
       </div>
       <div class="ch-name">${escapeHtml(inst.name)}</div>
@@ -205,15 +231,20 @@ function showStatus(data) {
   const liveCount = data.instances.filter(i => i.status === 'live').length;
   const total = data.instances.length;
   const versions = [...new Set(data.instances.map(i => i.caspar_version).filter(Boolean))];
-  document.getElementById('server-status-label').textContent = running
-    ? `CasparCG Running — ${liveCount}/${total} instances` + (versions.length ? ` · ${versions.join(', ')}` : '')
-    : 'CasparCG Stopped';
+  const setText = (id, text) => { document.getElementById(id).textContent = text; };
+  setText('stat-live', `${liveCount}/${total}`);
+  setText('stat-live-sub', running ? 'answering AMCP' : 'CasparCG is stopped');
+  setText('stat-air', data.instances.filter(i => i.on_program).length);
+  setText('stat-air-sub', data.tally_available ? 'on program in the gallery' : 'tally needs NDI on this PC');
+  const attention = data.instances.filter(i => !['live', 'stopped'].includes(i.status));
+  setText('stat-restart', attention.length);
+  setText('stat-restart-sub', attention.length ? attention.map(i => `${i.name}: ${i.status}`).join(', ') : 'all outputs healthy');
+  setText('stat-version', versions.length ? versions.map(v => v.split(' ')[0]).join(', ') : '–');
+  setText('stat-version-sub', versions.length ? versions.map(v => v.split(' ').slice(1).join(' ') || 'version').join(', ') : 'not running');
 
   const btnStart = document.getElementById('btn-start');
   const allRunning = total > 0 && liveCount === total;
   btnStart.disabled = allRunning;
-  btnStart.style.opacity = allRunning ? '0.4' : '';
-  btnStart.style.cursor  = allRunning ? 'not-allowed' : '';
   btnStart.textContent = allRunning
     ? `All Running (${total}/${total})`
     : liveCount > 0
@@ -302,7 +333,7 @@ function remoteCardShell(idx, inst) {
   const mediaRow = inst.type === 'media' ? `
     <div style="display:flex;gap:4px;margin-top:4px">
       <select id="rmedia_${key}"
-              style="flex:1;font-size:11px;padding:5px 8px;min-width:0;background:var(--input-bg);color:var(--muted);border:1px solid var(--border);border-radius:6px"
+              style="flex:1;font-size:11px;padding:5px 8px;min-width:0"
               onchange="onRemoteMediaSelect(${idx},${inst.id})">
         <option value="">— pick a clip —</option>
       </select>
@@ -316,7 +347,7 @@ function remoteCardShell(idx, inst) {
   return `
   <div class="channel-card" id="rcard_${key}">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--muted);font-size:10px">:${inst.amcp_port}</span></div>
+      <div class="ch-num">Instance ${inst.id} &nbsp;<span style="color:var(--text-muted);font-size:10px">:${inst.amcp_port}</span></div>
       <span id="rtally_${key}"></span>
     </div>
     <div class="ch-name">${escapeHtml(inst.name)}</div>
@@ -341,10 +372,8 @@ function remoteHeaderHtml(rem, status) {
   if (!status) return badge;
   const live = status.instances.filter(i => i.status === 'live').length;
   return badge + `
-    <span style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);border-radius:20px;
-                 padding:4px 12px;font-size:13px;color:var(--success);white-space:nowrap;font-weight:600">${live}/${status.instances.length} live</span>
-    <span style="background:var(--input-bg);border:1px solid var(--border);border-radius:20px;
-                 padding:4px 12px;font-size:12px;color:var(--muted);white-space:nowrap">v${escapeHtml(status.version || '?')}</span>`;
+    <span class="badge badge-success">${live}/${status.instances.length} live</span>
+    <span class="badge badge-neutral">v${escapeHtml(status.version || '?')}</span>`;
 }
 
 function remoteMessageHtml(rem, status) {
@@ -370,9 +399,9 @@ function renderRemotes(remotes) {
   if (key !== _remotesKey) {
     _remotesKey = key;
     Object.keys(_shown).filter(k => k.startsWith('r')).forEach(k => delete _shown[k]);
-    sec.innerHTML = !remotes.length ? '' : `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <h2 style="color:var(--muted);font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Remote Controllers</h2>
-    </div>` + remotes.map(rem => {
+    sec.innerHTML = !remotes.length ? '' : `<section class="panel">
+      <div class="panel-head"><div><h2>Remote Controllers</h2><p class="muted">Other controllers this one watches and controls.</p></div></div>
+      <div class="panel-body">` + remotes.map(rem => {
       const collapsed = _isCollapsed(rem.idx);
       return `
       <div class="remote-section">
@@ -380,7 +409,7 @@ function renderRemotes(remotes) {
              onclick="toggleRemote(${rem.idx})" style="justify-content:space-between">
           <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">
             <span class="remote-chevron">▼</span>
-            <span style="font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(rem.display_name)}</span>
+            <span class="remote-name">${escapeHtml(rem.display_name)}</span>
             <span id="rhd_${rem.idx}" style="display:contents"></span>
           </div>
           <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px" onclick="event.stopPropagation()">
@@ -393,7 +422,7 @@ function renderRemotes(remotes) {
           <div id="rmsg_${rem.idx}" style="display:contents"></div>
         </div>
       </div>`;
-    }).join('');
+    }).join('') + '</div></section>';
     remotes.forEach(rem => populateRemoteMediaDropdowns(rem.idx, true));
   }
 

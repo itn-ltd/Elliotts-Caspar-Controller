@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8">
+<html lang="en" class="dark"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login — Elliott's Caspar Controller</title>
 <link rel="stylesheet" href="/web/app.css"></head>
 <body style="display:flex;align-items:center;justify-content:center;min-height:100vh">
-<div class="card" style="width:380px;padding:32px">
-  <h1 style="margin-bottom:4px">Elliott's Caspar Controller</h1>
-  <p style="color:var(--muted);font-size:14px" data-server-name hidden></p>
+<div class="card card-sign-in">
+  <div class="brand" style="margin-bottom:6px"><span class="itn-logo">ITN</span><h1 class="brand-name">Caspar Controller</h1></div>
+  <p style="color:var(--text-muted);font-size:14px" data-server-name hidden></p>
   
   <div style="margin-top:24px">
   <div class="form-group">
     <label>Password</label>
     <input type="password" id="pw" placeholder="Enter password" autofocus>
   </div>
-  <button class="btn btn-primary" style="width:100%" onclick="submit()">Sign In</button>
+  <button class="btn btn-cta" style="width:100%" onclick="submit()">Sign In</button>
   <p id="form-error" style="color:var(--error);font-size:13px;margin-top:12px"></p></div>
 </div>
 <script src="/web/app.js"></script>
