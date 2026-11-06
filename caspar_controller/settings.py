@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import sys
 import threading
 import time
@@ -82,13 +81,12 @@ def _client_address(value: str) -> str:
 
 def _network(value: str) -> str:
     """An exact IP address or subnet; no host names."""
+    value = _client_address(value)
     try:
-        ipaddress.ip_network(value.strip())
+        ipaddress.ip_network(value)
     except ValueError:
-        raise ValueError(
-            f"{value!r} isn't an exact IP address or subnet (e.g. 10.0.0.0/24)"
-        ) from None
-    return value.strip()
+        raise ValueError(f"{value!r} is a host name: use its IP address") from None
+    return value
 
 
 def _text(value: str) -> str:
@@ -292,47 +290,54 @@ def v1_configs() -> list[str]:
         V1_CASPAR_DIR,
         *glob.glob(os.path.join(glob.escape(USERS_DIR), "*", V1_INSTALL)),
     ]
-    found = {
-        os.path.normcase(os.path.abspath(path)): path
-        for folder in dirs
-        for name in LEGACY_NAMES
-        if os.path.isfile(path := os.path.join(folder, name))
-    }
-    return sorted(found.values(), key=os.path.getmtime, reverse=True)
+    found = [os.path.join(d, name) for d in dirs for name in LEGACY_NAMES]
+    return sorted(filter(os.path.isfile, found), key=os.path.getmtime, reverse=True)
 
 
 def _from_v1(stored: dict, source: str) -> dict:
     """A v1.x config made ready for this version, after backing up the original."""
-    os.makedirs(home_dir(), exist_ok=True)
-    shutil.copyfile(source, os.path.join(home_dir(), V1_BACKUP))  # the original stays for v1.x
+    _backup_v1(stored)
     cfg = _upgrade(stored)
     exe = cfg.get("caspar_exe_path") or ""
     exe = os.path.join(os.path.dirname(source), exe) if exe else ""  # v1.x allowed relative paths
     cfg["caspar_exe_path"] = exe if os.path.isfile(exe) else ""
-    for inst in cfg.get("instances", []):
-        inst.setdefault("legacy_id", inst.get("id"))  # v1.x renumbered by position
     cfg["auto_restart"] = True
     cfg["migrated_from"] = "1.x"  # tells the remediation script v1.x can go
     cfg["v1_notice"] = {
         "source": source,
         "outputs": len(cfg.get("instances", [])),
-        "password": bool(stored.get("web_password_enabled") and stored.get("web_password")),
+        "password": bool(_v1_password(stored)),
     }
     log_event(f"Imported the v1.x config from {source}.")
     return cfg
 
 
+def _backup_v1(stored: dict) -> None:
+    """Save config.v1-backup.json, minus the plaintext password; ProgramData is readable by all."""
+    path = os.path.join(home_dir(), V1_BACKUP)
+    try:
+        os.makedirs(home_dir(), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in stored.items() if k != "web_password"}, f, indent=2)
+    except OSError as e:  # the import matters more than its backup; the original stays anyway
+        log_event(f"Couldn't save {path}: {e}")
+
+
 def _first_run_config() -> dict:
     """A v1.x config, else a profile.json seed, else defaults."""
     # A bad seed file is logged and skipped: it must never stop the app starting.
-    found = v1_configs()
-    for legacy in found:
+    try:
+        found = v1_configs()
+    except OSError as e:  # e.g. one deleted while looking
+        log_event(f"Couldn't look for v1.x configs: {e}")
+        found = []
+    for i, legacy in enumerate(found):
         try:
             cfg = _from_v1(_read_object(legacy), legacy)
-        except (OSError, ValueError) as e:
+        except Exception as e:  # any wrong shape: a v1.x file is never checked by hand
             log_event(f"Ignored {legacy}: {e}")
             continue
-        for other in found[found.index(legacy) + 1 :]:
+        for other in found[i + 1 :]:
             log_event(f"Also found the older {other}: not imported.")
         return cfg
     profile = os.path.join(home_dir(), "profile.json")
@@ -442,14 +447,22 @@ def set_password(config: dict, password: str, must_change: bool = False) -> None
     config["password_change_required"] = must_change
 
 
+def _v1_password(config: dict) -> str:
+    """The v1.x password, if it was switched on and isn't blank."""
+    password = config.get("web_password")
+    on = config.get("web_password_enabled") and isinstance(password, str) and password.strip()
+    return password if on else ""
+
+
 def _secure_secrets(config: dict) -> bool:
     """Hash v1 passwords, apply the initial password and create the API key. True if changed."""
     changed = False
-    plaintext = config.pop("web_password", None)
-    enabled = config.pop("web_password_enabled", None)
-    if plaintext is not None or enabled is not None:
+    plaintext = _v1_password(config)
+    if {"web_password", "web_password_enabled"} & config.keys():
         changed = True
-        if enabled and plaintext and plaintext.strip() and not config["web_password_hash"]:
+        config.pop("web_password", None)
+        config.pop("web_password_enabled", None)
+        if plaintext and not config["web_password_hash"]:
             config["web_password_hash"] = hash_password(plaintext)
     initial = os.environ.get(INITIAL_PASSWORD_ENV, "")
     if initial.strip() and not config["web_password_hash"]:

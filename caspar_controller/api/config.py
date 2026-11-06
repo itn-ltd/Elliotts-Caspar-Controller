@@ -75,7 +75,8 @@ def api_config_post(update: dict):
 
 @router.get("/api/config/export")
 def api_config_export():
-    content = json.dumps(without_secrets(load_config()), indent=2).encode("utf-8")
+    cfg = {k: v for k, v in without_secrets(load_config()).items() if k not in MACHINE_KEYS}
+    content = json.dumps(cfg, indent=2).encode("utf-8")
     return Response(
         content=content,
         media_type="application/json",

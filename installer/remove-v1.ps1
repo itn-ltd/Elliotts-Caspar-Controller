@@ -15,7 +15,7 @@ param(
 )
 
 $V1Folder = "AppData\Local\Programs\Elliott's Caspar Controller"
-$V1Exe = 'ElliottsCasparController.exe'
+$V1Process = 'ElliottsCasparController'
 $V1UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A3F7C2D1-8B4E-4F9A-B2C6-E1D8A3F7C2D1}_is1'
 
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
@@ -47,10 +47,22 @@ function Remove-UninstallEntry([string]$ProfilePath, [string]$Folder) {
         $key = Join-Path $hive $V1UninstallKey
         # Only v1.x's own entry: v2 may share the AppId (#11).
         if ((Test-Path $key) -and ((Get-ItemProperty $key).InstallLocation -like "$Folder*")) {
-            if ($PSCmdlet.ShouldProcess($key, 'Remove the Apps list entry')) { Remove-Item $key -Recurse }
+            if ($PSCmdlet.ShouldProcess($key, 'Remove the Apps list entry')) {
+                try { Remove-Item $key -Recurse -ErrorAction Stop }
+                catch { Write-Output "  Couldn't remove the Apps entry: $_"; $script:failed = $true }
+            }
         }
     } finally {
-        if ($loaded) { [gc]::Collect(); & reg.exe unload 'HKU\CasparControllerV1' | Out-Null }
+        if ($loaded) {
+            # Registry handles must close first, or the user gets a temporary profile next sign-in.
+            foreach ($try in 1..5) {
+                [gc]::Collect(); [gc]::WaitForPendingFinalizers()
+                & reg.exe unload 'HKU\CasparControllerV1' 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { break }
+                Start-Sleep -Seconds 1
+            }
+            if ($LASTEXITCODE -ne 0) { Write-Output "  Couldn't unload $ProfilePath's registry."; $script:failed = $true }
+        }
     }
 }
 
@@ -63,9 +75,16 @@ foreach ($user in Get-ChildItem -LiteralPath $UsersDir -Directory -ErrorAction S
         continue
     }
     Write-Output "v1.x found in $folder"
-    Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($V1Exe)) -ErrorAction SilentlyContinue |
+    $stopped = $true
+    Get-Process -Name $V1Process -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -like "$folder\*" } |
-        ForEach-Object { if ($PSCmdlet.ShouldProcess("$($_.Path) (pid $($_.Id))", 'Stop')) { $_ | Stop-Process -Force } }
+        ForEach-Object {
+            if ($PSCmdlet.ShouldProcess("$($_.Path) (pid $($_.Id))", 'Stop')) {
+                try { $_ | Stop-Process -Force -ErrorAction Stop }
+                catch { Write-Output "  Couldn't stop v1.x (pid $($_.Id)): $_"; $stopped = $false }
+            }
+        }
+    if (-not $stopped) { $failed = $true; continue }  # the uninstall would fail on its open exe
     $uninstaller = Get-ChildItem -LiteralPath $folder -Filter 'unins*.exe' | Sort-Object Name | Select-Object -Last 1
     if (-not $uninstaller) {
         Write-Output "  No uninstaller in $folder`: remove it by hand."

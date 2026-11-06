@@ -65,7 +65,8 @@ def _address(host: str):
 def listed(host: str, networks: list) -> bool:
     """True if ``host`` is in one of ``networks`` (IP addresses and subnets only)."""
     ip = _address(host)
-    return ip is not None and any(ip in ipaddress.ip_network(n) for n in networks)
+    # _literal: a bad entry in a hand-edited config is skipped, never a 500.
+    return ip is not None and any(ip in net for net in map(_literal, networks) if net)
 
 
 def allowed(host: str, entries: list) -> bool:

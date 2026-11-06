@@ -240,6 +240,19 @@ def test_off_by_default(clips):
     )
 
 
+def test_a_bad_hand_edited_entry_is_skipped_not_a_500(write_config, clips):
+    cfg = settings.load()
+    write_config({**cfg, "keyless_trigger_clients": ["10.20.30.5/24", "10.20.30.40"]})
+    assert (
+        device().get("/api/load", params={"instance": "Clipplayer", "clip": "AMB"}).status_code
+        == 200
+    )
+    other = device(("10.99.0.1", 50000))
+    assert (
+        other.get("/api/load", params={"instance": "Clipplayer", "clip": "AMB"}).status_code == 401
+    )
+
+
 @pytest.mark.parametrize("bad", ["automator.example", "10.0.5", "10.0.0.5/8"])
 def test_changeover_takes_addresses_only(client, bad):
     assert client.post("/api/config", json={"keyless_trigger_clients": [bad]}).status_code == 400

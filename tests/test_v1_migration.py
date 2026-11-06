@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 from conftest import FIXTURES
@@ -88,6 +89,27 @@ def test_an_unreadable_one_is_skipped(config_dir, tmp_path):
     assert settings.load()["v1_notice"]["source"] == str(good)
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [{"instances": None}, {"channels": ["GFX1"]}, {"caspar_exe_path": 5}, {"instances": [7]}],
+    ids=["null instances", "string channel", "number path", "number instance"],
+)
+def test_a_wrong_shape_is_skipped_for_the_next(config_dir, tmp_path, bad):
+    good = v1_install(tmp_path, "good")
+    broken = v1_install(tmp_path, "broken")
+    Path(broken).write_text(json.dumps(bad))
+    os.utime(good, (1, 1))  # the broken one is newest, so it's tried first
+    assert settings.load()["v1_notice"]["source"] == str(good)
+
+
+def test_a_file_vanishing_while_looking_isnt_fatal(config_dir, tmp_path, monkeypatch):
+    v1_install(tmp_path)
+    monkeypatch.setattr(
+        os.path, "getmtime", lambda path: (_ for _ in ()).throw(FileNotFoundError(path))
+    )
+    assert "migrated_from" not in settings.load()
+
+
 def test_an_existing_v2_config_wins(write_config, tmp_path):
     v1_install(tmp_path)
     write_config({"server_name": "New"})
@@ -102,10 +124,7 @@ def test_settings_media_and_outputs_carry_over(config_dir, tmp_path):
     source = v1_install(tmp_path)
     cfg = settings.load()
     assert cfg["media_path"] == "D:\\Media" and cfg["server_name"] == "Gallery Server"
-    assert [(i["id"], i["legacy_id"], i["name"]) for i in cfg["instances"]] == [
-        (1, 1, "GFX1"),
-        (2, 2, "MEDIA1"),
-    ]
+    assert [(i["id"], i["name"]) for i in cfg["instances"]] == [(1, "GFX1"), (2, "MEDIA1")]
     # Same AMCP ports, so trigger URLs and Companion buttons keep working.
     assert [settings.instance_amcp_port(cfg, i) for i in cfg["instances"]] == [5250, 5300]
     assert cfg["caspar_exe_path"] == os.path.join(os.path.dirname(source), "casparcg.exe")
@@ -130,11 +149,39 @@ def test_backed_up_and_marked_and_the_original_kept(config_dir, tmp_path):
     source = v1_install(tmp_path, fixture="v1_channels_config.json")
     original = open(source, encoding="utf-8").read()
     cfg = saved(config_dir)
-    assert (config_dir / settings.V1_BACKUP).read_text(encoding="utf-8") == original
+    assert json.loads((config_dir / settings.V1_BACKUP).read_text()) == json.loads(original)
     assert open(source, encoding="utf-8").read() == original  # v1.x until it's uninstalled
     assert cfg["migrated_from"] == "1.x"
     assert cfg["v1_notice"] == {"source": str(source), "outputs": 7, "password": False}
     assert len(cfg["instances"]) == 7 and "channels" not in cfg
+
+
+def test_the_backup_has_no_plaintext_password(config_dir, tmp_path):
+    v1_install(tmp_path)
+    saved(config_dir)
+    backup = json.loads((config_dir / settings.V1_BACKUP).read_text())
+    assert "web_password" not in backup and backup["server_name"] == "Gallery Server"
+
+
+def test_imported_even_if_the_backup_cant_be_saved(config_dir, tmp_path):
+    (config_dir / settings.V1_BACKUP).mkdir()  # a folder in the way: writing it fails
+    v1_install(tmp_path)
+    assert settings.load()["migrated_from"] == "1.x"
+    assert any(f"Couldn't save {config_dir / settings.V1_BACKUP}" in line for line in log._log)
+
+
+def test_a_blank_password_isnt_reported_as_kept(config_dir, tmp_path):
+    source = v1_install(tmp_path)
+    cfg = json.loads(Path(source).read_text())
+    Path(source).write_text(json.dumps({**cfg, "web_password": "  "}))
+    loaded = settings.load()
+    assert loaded["v1_notice"]["password"] is False and not loaded["web_password_hash"]
+
+
+def test_exports_leave_out_the_migration_marks(local_anon, config_dir, tmp_path):
+    v1_install(tmp_path, fixture="v1_channels_config.json")
+    exported = local_anon.get("/api/config/export").json()
+    assert not {"migrated_from", "v1_notice"} & exported.keys()
 
 
 def test_imports_and_profiles_never_carry_the_migration_marks():

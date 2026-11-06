@@ -240,6 +240,8 @@ function renderInstances(instances) {
   });
 }
 
+function setText(id, text) { document.getElementById(id).textContent = text; }
+
 function showStatus(data) {
   // A first run (nothing set up): go to the setup wizard, once per browser session.
   if (data.needs_setup && !data.instances.length) {
@@ -253,7 +255,6 @@ function showStatus(data) {
   const liveCount = data.instances.filter(i => i.status === 'live').length;
   const total = data.instances.length;
   const versions = [...new Set(data.instances.map(i => i.caspar_version).filter(Boolean))];
-  const setText = (id, text) => { document.getElementById(id).textContent = text; };
   setText('stat-live', `${liveCount}/${total}`);
   setText('stat-live-sub', running ? 'answering AMCP' : 'CasparCG is stopped');
   setText('stat-air', data.instances.filter(i => i.on_program).length);
@@ -511,7 +512,6 @@ function showV1Notice() {
   api('/api/config').then(cfg => {
     const notice = cfg.v1_notice;
     if (!notice) return;
-    const setText = (id, text) => { document.getElementById(id).textContent = text; };
     setText('v1-outputs', notice.outputs === 1 ? '1 output' : notice.outputs + ' outputs');
     setText('v1-source', notice.source);
     document.getElementById('v1-password').hidden = !notice.password;
