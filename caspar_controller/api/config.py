@@ -6,7 +6,7 @@ import socket
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
-from caspar_controller import tally
+from caspar_controller import clients, tally
 from caspar_controller.api import or_400
 from caspar_controller.caspar.config_xml import regenerate_all_instance_configs
 from caspar_controller.log import log_event
@@ -57,6 +57,8 @@ def api_config_post(update: dict):
         )
     cfg.update(data)
     save_config(cfg)
+    if "api_clients" in data:
+        clients.resolve(data["api_clients"])  # look host names up now, not in a request
     regenerate_all_instance_configs(cfg)
     tally.refresh_monitors()
     log_event("Config saved and instance configs regenerated.")
@@ -88,7 +90,8 @@ async def api_config_import(request: Request):
     body["remote_controllers"] = keep_remote_keys(
         body.get("remote_controllers", []), current["remote_controllers"]
     )
-    body.update({k: current[k] for k in MACHINE_KEYS})
+    # This PC's allowed addresses too: another gallery's would lock out this one's Automator.
+    body.update({k: current[k] for k in (*MACHINE_KEYS, "api_clients")})
     save_config(body)
     regenerate_all_instance_configs(load_config())  # fills defaults the import left out
     log_event("Config imported via web UI.")

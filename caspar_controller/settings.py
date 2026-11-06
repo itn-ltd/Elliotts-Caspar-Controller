@@ -54,14 +54,21 @@ def _config_file() -> str:
 # ---------------------------------------------------------------- validation
 
 
+_HOST_LABEL = r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)"
+
+
 def _client_address(value: str) -> str:
-    """An IP address, a subnet (10.0.0.0/24) or a host name."""
+    """An IP address, an exact subnet (10.0.0.0/24, not 10.0.0.5/24) or a host name."""
     value = value.strip()
     try:
-        ipaddress.ip_network(value, strict=False)
+        ipaddress.ip_network(value)  # strict: 10.0.0.5/8 would quietly mean all of 10.x
+        return value
     except ValueError:
-        if not re.fullmatch(r"(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?", value):
-            raise ValueError(f"{value!r} isn't an IP address, subnet or host name") from None
+        pass
+    if "/" in value or re.fullmatch(r"[\d.]+", value):  # a bad subnet, or a partial IPv4
+        raise ValueError(f"{value!r} isn't an exact IP address or subnet (e.g. 10.0.0.0/24)")
+    if len(value) > 253 or not re.fullmatch(rf"{_HOST_LABEL}(\.{_HOST_LABEL})*", value):
+        raise ValueError(f"{value!r} isn't an IP address, subnet or host name")
     return value
 
 

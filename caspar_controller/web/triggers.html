@@ -46,6 +46,7 @@
       <input type="checkbox" id="show-key" onchange="build()" style="accent-color:var(--accent)">
       Show the trigger key
     </label>
+    <button class="btn btn-danger btn-sm" onclick="rotateTriggerKey()" title="Every trigger using the old key stops working">Rotate trigger key</button>
   </div>
 
   <div id="gen-output" style="display:none">
@@ -111,6 +112,15 @@ function build() {
   document.getElementById('gen-url').textContent = show(_copy.url);
   document.getElementById('gen-curl').textContent = show(_copy.curl);
   output.style.display = 'block';
+}
+
+function rotateTriggerKey() {
+  if (!confirm('Rotate the trigger key? Every Automator command, panel and trigger URL using the old key stops working.')) return;
+  api('/api/key/rotate?key=trigger', 'POST').then(d => {
+    _apiKey = d.trigger_key;
+    build();
+    toast('Trigger key rotated: update Automator and panels', 'success');
+  }).catch(e => toast(e.message, 'error'));
 }
 
 function copy(which) {

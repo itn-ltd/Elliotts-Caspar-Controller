@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from caspar_controller import __version__, instances, tally
+from caspar_controller import __version__, clients, instances, tally
 from caspar_controller.api import (
     auth,
     config,
@@ -22,6 +22,7 @@ from caspar_controller.settings import load as load_config
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tally.refresh_monitors()
+    clients.refresh_in_background(load_config()["api_clients"])  # DNS can't delay start-up
     instances.manager.start_status_worker()
     yield
     instances.manager.stop_status_worker()

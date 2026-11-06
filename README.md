@@ -146,7 +146,7 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
 - **Send a key either way:**
   - Header (keeps the key out of URLs and logs): `X-API-Key: <key>`
   - Query string, for devices that can only call a URL, such as Automator: `?api_key=<key>`
-- **Allowed addresses** (optional): list IPs, subnets or host names, and a key only works from those, so a key copied from a URL is useless elsewhere. Signed-in browsers aren't affected. Host names are looked up when the list changes and every 5 minutes. Refused calls are logged with the caller's address, never the key.
+- **Allowed addresses** (optional): list IPs, subnets or host names, and a key only works from those, so a key copied from a URL is useless elsewhere. Signed-in browsers aren't affected. Other controllers that use this one as a Remote Controller call it with a key, so list them too. Subnets must be exact (`10.0.0.0/24`, not `10.0.0.5/24`). Host names are looked up when the list is saved, at start-up and every 5 minutes in the background; a name that stops resolving keeps its last known address. Imports never change this PC's list. Refused calls are logged with the caller's address, never the key.
 - **Rotating** creates a new key straight away. Every device using the old one stops working until it's updated.
 - **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**. Saved remote keys are never shown again; leave the field blank to keep the saved one.
 

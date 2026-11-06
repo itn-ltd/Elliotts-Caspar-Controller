@@ -67,6 +67,7 @@ def run() -> None:
             access_log=False,
             log_config=None,
             timeout_graceful_shutdown=1,  # open dashboard streams don't hold up Quit
+            proxy_headers=False,  # no proxy in front: X-Forwarded-For would fake an allowed address
         )
     )
     # uvicorn ends its thread (SystemExit) if it can't bind or start up; this records why.

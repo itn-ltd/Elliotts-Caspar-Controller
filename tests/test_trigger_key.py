@@ -1,12 +1,13 @@
 """The trigger-only key and the addresses allowed to use the keys (#25)."""
 
+import types
+
 import pytest
 from conftest import API_KEY, LOCAL, instance
 from fake_amcp import FakeAMCPServer
 from fastapi.testclient import TestClient
 
-from caspar_controller import log, settings
-from caspar_controller.api import auth as api_auth
+from caspar_controller import clients, log, settings
 from caspar_controller.api.app import app
 
 AUTOMATOR = ("10.20.30.40", 50000)
@@ -14,7 +15,7 @@ AUTOMATOR = ("10.20.30.40", 50000)
 
 @pytest.fixture(autouse=True)
 def fresh_lookups(monkeypatch):
-    monkeypatch.setattr(api_auth, "_resolved", {"entries": None, "at": 0.0, "networks": []})
+    monkeypatch.setattr(clients, "_cache", {"entries": None, "at": 0.0, "names": {}})
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def test_trigger_key_never_reaches_account_routes(clips, trigger_key):
 def test_refusals_are_logged_without_the_key(clips, trigger_key):
     device(key=trigger_key).get("/api/config")
     assert log._log[-1].endswith(
-        "Refused /api/config from 10.20.30.40: the trigger key can only fire triggers"
+        "Refused /api/config from 10.20.30.40: The trigger key can only fire triggers"
     )
     assert trigger_key not in "".join(log._log)
 
@@ -132,22 +133,66 @@ def test_empty_list_lets_any_address_use_the_full_key(clips):
     assert device(key=API_KEY).get("/api/config").status_code == 200
 
 
-def test_host_names_are_looked_up_at_most_every_5_minutes(client, clips, monkeypatch):
-    lookups = []
+@pytest.fixture
+def dns(monkeypatch):
+    """Host-name lookups, recorded; set .answer to an address, or None to fail."""
+    state = types.SimpleNamespace(lookups=[], answer="127.0.0.1")
 
     def getaddrinfo(host, port):
-        lookups.append(host)
-        return [(2, 1, 6, "", ("127.0.0.1", 0))]
+        state.lookups.append(host)
+        if state.answer is None:
+            raise OSError("no such host")
+        return [(2, 1, 6, "", (state.answer, 0))]
 
-    monkeypatch.setattr(api_auth.socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr(clients.socket, "getaddrinfo", getaddrinfo)
+    return state
+
+
+def test_host_names_are_looked_up_on_save_not_per_request(client, clips, dns):
     client.post("/api/config", json={"api_clients": ["automator.example"]})
+    assert dns.lookups == ["automator.example"]  # on save
     local_key = device(LOCAL, API_KEY)  # 127.0.0.1, but not a trusted localhost browser
     for _ in range(3):
         assert local_key.get("/api/status").status_code == 200
-    assert lookups == ["automator.example"]
+    assert dns.lookups == ["automator.example"]  # requests only read the cache
     assert device(key=API_KEY).get("/api/status").status_code == 403
 
 
-@pytest.mark.parametrize("bad", ["not a host!", "10.0.0.0/99", "-x.example"])
+def test_a_failed_lookup_keeps_the_last_good_address(client, clips, dns):
+    client.post("/api/config", json={"api_clients": ["automator.example"]})
+    dns.answer = None  # DNS down at the next refresh
+    clients.resolve(["automator.example"])
+    assert device(LOCAL, API_KEY).get("/api/status").status_code == 200
+    assert "couldn't look up automator.example (keeping its last known address)" in log._log[-1]
+
+
+def test_ipv4_mapped_addresses_match():
+    assert clients.allowed("::ffff:10.20.30.40", ["10.20.30.0/24"])
+
+
+def test_forwarded_for_header_is_not_trusted():
+    import inspect
+
+    from caspar_controller import tray
+
+    assert "proxy_headers=False" in inspect.getsource(tray.run)
+
+
+def test_wrong_keys_are_logged(clips):
+    device(key="guess").get("/api/config")
+    assert log._log[-1].endswith("Refused /api/config from 10.20.30.40: Invalid or missing API key")
+
+
+def test_import_keeps_this_pcs_allowed_addresses(client, clips):
+    client.post("/api/config", json={"api_clients": ["10.20.30.40"]})
+    client.post("/api/config/import", json={"server_name": "Other gallery"})  # no api_clients
+    assert settings.load()["api_clients"] == ["10.20.30.40"]
+    client.post("/api/config/import", json={"api_clients": ["10.99.0.1"]})  # another gallery's
+    assert settings.load()["api_clients"] == ["10.20.30.40"]
+
+
+@pytest.mark.parametrize(
+    "bad", ["not a host!", "10.0.0.0/99", "-x.example", "10.0.0.5/8", "a..b", "x-.y", "10.0.5"]
+)
 def test_bad_entries_are_rejected(client, bad):
     assert client.post("/api/config", json={"api_clients": [bad]}).status_code == 400

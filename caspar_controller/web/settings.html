@@ -501,8 +501,7 @@ function copyKey(which) {
 }
 
 function rotateKey(which) {
-  const users = which === 'trigger' ? 'Automator, panel and trigger URL' : 'Companion button, panel and remote';
-  if (!confirm('Rotate the ' + KEY_NAMES[which].toLowerCase() + '? Every ' + users + ' using the old key stops working.')) return;
+  if (!confirm('Rotate the ' + KEY_NAMES[which].toLowerCase() + '? Every device using the old key stops working.')) return;
   api('/api/key/rotate?key=' + which, 'POST').then(d => {
     document.getElementById(which + '_key').value = d[which + '_key'];
     toast(KEY_NAMES[which] + ' rotated', 'success');
