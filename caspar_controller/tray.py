@@ -19,8 +19,8 @@ TITLE = "Elliott's Caspar Controller"
 
 
 def _status_text(_item=None) -> str:
-    live, _ = instances.manager.cached_status()
-    return f"{sum(live.values())}/{len(load_config()['instances'])} instances live"
+    live = sum(p.live for p in instances.manager.cached_status().values())
+    return f"{live}/{len(load_config()['instances'])} instances live"
 
 
 def _restart_all() -> None:
@@ -60,7 +60,15 @@ def run() -> None:
     port = load_config()["web_port"]
     url = f"http://127.0.0.1:{port}"
     server = uvicorn.Server(
-        uvicorn.Config(app, host="0.0.0.0", port=port, access_log=False, log_config=None)
+        uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=port,
+            access_log=False,
+            log_config=None,
+            timeout_graceful_shutdown=1,  # open dashboard streams don't hold up Quit
+            proxy_headers=False,  # no proxy in front: X-Forwarded-For would fake an allowed address
+        )
     )
     # uvicorn ends its thread (SystemExit) if it can't bind or start up; this records why.
     server_thread = threading.Thread(target=server.run, daemon=True)

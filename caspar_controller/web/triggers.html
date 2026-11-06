@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triggers — Elliott's Caspar Controller</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+<nav class="nav"><span class="server-chip" data-server-name hidden></span><a href="/" class="">Dashboard</a><a href="/triggers" class="active">Triggers</a><a href="/settings" class="">Settings</a></nav>
+<div id="toast-container"></div>
+<main class="main">
+<h1 style="margin-bottom:24px;color:#fff">Triggers<span class="h1-server" data-server-name hidden></span></h1>
+<p style="color:var(--muted);margin-bottom:20px">
+  Pick an output and a clip to get a ready-to-use trigger. Automator, Companion, hardware panels or
+  anything that can call a URL can fire it.
+</p>
+
+<div class="card">
+  <h2 style="margin-bottom:20px">Build a trigger</h2>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="form-group" style="margin:0">
+      <label>Media Instance</label>
+      <select id="gen-instance" onchange="build()">
+        <option value="">— select instance —</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>Clip</label>
+      <select id="gen-clip" onchange="build()">
+        <option value="">— select clip —</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:20px">
+    <div class="form-group" style="margin:0">
+      <label>Playback</label>
+      <select id="gen-loop" onchange="build()" style="max-width:220px">
+        <option value="">Loop continuously (default)</option>
+        <option value="false">Play once then stop</option>
+      </select>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer">
+      <input type="checkbox" id="show-key" onchange="build()" style="accent-color:var(--accent)">
+      Show the trigger key
+    </label>
+    <button class="btn btn-danger btn-sm" onclick="rotateTriggerKey()" title="Every trigger using the old key stops working">Rotate trigger key</button>
+  </div>
+
+  <div id="gen-output" style="display:none">
+    <label style="margin-bottom:8px;display:block">URL, for Automator and devices that can only call a URL. Click to copy.</label>
+    <div class="trigger-box" id="gen-url" onclick="copy('url')" title="Click to copy"></div>
+    <label style="margin:16px 0 8px;display:block">With the key in a header, for devices that can send one. Click to copy.</label>
+    <div class="trigger-box" id="gen-curl" onclick="copy('curl')" title="Click to copy"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3 style="margin-bottom:12px">How it works</h3>
+  <p style="color:var(--muted);font-size:13px;line-height:1.7">
+    The trigger is an HTTP GET to this controller, which plays the clip on that output at once.
+    Triggers use this controller's <strong>trigger key</strong> (Settings → API Keys), which can fire clips
+    and nothing else: in the URL as <code>api_key=</code>, or in an <code>X-API-Key</code> header, which keeps
+    it out of URLs and logs. Settings can also limit which addresses may use the keys.
+    Rotating the trigger key stops every trigger until it's updated.
+  </p>
+</div>
+
+</main>
+<script src="/web/app.js"></script>
+<script src="/web/console.js" defer></script>
+<script>
+let _apiKey = '';
+let _base = location.origin;
+const _copy = {};  // what each box copies: always the real key, even when hidden
+
+function loadData() {
+  api('/api/key').then(data => { _apiKey = data.trigger_key; build(); });  // fires clips only
+  // The address other machines use, even when this page is open on localhost.
+  api('/api/config').then(cfg => { _base = cfg.lan_url; build(); });
+  api('/api/status').then(data => {
+    const media = (data.instances || []).filter(i => i.type === 'media');
+    document.getElementById('gen-instance').innerHTML = media.length
+      ? '<option value="">— select instance —</option>' + options(media.map(i => i.name))
+      : '<option value="">No media instances configured</option>';
+    build();
+  });
+  api('/api/media').then(data => {
+    document.getElementById('gen-clip').innerHTML =
+      '<option value="">— select clip —</option>' + options(data.clips || []);
+    build();
+  });
+}
+
+function build() {
+  const instance = document.getElementById('gen-instance').value;
+  const clip = document.getElementById('gen-clip').value;
+  const output = document.getElementById('gen-output');
+  // Wait for the key too: a copy before it loads would end in "api_key=".
+  if (!instance || !clip || !_apiKey) { output.style.display = 'none'; return; }
+
+  let url = _base + '/api/load?instance=' + encodeURIComponent(instance) + '&clip=' + encodeURIComponent(clip);
+  if (document.getElementById('gen-loop').value === 'false') url += '&loop=false';
+  const key = encodeURIComponent(_apiKey);
+  _copy.url = url + '&api_key=' + key;
+  // Single quotes: bash would expand a ! in a clip name inside double quotes.
+  _copy.curl = `curl -H 'X-API-Key: ${_apiKey}' '${url}'`;
+  const show = text => document.getElementById('show-key').checked ? text
+    : text.replaceAll(key, '••••••••').replaceAll(_apiKey, '••••••••');
+  document.getElementById('gen-url').textContent = show(_copy.url);
+  document.getElementById('gen-curl').textContent = show(_copy.curl);
+  output.style.display = 'block';
+}
+
+function rotateTriggerKey() {
+  if (!confirm('Rotate the trigger key? Every Automator command, panel and trigger URL using the old key stops working.')) return;
+  api('/api/key/rotate?key=trigger', 'POST').then(d => {
+    _apiKey = d.trigger_key;
+    build();
+    toast('Trigger key rotated: update Automator and panels', 'success');
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function copy(which) {
+  copyText(_copy[which]);
+}
+
+loadData();
+</script>
+</body>
+</html>

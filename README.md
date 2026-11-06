@@ -21,7 +21,7 @@ It was built for gallery (TV control room) graphics: Singular.live or other HTML
 - **Sequential start-up**, one output at a time with a 5 s gap, so receivers lock onto the right NDI source
 - **Web dashboard**: live status per output, start/stop, current clip with time remaining, clip picker, AMCP command box, event log
 - **NDI tally**: cards turn red when an output is on air and amber on preview (needs the NDI Runtime and `ndi-python`)
-- **HTTP clip triggering** for Companion, hardware panels and automation, plus an **HTTP Generator** page that builds the URLs
+- **HTTP clip triggering** for Companion, hardware panels and automation, plus a **Triggers** page that builds the URLs
 - **Remote Controllers**: monitor and control other controllers from one dashboard
 - **Settings page**: CasparCG path, video mode, ports, outputs (add, remove, reorder), media folder, server name, password, API key, config backup
 - **Test patterns**: colour and bars PNGs copied into the media folder on start if missing
@@ -76,6 +76,17 @@ Releases include two files:
 
 It never stops a running output, and never touches a CasparCG on a port the app doesn't use. Start, stop and restart run one at a time in the background: the API answers `202` at once, and progress and failures go to the event log and the tray. Stop All also cancels a Start All that's still going.
 
+### Auto-restart
+
+On by default (Settings → **Auto-restart instances that crash or hang**). Each instance can override it, in Settings or with the **↻ Auto** toggle on its card.
+
+- **Crash:** CasparCG exits unexpectedly. **Hang:** it's running but hasn't answered AMCP for the hang timeout (30 s by default). A hung process is stopped as soon as it's found.
+- **Never on air:** a hung output that's on program (tally) isn't restarted. The operator is told, and it's restarted once it's off air.
+- **Restart:** the instance starts again and gets its startup command (HTML URL or media command) re-sent.
+- **Back-off:** waits of 2, 5, 15, 30, then 60 s between attempts; cards show *crashed (1/5)* or *hung (1/5)*, then *restarting*. After 5 restarts in 10 minutes it stops trying: the card shows **failed**, a dashboard banner and the tray say so, and starting it again resets the count. With auto-restart off, a crash shows **crashed**.
+- **Stops are never undone:** an operator's Stop or Stop All keeps auto-restart off for that instance until it's started again.
+- **The console panel** marks each crash or hang, with the lines CasparCG printed before it.
+
 ### Output types
 
 | Type | On start |
@@ -127,12 +138,15 @@ Set the environment variable `CASPAR_CONTROLLER_INITIAL_PASSWORD` to give new in
 2. In the config file (see [Configuration file](#configuration-file)), set `"web_password_hash": ""` and `"password_change_required": false`.
 3. Start the controller. It's back in first-run mode: set a new password from the controller PC. If `CASPAR_CONTROLLER_INITIAL_PASSWORD` is set, that default applies again, with a forced change.
 
-### API key
+### API keys
 
-- **Find it in Settings → API Key** (Copy and Rotate). It's created automatically on first start.
-- **Send it either way:**
-  - Header (preferred, keeps the key out of URLs and logs): `X-API-Key: <key>`
-  - Query string, for devices that can only send a plain URL: `?api_key=<key>`
+- **Two keys, in Settings → API Keys** (Copy and Rotate each). Both are created on first start.
+  - **Trigger key:** fires clips (`/api/load`, `/api/instance/{id}/load`) and nothing else; anything else gets `403`. Give this one to Automator and panels.
+  - **Full API key:** everything except account settings. For Companion setups that start and stop outputs, and for other controllers.
+- **Send a key either way:**
+  - Header (keeps the key out of URLs and logs): `X-API-Key: <key>`
+  - Query string, for devices that can only call a URL, such as Automator: `?api_key=<key>`
+- **Allowed addresses** (optional): list IPs, subnets or host names, and a key only works from those, so a key copied from a URL is useless elsewhere. Signed-in browsers aren't affected. Other controllers that use this one as a Remote Controller call it with a key, so list them too. Subnets must be exact (`10.0.0.0/24`, not `10.0.0.5/24`). Host names are looked up when the list is saved, at start-up and every 5 minutes in the background; a name that stops resolving keeps its last known address. Imports never change this PC's list. Refused calls are logged with the caller's address, never the key.
 - **Rotating** creates a new key straight away. Every device using the old one stops working until it's updated.
 - **Remote Controllers:** each remote needs *its own* key, entered next to its URL in **Settings → Remote Controllers**. Saved remote keys are never shown again; leave the field blank to keep the saved one.
 
@@ -154,7 +168,7 @@ GET http://<controller-ip>:5280/api/load?instance=<name>&clip=<clip>&loop=false&
 - **`instance`** is the output's name (not case-sensitive) and must be a `Media` output.
 - **Looping is the default;** add `loop=false` to play once.
 - **Clip names** can't contain quotes, backslashes or control characters (rejected with `400`), so a trigger can't smuggle in extra AMCP commands.
-- **Building URLs:** the **HTTP Generator** page builds them, key included, ready to copy.
+- **Building URLs:** the **Triggers** page builds them, ready to copy: the URL with `api_key=` first (what Automator uses), then the `curl` form with an `X-API-Key` header. The key is hidden on screen unless you choose to show it.
 
 ```bash
 curl -H "X-API-Key: <key>" "http://<controller-ip>:5280/api/load?instance=Clipplayer&clip=AMB"
@@ -166,8 +180,9 @@ All need the key or a signed-in session, except `/api/health`.
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/api/health` | Version and up/down, no auth |
+| GET | `/api/health` | Version, server name and up/down, no auth |
 | GET | `/api/status` | All outputs: status, tally, current clip |
+| GET | `/api/events` | The same status plus the event log, pushed as server-sent events when they change |
 | POST | `/api/server/start`, `/api/server/stop` | Start All / Stop All (`202`, runs in the background) |
 | POST | `/api/instance/{id}/restart`, `/stop` | One output (`202`) |
 | POST | `/api/instance/{id}/amcp` | Send a raw AMCP command: `{"command": "..."}` |
@@ -181,7 +196,7 @@ All need the key or a signed-in session, except `/api/health`.
 | Page | Path |
 |---|---|
 | Dashboard | `/` |
-| HTTP Generator | `/http-generator` |
+| Triggers | `/triggers` (the old `/http-generator` redirects here) |
 | Settings | `/settings` |
 | Sign in | `/login` |
 
@@ -190,9 +205,10 @@ All need the key or a signed-in session, except `/api/health`.
 
 ### Remote Controllers
 
-- **Add other controllers** in **Settings → Remote Controllers**, with each one's URL and its API key. **Test** checks both.
+- **Add other controllers** in **Settings → Remote Controllers**, with each one's URL and its API key. Save, then **Test** checks the saved remote: that it answers (`/api/health`) and accepts its key.
 - **URLs** must be plain `http(s)://host:port`, for example `http://192.168.1.101:5280`, with no path or user name.
-- **On the dashboard,** each remote appears with its outputs, Start All / Stop All and clip controls. If its key is wrong, the dashboard says so.
+- **On the dashboard,** each remote appears with its outputs, clip and time remaining, Start All / Stop All and clip controls. If its key is wrong, the dashboard says so.
+- **Only fixed actions reach a remote:** status, media, Start/Stop All, restart or stop one output and AMCP, each through its own route (`/api/remote/{n}/...`). No route takes a URL or path, so a remote's key can't be sent anywhere else.
 
 ---
 
@@ -201,7 +217,7 @@ All need the key or a signed-in session, except `/api/health`.
 - **On launch** the app starts the web server, opens the web UI and sits in the system tray. If the web port is already in use, the tray says so.
 - **The tray menu has:** Open Caspar Controller (also a click on the icon), how many instances are live, Restart all instances and Quit. Quitting stops the web server but leaves CasparCG running.
 - **CasparCG left running** (for example after the app restarted) is reconnected rather than restarted. **Auto-start** then starts only the instances that aren't running, without touching the live ones.
-- **CasparCG runs without a console window.** Its output will be viewable in the web UI's console panel (#8).
+- **CasparCG runs without a console window.** The web UI's **Console** panel (bottom right of every page) shows each instance's CasparCG log (`log\inst_N\` next to `casparcg.exe`), live. Reading the log files rather than a pipe means CasparCG keeps running when the app quits or is upgraded, and reconnected instances have a console too. To send CasparCG a command, use the AMCP box on its card.
 
 ---
 
@@ -275,8 +291,10 @@ caspar_controller/
 ├── log.py                 Event log shown on the dashboard
 ├── caspar/                AMCP client, INFO parsing, casparcg.config, process, test patterns
 ├── static/                Fonts and icons
+├── web/                   The web UI: plain HTML, app.css and app.js, no build step
 └── api/                   FastAPI app and one router per area   → http://0.0.0.0:<web-port>
-    └── pages.py           HTML pages (moving to static files in #7)
+    ├── events.py          /api/events: live status and event log (server-sent events)
+    └── pages.py           Serves web/*.html behind sign-in
 ```
 
 ---

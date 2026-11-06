@@ -69,7 +69,7 @@ caspar-controller = "caspar_controller.__main__:main"
 include = ["caspar_controller*"]
 
 [tool.setuptools.package-data]
-caspar_controller = ["static/*"]
+caspar_controller = ["static/*", "web/*"]
 "caspar_controller.caspar" = ["test_patterns/*.png"]
 
 # ==================== RUFF ====================

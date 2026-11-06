@@ -1,14 +1,17 @@
-"""Sign-in, sessions, the web UI password and the API key."""
+"""Sign-in, sessions, the web UI password, the API keys and who may use them."""
 
+import re
 import secrets
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from caspar_controller import clients
 from caspar_controller.api import or_400
-from caspar_controller.api.pages import SETUP_REQUIRED, card_page
+from caspar_controller.api.pages import web_page
 from caspar_controller.auth import key_matches, new_api_key, verify_password
 from caspar_controller.log import log_event
 from caspar_controller.settings import load as load_config, save as save_config, set_password
@@ -39,12 +42,39 @@ _CHANGE_PASSWORD_PATHS = ("/change-password", "/api/password", "/logout")
 _SESSION_ONLY_PATHS = ("/api/password", "/api/key", "/api/key/rotate")
 
 
+def _supplied_key(request: Request) -> str | None:
+    return request.headers.get("x-api-key") or request.query_params.get("api_key")
+
+
+def still_allowed(request: Request) -> bool:
+    """For a long-lived stream: is the sign-in or key it opened with still good?"""
+    token = request.cookies.get("session")
+    if token:
+        return token in _sessions  # sign-out and password changes end sessions
+    cfg = load_config()
+    supplied = _supplied_key(request)
+    if supplied:
+        return key_matches(supplied, cfg["api_key"])
+    return not cfg["web_password_hash"] and _trusted_local(request)
+
+
+# All the trigger key may do: fire clips, as Automator and panels do. The template routes
+# join this list in #26.
+_TRIGGER_PATH = re.compile(r"/api/(load|instance/\d+/load)")
+
+
+def _refuse(request: Request, reason: str, status: int = 403) -> JSONResponse:
+    host = request.client.host if request.client else "?"
+    log_event(f"Refused {request.url.path} from {host}: {reason}")  # never the key itself
+    return JSONResponse({"detail": reason}, status_code=status)
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """API needs a key or session; pages need a session (or this PC, until a password is set)."""
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in ("/login", "/api/health") or path.startswith("/static/"):
+        if path in ("/login", "/api/health") or path.startswith(("/static/", "/web/")):
             return await call_next(request)
         cfg = load_config()
         first_run = not cfg["web_password_hash"]
@@ -57,12 +87,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if first_run and _trusted_local(request):
             return await call_next(request)
         if path.startswith("/api/"):
-            supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
-            if path not in _SESSION_ONLY_PATHS and key_matches(supplied, cfg["api_key"]):
-                return await call_next(request)
-            return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
+            supplied = _supplied_key(request)
+            full = key_matches(supplied, cfg["api_key"])
+            if path in _SESSION_ONLY_PATHS or not (
+                full or key_matches(supplied, cfg["trigger_key"])
+            ):
+                if supplied:  # a wrong key, not just a browser without one: worth a log line
+                    return _refuse(request, "Invalid or missing API key", 401)
+                return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
+            host = request.client.host if request.client else ""
+            if not clients.allowed(host, cfg["api_clients"]):
+                return _refuse(request, "This address isn't allowed to use the API keys")
+            if not full and not _TRIGGER_PATH.fullmatch(path):
+                return _refuse(request, "The trigger key can only fire triggers")
+            return await call_next(request)
         if first_run:
-            return HTMLResponse(card_page("Setup required", SETUP_REQUIRED), status_code=403)
+            return web_page("setup", status_code=403)
         return RedirectResponse(url="/login")
 
 
@@ -77,16 +117,19 @@ class _PasswordChange(BaseModel):
 
 @router.get("/api/key")
 def api_key_get():
-    return {"api_key": load_config()["api_key"]}
+    cfg = load_config()
+    return {"api_key": cfg["api_key"], "trigger_key": cfg["trigger_key"]}
 
 
 @router.post("/api/key/rotate")
-def api_key_rotate():
+def api_key_rotate(key: Literal["api", "trigger"] = "api"):
+    """?key=trigger rotates the trigger key; otherwise the full API key."""
+    name = f"{key}_key"
     cfg = load_config()
-    cfg["api_key"] = new_api_key()
+    cfg[name] = new_api_key()
     save_config(cfg)
-    log_event("API key rotated.")
-    return {"api_key": cfg["api_key"]}
+    log_event(f"{name} rotated.")
+    return {name: cfg[name]}
 
 
 @router.post("/api/password")

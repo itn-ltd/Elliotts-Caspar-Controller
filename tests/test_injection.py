@@ -183,25 +183,12 @@ def test_malformed_import_rejected(client, bad):
     assert client.post("/api/config/import", json=bad).status_code == 400
 
 
-@pytest.mark.parametrize(
-    "url", ["http://u:p@host:5280", "http://host:5280/x", "ftp://host", "file:///C:/", "host:5280"]
-)
-def test_remote_test_only_accepts_plain_controller_urls(client, url):
-    assert client.post("/api/remote/test", json={"url": url}).status_code == 400
-
-
-@pytest.mark.parametrize("path", ["/api/config/import", "/api/key/rotate", "/api/password"])
-def test_remote_proxy_only_allows_dashboard_actions(client, write_config, path):
-    write_config({"remote_controllers": [{"url": f"http://127.0.0.1:{free_port()}"}]})
-    r = client.post("/api/remote/0/proxy", json={"path": path})
-    assert (r.status_code, r.json()["detail"]) == (400, "Invalid remote path")
-
-
-def test_server_name_escaped_in_pages(client):
+def test_server_name_never_reaches_page_html(client):
+    # Pages are static since #7; app.js sets the name with textContent, never innerHTML.
     assert client.post("/api/config", json={"server_name": "<b>Studio</b>"}).status_code == 200
-    page = client.get("/").text
-    assert "<b>Studio</b>" not in page
-    assert "&lt;b&gt;Studio&lt;/b&gt;" in page
+    assert "<b>Studio</b>" not in client.get("/").text
+    app_js = client.get("/web/app.js").text
+    assert "el.textContent = name" in app_js
 
 
 # ---------------------------------------------------------------- self-updater

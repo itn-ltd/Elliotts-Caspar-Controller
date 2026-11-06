@@ -21,6 +21,11 @@ def caspar_instance_config_path(config: dict, inst: dict) -> str:
     return os.path.join(_exe_dir(config), f"casparcg_inst_{inst['id']}.config")
 
 
+def instance_log_dir(config: dict, inst: dict) -> str:
+    """Where an instance's CasparCG writes its log (the config's <log-path>)."""
+    return os.path.join(_exe_dir(config), "log", f"inst_{inst['id']}")
+
+
 def reset_html_cache(config: dict, inst: dict) -> None:
     """Wipe an instance's CEF cache just before it starts.
 

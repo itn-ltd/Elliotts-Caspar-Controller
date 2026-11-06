@@ -17,11 +17,13 @@ Silently no-ops if ndi-python is not installed or the NDI Runtime is missing.
 """
 
 import os
+import socket
 import threading
 import time
 import xml.etree.ElementTree as ET
 from typing import Dict
 
+from caspar_controller.log import log_event
 from caspar_controller.settings import load as load_config
 
 # ---------------------------------------------------------------------------
@@ -71,6 +73,20 @@ def get_tally() -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _this_pc() -> set:
+    # NDI may use the DNS host name or the 15-character NetBIOS name.
+    return {n.lower() for n in (socket.gethostname(), os.environ.get("COMPUTERNAME", "")) if n}
+
+
+def is_our_source(source_name: str, ndi_name: str) -> bool:
+    """NDI names sources "HOST (name)": match this PC's exact name, so GFX1 isn't GFX10."""
+    host, sep, rest = source_name.partition(" (")
+    return bool(sep) and rest.lower() == f"{ndi_name.lower()})" and host.lower() in _this_pc()
+
+
+_not_found: set = set()  # NDI names already reported missing, so the retry loop doesn't spam
+
+
 def _find_source(ndi_name: str, stop: threading.Event):
     """Search for an NDI source matching ndi_name. Returns source or None."""
     find_create = ndi.FindCreate()
@@ -84,12 +100,17 @@ def _find_source(ndi_name: str, stop: threading.Event):
         if sources:
             for s in sources:
                 src_name = getattr(s, "ndi_name", "") or ""
-                if ndi_name.lower() in src_name.lower():
+                if is_our_source(src_name, ndi_name):
                     source = s
                     break
         if source:
             break
     ndi.find_destroy(finder)
+    if not source and not stop.is_set() and ndi_name not in _not_found:
+        _not_found.add(ndi_name)
+        log_event(f"Tally: no NDI source '{ndi_name}' from this PC yet (still looking).")
+    if source:
+        _not_found.discard(ndi_name)
     return source
 
 

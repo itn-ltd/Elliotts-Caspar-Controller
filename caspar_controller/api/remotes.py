@@ -1,90 +1,83 @@
-"""Remote Controllers: dashboard status, media and actions on other controllers."""
+"""Remote Controllers: dashboard status, media and explicit actions on other controllers."""
 
-import re
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from typing import Literal
 
-import requests
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
-from caspar_controller.api import or_400
-from caspar_controller.remotes import call_remote, remote_status
-from caspar_controller.settings import keep_remote_keys, load as load_config, validate_remote_url
+from caspar_controller import remotes
+from caspar_controller.api.instances import CommandRequest, command_or_400
+from caspar_controller.settings import load as load_config
 
 router = APIRouter()
 
 
 def _get_remote(idx: int) -> dict:
-    remotes = load_config().get("remote_controllers", [])
-    if idx < 0 or idx >= len(remotes):
+    saved = load_config().get("remote_controllers", [])
+    if idx < 0 or idx >= len(saved):
         raise HTTPException(status_code=404, detail=f"Remote {idx} not found")
-    return remotes[idx]
+    return saved[idx]
+
+
+def _relay(call, *args):
+    """Run a remote call, turning its failures into a 502 (a 401 here would sign us out)."""
+    try:
+        return call(*args)
+    except remotes.RemoteKeyRejected:
+        raise HTTPException(status_code=502, detail="Remote rejected its API key") from None
+    except remotes.ERRORS as e:
+        raise HTTPException(status_code=502, detail=f"Remote failed: {e}") from None
 
 
 @router.get("/api/remotes")
 def api_remotes():
-    cfg = load_config()
-    remotes = cfg.get("remote_controllers", [])
-    if not remotes:
+    saved = load_config().get("remote_controllers", [])
+    if not saved:
         return {"remotes": []}
-    with ThreadPoolExecutor(max_workers=len(remotes)) as ex:
-        return {"remotes": list(ex.map(remote_status, range(len(remotes)), remotes))}
+    with ThreadPoolExecutor(max_workers=len(saved)) as ex:
+        return {"remotes": list(ex.map(remotes.remote_status, range(len(saved)), saved))}
 
 
 @router.get("/api/remote/{idx}/media")
-def api_remote_media_proxy(idx: int):
+def api_remote_media(idx: int):
     remote = _get_remote(idx)
     try:
-        return call_remote(remote, "GET", "/api/media", timeout=5).json()
-    except Exception:
+        return remotes.media(remote)
+    except remotes.ERRORS:
         return {"clips": [], "error": "Could not reach remote"}
 
 
-class _RemoteTestRequest(BaseModel):
-    url: str
-    api_key: str = ""
-
-
-@router.post("/api/remote/test")
-def api_remote_test(req: _RemoteTestRequest):
-    # A blank key means "use the saved one" (Settings never shows saved remote keys).
-    or_400(validate_remote_url, req.url)
-    remote = keep_remote_keys([req.model_dump()], load_config()["remote_controllers"])[0]
-    try:
-        r = call_remote(remote, "GET", "/api/status", timeout=3)
-        if r.status_code == 401:
-            return {"online": True, "authorised": False}
-        data = r.json()
-        return {
-            "online": True,
-            "authorised": True,
-            "server_name": data.get("server_name", ""),
-            "version": data.get("version", ""),
-        }
-    except Exception:
-        return {"online": False}
-
-
-class _RemoteProxyRequest(BaseModel):
-    path: str
-    body: Optional[dict] = None
-
-
-# The only remote actions the dashboard sends (Start/Stop All, per-instance start/stop/AMCP).
-_REMOTE_ACTIONS = re.compile(r"/api/(server/(start|stop)|instance/(\d+|all)/(restart|stop|amcp))")
-
-
-@router.post("/api/remote/{idx}/proxy")
-def api_remote_proxy(idx: int, req: _RemoteProxyRequest):
-    if not _REMOTE_ACTIONS.fullmatch(req.path):
-        raise HTTPException(status_code=400, detail="Invalid remote path")
+@router.post("/api/remote/{idx}/test")
+def api_remote_test(idx: int):
+    """Settings' Test button, for a saved remote: reachable, and is its key accepted?"""
     remote = _get_remote(idx)
     try:
-        r = call_remote(remote, "POST", req.path, timeout=5, json=req.body)
-        if r.status_code == 401:
-            # 502, not 401: a 401 here would sign this browser out.
-            raise HTTPException(status_code=502, detail="Remote rejected its API key")
-        return r.json()
-    except (requests.RequestException, ValueError) as e:
-        raise HTTPException(status_code=502, detail=f"Remote unreachable: {e}") from e
+        info = remotes.health(remote)
+        remotes.media(remote)  # a keyed call: health alone needs no key
+        authorised = True
+    except remotes.RemoteKeyRejected:  # from either: e.g. a proxy that wants a key for health
+        info, authorised = {}, False
+    except remotes.ERRORS:
+        return {"online": False}
+    return {
+        "online": True,
+        "authorised": authorised,
+        "server_name": info.get("server_name", ""),
+        "version": info.get("version", ""),
+    }
+
+
+@router.post("/api/remote/{idx}/server/{action}")
+def api_remote_server(idx: int, action: Literal["start", "stop"]):
+    return _relay(remotes.server_action, _get_remote(idx), action)
+
+
+# Before /{action}, which would otherwise capture "amcp".
+@router.post("/api/remote/{idx}/instance/{inst_id}/amcp")
+def api_remote_amcp(idx: int, inst_id: int, req: CommandRequest):
+    return _relay(remotes.amcp, _get_remote(idx), inst_id, command_or_400(req))
+
+
+@router.post("/api/remote/{idx}/instance/{inst_id}/{action}")
+def api_remote_instance(idx: int, inst_id: int, action: Literal["restart", "stop"]):
+    return _relay(remotes.instance_action, _get_remote(idx), inst_id, action)

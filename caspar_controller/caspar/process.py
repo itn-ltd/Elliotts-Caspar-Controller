@@ -52,10 +52,15 @@ class CasparProcessManager:
             return True
         # No shell: names never reach a command line. Full path: works even where
         # NoDefaultCurrentDirectoryInExePath stops the current folder being searched.
+        # No pipes either: CasparCG keeps running when this app quits (the console reads its
+        # log files instead, see logtail.py).
         self._process = subprocess.Popen(
             [os.path.abspath(self.exe_path), self.config_filename],
             cwd=self._exe_dir(),
             creationflags=subprocess.CREATE_NO_WINDOW,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         # 90 s covers slow cold starts; galleries take under 60 s.
         deadline = time.time() + 90
@@ -83,6 +88,12 @@ class CasparProcessManager:
         if self._process and self._process.poll() is None:
             self._kill_tree(self._process.pid)
         self._process = None
+
+    def exit_code(self) -> Optional[int]:
+        """The exit code, or None if unknown (still running, or reconnected to, not launched)."""
+        if not self._process or isinstance(self._process, _AdoptedProcess):
+            return None
+        return self._process.poll()
 
     def alive(self) -> bool:
         """True while OUR process hasn't exited, whether or not AMCP answers."""

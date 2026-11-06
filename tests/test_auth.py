@@ -81,7 +81,7 @@ def test_bad_api_key_is_401(anon, password_on, key):
 
 
 def test_health_is_open(anon, password_on):
-    assert anon.get("/api/health").json() == {"ok": True, "version": __version__}
+    assert anon.get("/api/health").json() == {"ok": True, "version": __version__, "server_name": ""}
     assert anon.get("/api/healthz").status_code == 401  # exact match only
 
 
@@ -110,7 +110,9 @@ def test_rotated_key_replaces_old(anon, password_on):
 
 def test_key_endpoint(client, write_config):
     write_config({})
-    assert client.get("/api/key").json() == {"api_key": API_KEY}
+    keys = client.get("/api/key").json()
+    assert keys["api_key"] == API_KEY
+    assert len(keys["trigger_key"]) >= 40 and keys["trigger_key"] != API_KEY  # made on first load
 
 
 # ---------------------------------------------------------------- pages

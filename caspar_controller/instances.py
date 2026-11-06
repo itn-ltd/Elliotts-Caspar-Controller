@@ -4,24 +4,32 @@ import logging
 import queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional
 
+from caspar_controller.autorestart import AutoRestart, label as _label
 from caspar_controller.caspar.amcp import AMCPClient
 from caspar_controller.caspar.config_xml import (
     ensure_test_pattern_images,
+    instance_log_dir,
     regenerate_instance_config,
     reset_html_cache,
 )
 from caspar_controller.caspar.info import EMPTY_LAYER, parse_layer_info
+from caspar_controller.caspar.logtail import LogTail
 from caspar_controller.caspar.process import CasparProcessManager
-from caspar_controller.log import log_event
+from caspar_controller.log import Console, log_event
 from caspar_controller.settings import instance_amcp_port, load as load_config
 
 log = logging.getLogger(__name__)
 
 
-def _label(inst: dict) -> str:
-    return f"Inst {inst['id']} ({inst['name']})"
+class Probe(NamedTuple):
+    live: bool
+    layer: dict
+    version: str  # CasparCG's VERSION reply, e.g. "2.3.3 Stable"
+
+
+OFF = Probe(False, dict(EMPTY_LAYER), "")
 
 
 def _load_instance(inst: dict, client: AMCPClient) -> str:
@@ -33,7 +41,7 @@ def _load_instance(inst: dict, client: AMCPClient) -> str:
     return client.send(cmd) if cmd else client.send("CLEAR 1")
 
 
-class InstanceManager:
+class InstanceManager(AutoRestart):
     """Owns every CasparCG process the app runs.
 
     Start, stop and restart are jobs run one at a time on one worker thread, so two
@@ -41,14 +49,17 @@ class InstanceManager:
     """
 
     def __init__(self):
+        super().__init__()
         self._procs: dict[int, CasparProcessManager] = {}  # inst id -> process
         self._clients: dict[int, AMCPClient] = {}  # port -> open AMCP connection
         self._jobs: queue.Queue = queue.Queue()
         self._worker: Optional[threading.Thread] = None
         self._cancel = threading.Event()  # Stop All interrupts a running start sequence
-        self._status: dict[int, tuple[bool, dict]] = {}  # inst id -> (live, layer info)
+        self._status: dict[int, Probe] = {}  # inst id -> last poll
         self._status_stop = threading.Event()
         self.notify: Optional[Callable[[str], None]] = None  # the tray's notification
+        self.consoles: dict[int, Console] = {}  # inst id -> CasparCG's log lines
+        self._tails: dict[tuple, LogTail] = {}  # (inst id, log folder) -> its log reader
 
     # ------------------------------------------------------------ jobs
 
@@ -60,13 +71,17 @@ class InstanceManager:
 
     def _run_jobs(self) -> None:
         while True:
-            label, fn, args = self._jobs.get()
+            name, fn, args = self._jobs.get()
+            with self._lock:  # the watchdog is never mid-check when a job starts
+                self._busy = True
             try:
                 fn(*args)
             except Exception as e:  # nobody is waiting on a job, so report it
-                log.exception("%s failed", label)
-                self._report(f"{label} failed: {e}")
+                log.exception("%s failed", name)
+                self._report(f"{name} failed: {e}")
             finally:
+                with self._lock:
+                    self._busy = False
                 self._jobs.task_done()
 
     def wait(self) -> None:
@@ -83,20 +98,36 @@ class InstanceManager:
                 log.exception("Tray notification failed")
 
     def start_all(self) -> None:
+        self._operator(None, hold=False)
         self._submit("Start All", self._start_all)
 
     def stop_all(self) -> None:
+        self._operator(None, hold=True)
         self._cancel.set()
         self._submit("Stop All", self._stop_all)
 
     def restart_all(self) -> None:
+        self._operator(None, hold=False)
         self._submit("Restart All", self._restart_all)
 
     def restart(self, inst_id: int) -> None:
+        self._operator([inst_id], hold=False)
         self._submit(f"Restart of instance {inst_id}", self._restart, inst_id)
 
     def stop(self, inst_id: int) -> None:
+        self._operator([inst_id], hold=True)
         self._submit(f"Stop of instance {inst_id}", self._stop, inst_id)
+
+    def console(self, inst_id: int) -> Console:
+        return self.consoles.setdefault(inst_id, Console())
+
+    def _follow_logs(self, cfg: dict) -> None:
+        """Copy new lines from each instance's CasparCG log into its console."""
+        for inst in cfg.get("instances", []):
+            folder = instance_log_dir(cfg, inst)
+            tail = self._tails.setdefault((inst["id"], folder), LogTail(folder))
+            for line in tail.read():
+                self.console(inst["id"]).add(line)
 
     def adopt_running(self) -> None:
         self._submit("Reconnect", self._adopt_running)
@@ -152,7 +183,7 @@ class InstanceManager:
             log_event(f"{_label(inst)} {verb} → {res[:60]}")
             return True
         log_event(f"{_label(inst)} FAILED to start{error}")
-        self._procs.pop(inst["id"])
+        self._procs.pop(inst["id"], None)
         if m.pid:
             m.stop()  # don't leave a half-started process behind
         return False
@@ -205,8 +236,10 @@ class InstanceManager:
         return cfg, next((i for i in cfg.get("instances", []) if i["id"] == inst_id), None)
 
     def _stop_one(self, cfg: dict, inst: dict) -> None:
-        if self._procs.get(inst["id"]) or self._adopt(cfg, inst):
-            self._procs.pop(inst["id"]).stop()
+        m = self._procs.pop(inst["id"], None) or self._adopt(cfg, inst)
+        if m:
+            self._procs.pop(inst["id"], None)
+            m.stop()
 
     def _restart(self, inst_id: int) -> None:
         cfg, inst = self._find(inst_id)
@@ -228,28 +261,40 @@ class InstanceManager:
 
     # ------------------------------------------------------------ status
 
-    def _probe(self, port: int) -> tuple[bool, dict]:
+    def _probe(self, port: int, media: bool) -> Probe:
         client = self._client(port)
-        if not client.ping():  # VERSION: INFO can fail on a live server
-            return False, dict(EMPTY_LAYER)
-        return True, parse_layer_info(client.info_layer())
+        reply = client.send("VERSION")  # liveness: INFO can fail on a live server
+        if not reply.startswith("201"):
+            return OFF
+        version = reply.partition("\n")[2].strip()
+        # Only media outputs play clips, so HTML outputs skip INFO: half the AMCP traffic.
+        layer = parse_layer_info(client.info_layer()) if media else dict(EMPTY_LAYER)
+        return Probe(True, layer, version)
 
     def poll_status(self) -> None:
         """Ask every instance whether it's live and what's playing, then publish one snapshot."""
         cfg = load_config()
         insts = cfg.get("instances", [])
         with ThreadPoolExecutor(max_workers=max(len(insts), 1)) as ex:
-            results = list(ex.map(self._probe, [self.port(cfg, i) for i in insts]))
+            results = list(
+                ex.map(
+                    self._probe,
+                    [self.port(cfg, i) for i in insts],
+                    [i.get("type") == "media" for i in insts],
+                )
+            )
         # A new dict, swapped in whole: readers never see a half-built poll.
         self._status = {i["id"]: r for i, r in zip(insts, results, strict=True)}
+        self._follow_logs(cfg)
 
     def _status_loop(self) -> None:
         while not self._status_stop.is_set():
             try:
                 self.poll_status()
+                self.watch()
             except Exception:
                 log.exception("Status poll failed")
-            self._status_stop.wait(2)
+            self._status_stop.wait(0.5)  # browsers see changes within a second
 
     def start_status_worker(self) -> None:
         self._status_stop.clear()
@@ -258,10 +303,9 @@ class InstanceManager:
     def stop_status_worker(self) -> None:
         self._status_stop.set()
 
-    def cached_status(self) -> tuple[dict, dict]:
-        """(live, layer_info) by instance id, from the last poll."""
-        status = self._status
-        return {k: live for k, (live, _) in status.items()}, {k: v for k, (_, v) in status.items()}
+    def cached_status(self) -> dict[int, Probe]:
+        """The last poll, by instance id."""
+        return dict(self._status)
 
 
 manager = InstanceManager()

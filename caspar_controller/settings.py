@@ -1,6 +1,7 @@
 """Read, validate and save the app config."""
 
 import copy
+import ipaddress
 import json
 import logging
 import os
@@ -27,7 +28,7 @@ from caspar_controller.log import log_event
 
 log = logging.getLogger(__name__)
 
-SECRET_KEYS = ("api_key", "web_password_hash")
+SECRET_KEYS = ("api_key", "trigger_key", "web_password_hash")
 # Belong to this machine: config imports and profiles never change them.
 MACHINE_KEYS = (*SECRET_KEYS, "password_change_required")
 V1_PASSWORD_KEYS = ("web_password", "web_password_enabled")
@@ -51,6 +52,24 @@ def _config_file() -> str:
 
 
 # ---------------------------------------------------------------- validation
+
+
+_HOST_LABEL = r"(?!-)[A-Za-z0-9-]{1,63}(?<!-)"
+
+
+def _client_address(value: str) -> str:
+    """An IP address, an exact subnet (10.0.0.0/24, not 10.0.0.5/24) or a host name."""
+    value = value.strip()
+    try:
+        ipaddress.ip_network(value)  # strict: 10.0.0.5/8 would quietly mean all of 10.x
+        return value
+    except ValueError:
+        pass
+    if "/" in value or re.fullmatch(r"[\d.]+", value):  # a bad subnet, or a partial IPv4
+        raise ValueError(f"{value!r} isn't an exact IP address or subnet (e.g. 10.0.0.0/24)")
+    if len(value) > 253 or not re.fullmatch(rf"{_HOST_LABEL}(\.{_HOST_LABEL})*", value):
+        raise ValueError(f"{value!r} isn't an IP address, subnet or host name")
+    return value
 
 
 def _text(value: str) -> str:
@@ -119,6 +138,7 @@ class Instance(_Model):
     url: Annotated[str, AfterValidator(_amcp_safe)] = ""
     startup_command: Text = ""
     amcp_port: int = Field(0, ge=0, le=65535)  # 0: base port + id - 1
+    auto_restart: Literal["on", "off", "inherit"] = "inherit"  # inherit: the global setting
 
 
 class Remote(_Model):
@@ -134,10 +154,14 @@ class Settings(_Model):
     web_port: Port = 5280
     video_mode: Text = "1080p2500"
     autostart_caspar: bool = False
+    auto_restart: bool = True  # restart crashed or hung instances
+    hang_timeout: int = Field(30, ge=5, le=600)  # seconds without an AMCP reply = hung
     media_path: Text = ""
     server_name: Text = ""
     instances: list[Instance] = []
     remote_controllers: list[Remote] = []
+    # Addresses allowed to use either API key; empty: any. Signed-in browsers aren't affected.
+    api_clients: list[Annotated[str, AfterValidator(_client_address)]] = []
 
     @field_validator("instances")
     @classmethod
@@ -205,7 +229,14 @@ DEFAULT_CONFIG = {
     "web_password_hash": "",
     "password_change_required": False,
     "api_key": "",
+    "trigger_key": "",  # fires triggers only: for Automator and panels
 }
+
+
+def auto_restart_on(cfg: dict, inst: dict) -> bool:
+    """The instance's own on/off, or the global setting if it inherits."""
+    choice = inst.get("auto_restart", "inherit")
+    return choice == "on" or (choice == "inherit" and cfg["auto_restart"])
 
 
 def instance_amcp_port(cfg: dict, inst: dict) -> int:
@@ -364,9 +395,10 @@ def _secure_secrets(config: dict) -> bool:
     if initial.strip() and not config["web_password_hash"]:
         set_password(config, initial, must_change=True)
         changed = True
-    if not config["api_key"]:
-        config["api_key"] = new_api_key()
-        changed = True
+    for key in ("api_key", "trigger_key"):
+        if not config[key]:
+            config[key] = new_api_key()
+            changed = True
     return changed
 
 
