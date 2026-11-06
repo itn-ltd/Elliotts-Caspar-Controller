@@ -3,27 +3,24 @@
 import logging
 import queue
 import threading
-import time
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, NamedTuple, Optional
 
+from caspar_controller.autorestart import AutoRestart, label as _label
 from caspar_controller.caspar.amcp import AMCPClient
 from caspar_controller.caspar.config_xml import (
     ensure_test_pattern_images,
+    instance_log_dir,
     regenerate_instance_config,
     reset_html_cache,
 )
 from caspar_controller.caspar.info import EMPTY_LAYER, parse_layer_info
+from caspar_controller.caspar.logtail import LogTail
 from caspar_controller.caspar.process import CasparProcessManager
 from caspar_controller.log import Console, log_event
-from caspar_controller.settings import auto_restart_on, instance_amcp_port, load as load_config
+from caspar_controller.settings import instance_amcp_port, load as load_config
 
 log = logging.getLogger(__name__)
-
-BACKOFF = (2, 5, 15, 30, 60)  # seconds before each auto-restart attempt
-MAX_RESTARTS = 5  # in RESTART_WINDOW, then give up and mark the instance failed
-RESTART_WINDOW = 600
 
 
 class Probe(NamedTuple):
@@ -35,10 +32,6 @@ class Probe(NamedTuple):
 OFF = Probe(False, dict(EMPTY_LAYER), "")
 
 
-def _label(inst: dict) -> str:
-    return f"Inst {inst['id']} ({inst['name']})"
-
-
 def _load_instance(inst: dict, client: AMCPClient) -> str:
     """Send the startup command for an instance (always channel 1 in each CasparCG process)."""
     if inst.get("type", "html") == "html":
@@ -48,7 +41,7 @@ def _load_instance(inst: dict, client: AMCPClient) -> str:
     return client.send(cmd) if cmd else client.send("CLEAR 1")
 
 
-class InstanceManager:
+class InstanceManager(AutoRestart):
     """Owns every CasparCG process the app runs.
 
     Start, stop and restart are jobs run one at a time on one worker thread, so two
@@ -56,6 +49,7 @@ class InstanceManager:
     """
 
     def __init__(self):
+        super().__init__()
         self._procs: dict[int, CasparProcessManager] = {}  # inst id -> process
         self._clients: dict[int, AMCPClient] = {}  # port -> open AMCP connection
         self._jobs: queue.Queue = queue.Queue()
@@ -64,14 +58,8 @@ class InstanceManager:
         self._status: dict[int, Probe] = {}  # inst id -> last poll
         self._status_stop = threading.Event()
         self.notify: Optional[Callable[[str], None]] = None  # the tray's notification
-        self.consoles: dict[int, Console] = {}  # inst id -> what its CasparCG printed
-        # Auto-restart, all by inst id:
-        self._held: set[int] = set()  # stopped by an operator: never restarted for them
-        self._state: dict[int, str] = {}  # shown instead of "stopped": restarting (2/5), failed
-        self._restarts: dict[int, deque] = {}  # times of recent auto-restarts
-        self._due: dict[int, tuple] = {}  # (when, old process) of the next auto-restart
-        self._silent_since: dict[int, float] = {}  # alive but not answering AMCP, since
-        self._busy = False  # a job is running: the watchdog leaves the processes alone
+        self.consoles: dict[int, Console] = {}  # inst id -> CasparCG's log lines
+        self._tails: dict[tuple, LogTail] = {}  # (inst id, log folder) -> its log reader
 
     # ------------------------------------------------------------ jobs
 
@@ -83,15 +71,17 @@ class InstanceManager:
 
     def _run_jobs(self) -> None:
         while True:
-            label, fn, args = self._jobs.get()
-            self._busy = True
+            name, fn, args = self._jobs.get()
+            with self._lock:  # the watchdog is never mid-check when a job starts
+                self._busy = True
             try:
                 fn(*args)
             except Exception as e:  # nobody is waiting on a job, so report it
-                log.exception("%s failed", label)
-                self._report(f"{label} failed: {e}")
+                log.exception("%s failed", name)
+                self._report(f"{name} failed: {e}")
             finally:
-                self._busy = False
+                with self._lock:
+                    self._busy = False
                 self._jobs.task_done()
 
     def wait(self) -> None:
@@ -128,29 +118,16 @@ class InstanceManager:
         self._operator([inst_id], hold=True)
         self._submit(f"Stop of instance {inst_id}", self._stop, inst_id)
 
-    def _operator(self, inst_ids: Optional[list], hold: bool) -> None:
-        """An operator's Stop holds auto-restart off until they start it; either resets it."""
-        if inst_ids is None:
-            inst_ids = [i["id"] for i in load_config().get("instances", [])]
-        for i in inst_ids:
-            (self._held.add if hold else self._held.discard)(i)
-            for pending in (self._state, self._due, self._restarts, self._silent_since):
-                pending.pop(i, None)
-
     def console(self, inst_id: int) -> Console:
         return self.consoles.setdefault(inst_id, Console())
 
-    def send_console(self, inst_id: int, command: str) -> None:
-        """Type a command into an instance's CasparCG console. Raises OSError if there isn't one."""
-        m = self._procs.get(inst_id)
-        if not m:
-            raise OSError("This instance isn't running")
-        m.send_console(command)
-        self.console(inst_id).add(f"> {command}")
-
-    def state_of(self, inst_id: int) -> Optional[str]:
-        """restarting (n/5) or failed while auto-restart is dealing with it."""
-        return self._state.get(inst_id)
+    def _follow_logs(self, cfg: dict) -> None:
+        """Copy new lines from each instance's CasparCG log into its console."""
+        for inst in cfg.get("instances", []):
+            folder = instance_log_dir(cfg, inst)
+            tail = self._tails.setdefault((inst["id"], folder), LogTail(folder))
+            for line in tail.read():
+                self.console(inst["id"]).add(line)
 
     def adopt_running(self) -> None:
         self._submit("Reconnect", self._adopt_running)
@@ -174,7 +151,6 @@ class InstanceManager:
             exe_path=cfg["caspar_exe_path"],
             amcp_port=instance_amcp_port(cfg, inst),
             config_filename=f"casparcg_inst_{inst['id']}.config",
-            on_output=self.console(inst["id"]).add,
         )
 
     def _adopt(self, cfg: dict, inst: dict) -> Optional[CasparProcessManager]:
@@ -207,7 +183,7 @@ class InstanceManager:
             log_event(f"{_label(inst)} {verb} → {res[:60]}")
             return True
         log_event(f"{_label(inst)} FAILED to start{error}")
-        self._procs.pop(inst["id"])
+        self._procs.pop(inst["id"], None)
         if m.pid:
             m.stop()  # don't leave a half-started process behind
         return False
@@ -260,8 +236,10 @@ class InstanceManager:
         return cfg, next((i for i in cfg.get("instances", []) if i["id"] == inst_id), None)
 
     def _stop_one(self, cfg: dict, inst: dict) -> None:
-        if self._procs.get(inst["id"]) or self._adopt(cfg, inst):
-            self._procs.pop(inst["id"]).stop()
+        m = self._procs.pop(inst["id"], None) or self._adopt(cfg, inst)
+        if m:
+            self._procs.pop(inst["id"], None)
+            m.stop()
 
     def _restart(self, inst_id: int) -> None:
         cfg, inst = self._find(inst_id)
@@ -307,71 +285,7 @@ class InstanceManager:
             )
         # A new dict, swapped in whole: readers never see a half-built poll.
         self._status = {i["id"]: r for i, r in zip(insts, results, strict=True)}
-
-    # ------------------------------------------------------------ auto-restart
-
-    def watch(self) -> None:
-        """Schedule a restart for each crashed or hung instance, and run the ones now due."""
-        if self._busy:  # Start All, Restart All etc. own the processes while they run
-            return
-        cfg, now = load_config(), time.time()
-        for inst in cfg.get("instances", []):
-            i = inst["id"]
-            if i in self._held or not auto_restart_on(cfg, inst):
-                continue
-            if i in self._due:
-                when, old = self._due[i]
-                if now >= when:
-                    del self._due[i]
-                    self._submit(f"Auto-restart of instance {i}", self._auto_restart, i, old)
-                continue
-            m = self._procs.get(i)
-            if not m:
-                continue
-            if not m.alive():
-                self._schedule(inst, f"crashed (exit code {m.exit_code()})")
-            elif self._status.get(i, OFF).live:
-                self._silent_since.pop(i, None)
-            elif now - self._silent_since.setdefault(i, now) >= cfg["hang_timeout"]:
-                self._schedule(inst, f"stopped answering for {cfg['hang_timeout']} s")
-
-    def _schedule(self, inst: dict, reason: str) -> None:
-        """Back off 2-60 s before each restart; after 5 in 10 minutes, give up and say so."""
-        i, now = inst["id"], time.time()
-        old = self._procs.pop(i, None)  # the job stops it (it may be hung, not gone)
-        self._silent_since.pop(i, None)
-        recent = self._restarts.setdefault(i, deque())
-        while recent and recent[0] < now - RESTART_WINDOW:
-            recent.popleft()  # 10 minutes running cleanly resets the count
-        self.console(i).add(f"--- {reason} ---")
-        if len(recent) >= MAX_RESTARTS:
-            self._state[i] = "failed"
-            if old:
-                self._submit(f"Stop of failed instance {i}", old.stop)
-            self._report(
-                f"{_label(inst)} {reason}. Gave up after {MAX_RESTARTS} restarts in"
-                " 10 minutes: start it to try again."
-            )
-            return
-        recent.append(now)
-        delay = BACKOFF[min(len(recent), len(BACKOFF)) - 1]
-        self._state[i] = f"restarting ({len(recent)}/{MAX_RESTARTS})"
-        self._due[i] = (now + delay, old)
-        self._report(
-            f"{_label(inst)} {reason}: restarting in {delay} s ({len(recent)}/{MAX_RESTARTS})."
-        )
-
-    def _auto_restart(self, inst_id: int, old: Optional[CasparProcessManager]) -> None:
-        if old:
-            old.stop()
-        cfg, inst = self._find(inst_id)
-        if not inst or inst_id in self._held:  # removed, or stopped by an operator meanwhile
-            self._state.pop(inst_id, None)
-            return
-        if self._launch(cfg, inst, "restarted"):
-            self._state.pop(inst_id, None)
-        else:
-            self._schedule(inst, "failed to restart")
+        self._follow_logs(cfg)
 
     def _status_loop(self) -> None:
         while not self._status_stop.is_set():

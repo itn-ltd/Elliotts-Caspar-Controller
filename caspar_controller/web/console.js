@@ -1,4 +1,4 @@
-// Console side panel: each instance's CasparCG output, live. Any page that loads this gets it.
+// Console side panel: each instance's CasparCG log, live. Any page that loads this gets it.
 
 const Console = (() => {
   const store = {
@@ -6,7 +6,7 @@ const Console = (() => {
     set: (k, v) => { try { localStorage.setItem('console_' + k, v); } catch (e) {} },
   };
   let instances = [], current = Number(store.get('tab')) || null, lines = [];
-  let follow = true, stream = null;
+  let follow = true, listening = false;
   const seen = {};  // inst id -> console line count already read
 
   document.body.insertAdjacentHTML('beforeend', `
@@ -24,10 +24,6 @@ const Console = (() => {
         <button class="btn btn-secondary btn-sm" id="console-pin" title="Keep open beside the page">Pin</button>
       </div>
       <pre id="console-lines"></pre>
-      <form id="console-command" class="console-bar">
-        <input id="console-input" placeholder="Type into CasparCG's console (signed-in operators)">
-        <button class="btn btn-primary btn-sm">Send</button>
-      </form>
     </aside>`);
   const $ = id => document.getElementById(id);
   const panel = $('console-panel');
@@ -43,10 +39,14 @@ const Console = (() => {
     if (follow) box.scrollTop = box.scrollHeight;
   }
 
+  function setFollow(on) {
+    follow = on;
+    $('console-follow').textContent = on ? 'Pause' : 'Follow';
+  }
+
   function dotClass(status) {
-    if (status === 'live') return 'dot-live';
-    if (status === 'failed' || status === 'stopped') return 'dot-' + status;
-    return 'dot-starting';  // restarting (n/5), starting
+    if (status === 'live' || status === 'stopped' || status === 'failed') return 'dot-' + status;
+    return 'dot-starting';  // crashed (1/5), hung (1/5), restarting (1/5)
   }
 
   function renderTabs() {
@@ -59,39 +59,46 @@ const Console = (() => {
     }).join('');
   }
 
-  function connect() {
-    if (stream) stream.close();
-    lines = [];
-    render();
-    // Without a tab open, the stream still brings status for the tab dots.
-    stream = new EventSource('/api/events' + (current ? '?console=' + current : ''));
-    stream.addEventListener('status', e => {
-      instances = JSON.parse(e.data).instances;
-      instances.forEach(i => { if (!(i.id in seen)) seen[i.id] = i.console_lines; });  // unread: since opening
-      if (!current && instances.length) return select(instances[0].id);
-      const mine = instances.find(i => i.id === current);
-      if (mine) seen[current] = mine.console_lines;
-      renderTabs();
-    });
-    stream.addEventListener('console', e => {
-      lines = lines.concat(JSON.parse(e.data).lines).slice(-5000);
+  function onStatus(data) {
+    instances = data.instances;
+    instances.forEach(i => { if (!(i.id in seen)) seen[i.id] = i.console_lines; });  // unread: since opening
+    // The remembered tab may be an instance that's since been deleted.
+    if (instances.length && !instances.some(i => i.id === current)) return select(instances[0].id);
+    const mine = instances.find(i => i.id === current);
+    if (mine) seen[current] = mine.console_lines;
+    renderTabs();
+  }
+
+  function listen() {
+    if (listening) return;
+    listening = true;
+    Live.on('status', data => { if (!panel.hidden) onStatus(data); });
+    Live.on('console', data => {
+      if (panel.hidden) return;
+      lines = lines.concat(data.lines).slice(-5000);
       render();
     });
-    stream.onopen = () => { lines = []; };  // a reconnect resends everything still kept
+    Live.on('open', () => { lines = []; render(); });  // a (re)connect resends what's kept
   }
 
   function select(id) {
     current = id;
     store.set('tab', id);
-    connect();
+    lines = [];
+    render();
+    Live.follow(id);
   }
 
   function setOpen(open) {
     panel.hidden = !open;
     $('console-toggle').hidden = open;
     store.set('open', open ? '1' : '');
-    if (open && !stream) connect();
-    if (!open && stream) { stream.close(); stream = null; }
+    if (open) {
+      listen();
+      Live.follow(current);
+    } else {
+      Live.follow(null);  // no console lines while closed
+    }
   }
 
   function setPinned(pinned) {
@@ -104,13 +111,8 @@ const Console = (() => {
   $('console-close').onclick = () => setOpen(false);
   $('console-tabs').onclick = e => { const tab = e.target.closest('.console-tab'); if (tab) select(Number(tab.dataset.id)); };
   $('console-search').oninput = render;
-  $('console-follow').onclick = () => {
-    follow = !follow;
-    $('console-follow').textContent = follow ? 'Pause' : 'Follow';
-    render();
-  };
-  $('console-copy').onclick = () => navigator.clipboard.writeText(visible().join('\n'))
-    .then(() => toast('Console copied', 'success'));
+  $('console-follow').onclick = () => { setFollow(!follow); render(); };
+  $('console-copy').onclick = () => copyText(visible().join('\n'), 'Console copied');
   $('console-download').onclick = () => {
     const name = (instances.find(i => i.id === current) || {}).name || 'console';
     const a = document.createElement('a');
@@ -120,18 +122,10 @@ const Console = (() => {
     URL.revokeObjectURL(a.href);
   };
   $('console-pin').onclick = () => setPinned(!document.body.classList.contains('console-pinned'));
-  $('console-command').onsubmit = e => {
-    e.preventDefault();
-    const command = $('console-input').value.trim();
-    if (!command || !current) return;
-    api('/api/instance/' + current + '/console', 'POST', {command})
-      .then(() => { $('console-input').value = ''; })
-      .catch(err => toast(err.message, 'error'));
-  };
   $('console-lines').onscroll = () => {
     const box = $('console-lines');
     const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
-    if (atEnd !== follow) { follow = atEnd; $('console-follow').textContent = follow ? 'Pause' : 'Follow'; }
+    if (atEnd !== follow) setFollow(atEnd);
   };
 
   setPinned(store.get('pinned') === '1');

@@ -23,6 +23,11 @@
   <a href="/settings" class="btn btn-warning">Go to Settings →</a>
 </div>
 
+<div id="failed-banner" hidden style="background:rgba(239,68,68,0.12);border:2px solid var(--error);border-radius:12px;padding:16px 24px;margin-bottom:16px">
+  <strong style="color:var(--error)">Auto-restart gave up on: <span id="failed-names"></span></strong>
+  <p style="color:var(--muted);margin-top:6px">Each crashed or hung 5 times in 10 minutes. Check its Console, then Start it to try again.</p>
+</div>
+
 <div class="card">
   <div class="card-header">
     <div style="display:flex;align-items:center">
@@ -71,7 +76,6 @@ function onMediaSelect(id) {
 let _instanceNames = {};
 let _cardsKey = '';
 const _shown = {};  // element id -> HTML last written, so unchanged parts aren't touched
-const _lastStatus = {};  // inst id -> status, to alert once when one fails
 const _waitingLive = new Map();  // inst id -> when it was started from this page
 const START_WARNING_MS = 120000;  // not live by then: say so
 
@@ -107,7 +111,8 @@ function tallyBadge(inst) {
 
 function stateHtml(inst) {
   const live = inst.status === 'live';
-  const badge = live ? 'badge-success' : inst.status.startsWith('restarting') ? 'badge-warning' : 'badge-error';
+  // Auto-restart at work (crashed/hung/restarting (n/5)) is amber; stopped, crashed, failed red.
+  const badge = live ? 'badge-success' : /\(\d+\/\d+\)$/.test(inst.status) ? 'badge-warning' : 'badge-error';
   const auto = inst.auto_restart;
   return `<div style="display:flex;gap:4px;align-items:center">
       <span class="badge ${badge}">${escapeHtml(inst.status)}</span>
@@ -184,9 +189,6 @@ function renderInstances(instances) {
     setHtml('tally_' + inst.id, tallyBadge(inst));
     setHtml('layer_' + inst.id, layerHtml(inst));
     setHtml('state_' + inst.id, stateHtml(inst));
-    if (inst.status === 'failed' && _lastStatus[inst.id] && _lastStatus[inst.id] !== 'failed')
-      toast(inst.name + ' failed: auto-restart gave up. Start it to try again.', 'error');
-    _lastStatus[inst.id] = inst.status;
     if (_waitingLive.has(inst.id)) {
       if (inst.status === 'live') toast(inst.name + ' is live', 'success');
       else if (Date.now() - _waitingLive.get(inst.id) > START_WARNING_MS) toast(inst.name + ' took too long — check the log', 'warning');
@@ -219,6 +221,10 @@ function showStatus(data) {
       : 'Start All';
 
   renderInstances(data.instances);
+  // Stays up while any instance is failed, whenever the page was opened.
+  const failed = data.instances.filter(i => i.status === 'failed').map(i => i.name);
+  document.getElementById('failed-banner').hidden = !failed.length;
+  document.getElementById('failed-names').textContent = failed.join(', ');
 
   if (lastRunning !== null && lastRunning !== running)
     toast(running ? 'CasparCG is now running' : 'CasparCG stopped', running ? 'success' : 'warning');
@@ -450,11 +456,8 @@ function sendRemoteAmcp(idx, instId) {
     .catch(() => toast('Remote AMCP failed', 'error'));
 }
 
-const events = new EventSource('/api/events');
-events.addEventListener('status', e => showStatus(JSON.parse(e.data)));
-events.addEventListener('log', e => showLog(JSON.parse(e.data).log));
-// Closed (not reconnecting) means the server refused the stream: reload, and sign in if asked.
-events.onerror = () => { if (events.readyState === EventSource.CLOSED) location.reload(); };
+Live.on('status', showStatus);
+Live.on('log', data => showLog(data.log));
 updateRemotes();
 setInterval(updateRemotes, 3000);  // other controllers are still polled; there's no cross-agent stream
 // New clips copied into a media folder appear without a reload (unchanged lists aren't rewritten).

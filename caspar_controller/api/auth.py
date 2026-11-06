@@ -35,15 +35,8 @@ def _trusted_local(request: Request) -> bool:
 
 
 _CHANGE_PASSWORD_PATHS = ("/change-password", "/api/password", "/logout")
-# Account control and CasparCG's own console: never with the API key, which lives in
-# panel configs and URLs.
+# Account control: never with the API key, which lives in panel configs and URLs.
 _SESSION_ONLY_PATHS = ("/api/password", "/api/key", "/api/key/rotate")
-
-
-def _session_only(path: str) -> bool:
-    return path in _SESSION_ONLY_PATHS or (
-        path.startswith("/api/instance/") and path.endswith("/console")
-    )
 
 
 def _supplied_key(request: Request) -> str | None:
@@ -81,7 +74,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if path.startswith("/api/"):
             supplied = _supplied_key(request)
-            if not _session_only(path) and key_matches(supplied, cfg["api_key"]):
+            if path not in _SESSION_ONLY_PATHS and key_matches(supplied, cfg["api_key"]):
                 return await call_next(request)
             return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
         if first_run:

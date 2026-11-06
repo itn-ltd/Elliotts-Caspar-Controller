@@ -53,3 +53,44 @@ function clipOptions(clips, current) {
   return '<option value="">— pick a clip —</option>' + options(regular, current)
     + (tests.length ? '<option disabled>─── Test Patterns ───</option>' + options(tests, current) : '');
 }
+
+// The page's one /api/events stream, shared by the dashboard and the console panel.
+// Live.on(name, fn) for "status", "log", "console" or "open"; Live.follow(id) picks the
+// instance whose console lines it carries (null: none).
+const Live = (() => {
+  const handlers = {status: [], log: [], console: [], open: []};
+  let source = null, consoleId = null;
+  function connect() {
+    if (source) source.close();
+    source = new EventSource('/api/events' + (consoleId ? '?console=' + consoleId : ''));
+    ['status', 'log', 'console'].forEach(name => source.addEventListener(name, e => {
+      const data = JSON.parse(e.data);
+      handlers[name].forEach(fn => fn(data));
+    }));
+    source.onopen = () => handlers.open.forEach(fn => fn());
+    // Closed (not reconnecting) means the server refused it: reload, and sign in if asked.
+    source.onerror = () => { if (source.readyState === EventSource.CLOSED) location.reload(); };
+  }
+  return {
+    on(name, fn) { handlers[name].push(fn); if (!source) connect(); },
+    follow(id) { if (id !== consoleId) { consoleId = id; if (source) connect(); } },
+  };
+})();
+
+// Copy to the clipboard, with a fallback for plain HTTP from another PC (no clipboard API
+// there). Says so if nothing was copied.
+function copyText(text, done = 'Copied') {
+  const ok = () => toast(done, 'success');
+  const fail = () => toast('Copy failed: select the text and copy it', 'warning');
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(ok, fail);
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch (e) {}
+  ta.remove();
+  (copied ? ok : fail)();
+}
